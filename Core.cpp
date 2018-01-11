@@ -1129,6 +1129,21 @@ CoreStoredData::operator DigitalPortData() const
   return result;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+CoreStoredData::operator AnalogPortData() const
+{
+  AnalogPortData result;
+  result.Value = 0;
+  
+  if(!hasData())
+    return result;
+    
+  if(dataSize < sizeof(AnalogPortData))
+    return result;
+
+  memcpy(&(result),data,sizeof(AnalogPortData));
+  return result;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 CoreStoredData::operator TemperatureData() const
 {
   TemperatureData result;
@@ -1303,6 +1318,15 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
         result += dpd.Value == LOW ? F("LOW") : F("HIGH");
       }
       break;
+
+      case AnalogPort: // это состояние аналогового порта?
+      {
+        AnalogPortData apd = dataStored;
+        result = apd.Pin;
+        result += ':';
+        result += apd.Value;
+      }
+      break;      
 
       case Humidity: // это влажность (пара температура/влажность)
       {

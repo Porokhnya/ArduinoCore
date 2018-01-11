@@ -105,7 +105,15 @@ CoreSensor* CoreSensorsFactory::createSensor(CoreSensorType type)
       return new CoreSensorDigitalPort();
     #else
       return NULL;
-    #endif      
+    #endif 
+
+    case AnalogPortState:
+    
+    #ifdef CORE_ANALOGPORT_ENABLED
+      return new CoreSensorAnalogPort();
+    #else
+      return NULL;
+    #endif            
 
     //TODO: Тут добавлять создание других датчиков!!!
       
@@ -147,6 +155,9 @@ String CoreSensor::getUnit(CoreDataType type)
 
     case DigitalPort:
       return "";
+      
+    case AnalogPort:
+      return "";
   }
 
   return "";
@@ -172,6 +183,9 @@ CoreDataType CoreSensor::getDataType(CoreSensorType type)
 
     case DigitalPortState:
       return DigitalPort;
+
+    case AnalogPortState:
+      return AnalogPort;
 
     case Unknown:
       return UnknownType;
@@ -363,6 +377,34 @@ bool CoreSensorDigitalPort::read(uint8_t* buffer)
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_DIGITALPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_ANALOGPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreSensorAnalogPort::CoreSensorAnalogPort() : CoreSensor(AnalogPortState)
+{
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint8_t CoreSensorAnalogPort::getDataSize()
+{
+  return 2;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSensorAnalogPort::begin(uint8_t* configData)
+{
+  pin = *configData;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreSensorAnalogPort::read(uint8_t* buffer)
+{
+  
+ *buffer++ = pin;
+ *buffer = analogRead(pin);
+  
+  return true;  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_ANALOGPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_DHT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
