@@ -176,7 +176,7 @@ class CoreSensorBH1750 : public CoreSensor
 
   private:
     void writeByte(uint8_t toWrite);
-    uint8_t deviceAddress;
+    uint8_t deviceAddress, i2cIndex;
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -220,7 +220,7 @@ class CoreSensorSi7021 : public CoreSensor
   private:
     
     HTU21D sensor;
-
+    uint8_t i2cIndex;
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -273,6 +273,7 @@ class CoreSensorDS3231 : public CoreSensor
     uint8_t dec2bcd(uint8_t val);
     uint8_t bcd2dec(uint8_t val);
     bool isTempOnly;
+    uint8_t i2cIndex;
   
 }; 
 //--------------------------------------------------------------------------------------------------------------------------------------

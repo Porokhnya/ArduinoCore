@@ -122,7 +122,7 @@ class HTU21D
    #if defined(ESP8266)
    bool     begin(uint8_t sda = SDA, uint8_t scl = SCL);
    #else
-   bool     begin(void);
+   bool     begin(uint8_t i2cIndex = 0);
    #endif
    float    readHumidity(HTU21D_humdOperationMode = HTU21D_TRIGGER_HUMD_MEASURE_HOLD);    //Accuracy +-2%RH  in range 20%..80% at 25C
    float    readCompensatedHumidity(void);                                                //Accuracy +-2%RH  in range 0%..100% at 0C..80C
@@ -136,6 +136,7 @@ class HTU21D
 
   private:
    HTU21D_Resolution _HTU21D_Resolution;
+   uint8_t i2cIndex;
 
    void    write8(uint8_t reg, uint8_t value);
    uint8_t read8(uint8_t reg);

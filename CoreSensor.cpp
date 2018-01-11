@@ -3,6 +3,17 @@
 //--------------------------------------------------------------------------------------------------------------------------------------
 #if defined(CORE_DS3231_ENABLED) || defined(CORE_BH1750_ENABLED) || defined(CORE_SI7021_ENABLED)
 #include <Wire.h>
+//--------------------------------------------------------------------------------------------------------------------------------------
+TwoWire* getWireInterface(uint8_t i2cIndex)
+{
+  #if defined (__arm__) && defined (__SAM3X8E__)
+    if(i2cIndex == 1)
+      return &Wire1;
+  #endif
+
+  return &Wire;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 #endif
 //--------------------------------------------------------------------------------------------------------------------------------------
 TemperatureData::operator String()
@@ -190,21 +201,24 @@ bool CoreSensor::read(uint8_t* buffer)
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreSensorBH1750::CoreSensorBH1750() : CoreSensor(BH1750)
 {
-  
+ i2cIndex = 0; 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorBH1750::writeByte(uint8_t toWrite)
 {
-  Wire.beginTransmission(deviceAddress);
-  Wire.write(toWrite);
-  Wire.endTransmission();  
+  TwoWire* wire = getWireInterface(i2cIndex);
+  wire->beginTransmission(deviceAddress);
+  wire->write(toWrite);
+  wire->endTransmission();  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorBH1750::begin(uint8_t* configData)
 {
-  Wire.begin();
-
+  i2cIndex = *configData++;
   deviceAddress = *configData;
+
+  TwoWire* wire = getWireInterface(i2cIndex);
+  wire->begin();
 
   writeByte(0x01); // включаем датчик
   writeByte(0x10); // режим Continuous High Resolution
@@ -221,13 +235,16 @@ bool CoreSensorBH1750::read(uint8_t* buffer)
   bool result = false;
   uint16_t curLuminosity = 0;
 
-  Wire.beginTransmission(deviceAddress); // начинаем опрос датчика освещенности
- if(Wire.requestFrom((int)deviceAddress, 2) == 2)// ждём два байта
+  TwoWire* wire = getWireInterface(i2cIndex);
+
+  wire->beginTransmission(deviceAddress); // начинаем опрос датчика освещенности
+  
+ if(wire->requestFrom((int)deviceAddress, 2) == 2)// ждём два байта
  {
   // читаем два байта
-  curLuminosity = Wire.read();
+  curLuminosity = wire->read();
   curLuminosity <<= 8;
-  curLuminosity |= Wire.read();
+  curLuminosity |= wire->read();
   curLuminosity = curLuminosity/1.2; // конвертируем в люксы
 
   // теперь выдаём в буфер. Считаем, что он достаточного размера
@@ -240,7 +257,7 @@ bool CoreSensorBH1750::read(uint8_t* buffer)
   result = true;
  }
 
-  Wire.endTransmission();
+  wire->endTransmission();
   return result;
   
 }
@@ -251,12 +268,14 @@ bool CoreSensorBH1750::read(uint8_t* buffer)
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreSensorSi7021::CoreSensorSi7021() : CoreSensor(Si7021)
 {
-  
+  i2cIndex = 0;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorSi7021::begin(uint8_t* configData)
 {
-  sensor.begin();
+  i2cIndex = *configData;
+  sensor.begin(i2cIndex);
+  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreSensorSi7021::getDataSize()
@@ -540,6 +559,7 @@ bool CoreSensorDHT::read(uint8_t* buffer)
 CoreSensorDS3231::CoreSensorDS3231(bool tempOnly) : CoreSensor(DS3231)
 {
   isTempOnly = tempOnly;
+  i2cIndex = 0;
   
   if(isTempOnly)
     type = DS3231Temperature;
@@ -557,30 +577,34 @@ uint8_t CoreSensorDS3231::getDataSize()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorDS3231::begin(uint8_t* configData)
 {
-  Wire.begin();
+  i2cIndex = *configData;
+  TwoWire* wire = getWireInterface(i2cIndex);
+  wire->begin();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSensorDS3231::read(uint8_t* buffer)
 {
+  TwoWire* wire = getWireInterface(i2cIndex);
+  
   if(!isTempOnly)
   {  
-      Wire.beginTransmission(DS3231Address);
-      Wire.write(0); // говорим, что мы собираемся читать с регистра 0
+      wire->beginTransmission(DS3231Address);
+      wire->write(0); // говорим, что мы собираемся читать с регистра 0
       
-      if(Wire.endTransmission() != 0) // ошибка
+      if(wire->endTransmission() != 0) // ошибка
         return false;
     
       
-      if(Wire.requestFrom(DS3231Address, 7) == 7) // читаем 7 байт, начиная с регистра 0
+      if(wire->requestFrom(DS3231Address, 7) == 7) // читаем 7 байт, начиная с регистра 0
       {
           
-          uint8_t second = bcd2dec(Wire.read() & 0x7F);
-          uint8_t minute = bcd2dec(Wire.read());
-          uint8_t hour = bcd2dec(Wire.read() & 0x3F);
-          uint8_t dayOfWeek = bcd2dec(Wire.read());
-          uint8_t dayOfMonth = bcd2dec(Wire.read());
-          uint8_t month = bcd2dec(Wire.read());
-          uint16_t year = bcd2dec(Wire.read());     
+          uint8_t second = bcd2dec(wire->read() & 0x7F);
+          uint8_t minute = bcd2dec(wire->read());
+          uint8_t hour = bcd2dec(wire->read() & 0x3F);
+          uint8_t dayOfWeek = bcd2dec(wire->read());
+          uint8_t dayOfMonth = bcd2dec(wire->read());
+          uint8_t month = bcd2dec(wire->read());
+          uint16_t year = bcd2dec(wire->read());     
           year += 2000; // приводим время к нормальному формату
     
           // теперь сохраняем в буфер, в нём всё лежит так:
@@ -614,12 +638,13 @@ bool CoreSensorDS3231::read(uint8_t* buffer)
     // только температура
 
          // читаем температуру
-         Wire.beginTransmission(DS3231Address);
-          Wire.write(0x11);
-          if(Wire.endTransmission() != 0) // ошибка
+         wire->beginTransmission(DS3231Address);
+         wire->write(0x11);
+         
+          if(wire->endTransmission() != 0) // ошибка
             return false;        
         
-        if(Wire.requestFrom(DS3231Address, 2) == 2)
+        if(wire->requestFrom(DS3231Address, 2) == 2)
           {
     
             union int16_byte {
@@ -627,8 +652,8 @@ bool CoreSensorDS3231::read(uint8_t* buffer)
                byte b[2];
            } rtcTemp;
                
-            rtcTemp.b[1] = Wire.read();
-            rtcTemp.b[0] = Wire.read();
+            rtcTemp.b[1] = wire->read();
+            rtcTemp.b[0] = wire->read();
         
             long tempC100 = (rtcTemp.i >> 6) * 25;
         
@@ -657,19 +682,21 @@ void CoreSensorDS3231::setTime(uint8_t second, uint8_t minute, uint8_t hour, uin
 {
   while(year > 100) // приводим к диапазону 0-99
     year -= 100;
+
+  TwoWire* wire = getWireInterface(i2cIndex);    
  
-  Wire.beginTransmission(DS3231Address);
+  wire->beginTransmission(DS3231Address);
   
-  Wire.write(0); // указываем, что начинаем писать с регистра секунд
-  Wire.write(dec2bcd(second)); // пишем секунды
-  Wire.write(dec2bcd(minute)); // пишем минуты
-  Wire.write(dec2bcd(hour)); // пишем часы
-  Wire.write(dec2bcd(dayOfWeek)); // пишем день недели
-  Wire.write(dec2bcd(dayOfMonth)); // пишем дату
-  Wire.write(dec2bcd(month)); // пишем месяц
-  Wire.write(dec2bcd(year)); // пишем год
+  wire->write(0); // указываем, что начинаем писать с регистра секунд
+  wire->write(dec2bcd(second)); // пишем секунды
+  wire->write(dec2bcd(minute)); // пишем минуты
+  wire->write(dec2bcd(hour)); // пишем часы
+  wire->write(dec2bcd(dayOfWeek)); // пишем день недели
+  wire->write(dec2bcd(dayOfMonth)); // пишем дату
+  wire->write(dec2bcd(month)); // пишем месяц
+  wire->write(dec2bcd(year)); // пишем год
   
-  Wire.endTransmission();
+  wire->endTransmission();
 
   delay(10); // немного подождём для надёжности  
 }

@@ -33,14 +33,22 @@ bool CoreConfigIterator::first(const void* addr, uint16_t sz)
 
   // проверяем заголовок
   if(read() != CORE_HEADER1)
+  {
+    DBGLN(F("!CORE_HEADER1"));
     return false;
+  }
 
   if(read() != CORE_HEADER2)
+  {
+    DBGLN(F("!CORE_HEADER2"));
     return false;
+  }
 
   if(read() != CORE_HEADER3)
+  {
+    DBGLN(F("!CORE_HEADER3"));
     return false;
-  
+  }
   // встали за заголовок, на начало данных
   DBGLN(F("Header OK."));
 
