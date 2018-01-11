@@ -130,6 +130,15 @@ bool CoreConfigIterator::readRecord()
     }
     return true; // TemperatureUnitRecord
 
+    case SensorsUpdateIntervalRecord: // интервал опроса датчиков
+    {
+      Core.SensorsUpdateInterval = read();
+      Core.SensorsUpdateInterval *= 1000; // переводим в миллисекунды
+      DBG(F("SensorsUpdateInterval: "));
+      DBGLN(Core.SensorsUpdateInterval);      
+    }
+    return true; // SensorsUpdateIntervalRecord
+
     case ESPSettingsRecord: // данные о настройках ESP
     {
 
@@ -370,6 +379,7 @@ CoreClass::CoreClass()
 	pUnhandled = NULL;
   FractDelimiter = CORE_FRACT_DELIMITER;
   TemperatureUnit = UnitCelsius;
+  SensorsUpdateInterval = CORE_SENSORS_UPDATE_INTERVAL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::saveConfig(const byte* address, uint16_t sz, bool isInFlashSource)
@@ -387,7 +397,6 @@ void CoreClass::saveConfig(const byte* address, uint16_t sz, bool isInFlashSourc
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::loadConfig()
 {
-  //ConfigSource = ConfigNoSource;
   clear();
   
   CoreEEPROMConfigIterator iter;
@@ -996,7 +1005,7 @@ void CoreClass::update()
   
   unsigned long curMillis = millis();
 
-  // тут проходим по всем датчикам, и для датчиков слежения за цифровыми портами обновляем их состояние
+  // тут проходим по всем датчикам, и для датчиков слежения за цифровыми портами обновляем их состояние постоянно, вне зависимости от выставленного интервала
   for(size_t i=0;i<list.size();i++)
   {
     CoreSensor* sensor = list.get(i);
@@ -1005,8 +1014,23 @@ void CoreClass::update()
       readFromSensor(sensor,i);    
     }
   } // for
+
+  // с датчиков DS3231 надо обновлять показания каждую секунду, вне зависимости от выставленного интервала
+  static unsigned long ds3231UpdateMillis = 0;
+  if(curMillis - ds3231UpdateMillis > 1000)
+  {
+    ds3231UpdateMillis = curMillis;
+    for(size_t i=0;i<list.size();i++)
+    {
+      CoreSensor* sensor = list.get(i);
+      if(sensor->getType() == DS3231) // только с часов реального времени обновляем раз в секунду
+      {
+        readFromSensor(sensor,i);    
+      }
+    } // for    
+  }
  
-  if(curMillis - lastMillis > CORE_SENSORS_UPDATE_INTERVAL)
+  if(curMillis - lastMillis > SensorsUpdateInterval)
   {
     
     lastMillis = curMillis;
@@ -1017,16 +1041,22 @@ void CoreClass::update()
       // говорим, что пока нет данных с датчика
       CoreSensor* sensor = list.get(i);
 
-      if(!waitingSignal(sensor)) // если на датчик не взведён сигнал
+      if(sensor->getType() != DS3231)
       {
-        // запускаем конвертацию на датчике
-        uint16_t readingInterval = sensor->startMeasure();
-  
-        // теперь мы знаем, через какое время читать данные с датчика - можно взводить сигнал
-        signal(readingInterval,sensor,i);
-      }
+        // игнорируем часы реального времени - они обновляются отдельно
 
-    }
+        if(!waitingSignal(sensor)) // если на датчик не взведён сигнал
+        {
+          // запускаем конвертацию на датчике
+          uint16_t readingInterval = sensor->startMeasure();
+    
+          // теперь мы знаем, через какое время читать данные с датчика - можно взводить сигнал
+          signal(readingInterval,sensor,i);
+        }
+
+      } // if(sensor->getType() != DS3231)
+
+    } // for
 
   }
 }

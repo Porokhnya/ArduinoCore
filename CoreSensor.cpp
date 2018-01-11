@@ -795,11 +795,11 @@ uint16_t CoreDS18B20LineManager::startConversion()
   if(sensorCounter > sensorsCount)
   {
     // все датчики один разочек уже подождали конвертации, поэтому можно возвращать 0
-    if(CORE_SENSORS_UPDATE_INTERVAL < neededConversionTime)
+    if(Core.SensorsUpdateInterval < neededConversionTime)
     {
       // случай, когда обновление показаний происходит чаще, чем время конвертации - 
       // мы должны возвращать разницу
-      neededConversionTime =  neededConversionTime - CORE_SENSORS_UPDATE_INTERVAL;
+      neededConversionTime =  neededConversionTime - Core.SensorsUpdateInterval;
     }
     else
     {

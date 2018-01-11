@@ -94,6 +94,9 @@ const byte unitTestConfig[] PROGMEM = { // тестовый конфиг в па
       TemperatureUnitRecord, // // вид измеряемой температуры (цельсии - UnitCelsius или фаренгейты - UnitFahrenheit)
       UnitCelsius, // у нас будут цельсии
     //---------------------------------------
+      SensorsUpdateIntervalRecord, // интервал опроса датчиков, в секундах
+      5, // у нас будет 5 секунд между опросами
+    //---------------------------------------
   
   // окончание конфига
   CORE_HEADER1
