@@ -438,6 +438,8 @@ bool CoreClass::loadConfig()
    initSensors();
 
 
+  lastMillis = SensorsUpdateInterval/2;
+
    return true;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
