@@ -1017,6 +1017,7 @@ void CoreClass::update()
   
   unsigned long curMillis = millis();
 
+  #ifdef CORE_DIGITALPORT_ENABLED
   // тут проходим по всем датчикам, и для датчиков слежения за цифровыми портами обновляем их состояние постоянно, вне зависимости от выставленного интервала
   for(size_t i=0;i<list.size();i++)
   {
@@ -1026,7 +1027,9 @@ void CoreClass::update()
       readFromSensor(sensor,i);    
     }
   } // for
+  #endif // CORE_DIGITALPORT_ENABLED
 
+  #ifdef CORE_DS3231_ENABLED
   // с датчиков DS3231 надо обновлять показания каждую секунду, вне зависимости от выставленного интервала
   static unsigned long ds3231UpdateMillis = 0;
   if(curMillis - ds3231UpdateMillis > 1000)
@@ -1041,6 +1044,7 @@ void CoreClass::update()
       }
     } // for    
   }
+ #endif // CORE_DS3231_ENABLED
  
   if(curMillis - lastMillis > SensorsUpdateInterval)
   {
@@ -1053,9 +1057,11 @@ void CoreClass::update()
       // говорим, что пока нет данных с датчика
       CoreSensor* sensor = list.get(i);
 
+      #ifdef CORE_DS3231_ENABLED
       if(sensor->getType() != DS3231)
       {
         // игнорируем часы реального времени - они обновляются отдельно
+      #endif // CORE_DS3231_ENABLED        
 
         if(!waitingSignal(sensor)) // если на датчик не взведён сигнал
         {
@@ -1066,7 +1072,9 @@ void CoreClass::update()
           signal(readingInterval,sensor,i);
         }
 
+      #ifdef CORE_DS3231_ENABLED
       } // if(sensor->getType() != DS3231)
+      #endif // CORE_DS3231_ENABLED
 
     } // for
 
