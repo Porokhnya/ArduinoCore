@@ -64,7 +64,7 @@ class CoreConfigIterator
     uint16_t readed;
     byte read();
     bool readRecord();
-    void applySensorRecord(CoreSensorType type,byte* record);
+    void applySensorRecord(const String& sensorName, CoreSensorType type,byte* record);
    
   
 };
@@ -197,7 +197,8 @@ struct CoreStoredData
 {
   byte* data;
   byte dataSize;
-  CoreSensorType sensorType;
+  //CoreSensorType sensorType;
+  CoreSensor* sensor;
 
   operator LuminosityData() const; // возвращает данные как освещённость
   operator TemperatureData() const; // возвращает данные, как температуру
@@ -217,9 +218,10 @@ class CoreDataStoreClass
   public:
     CoreDataStoreClass();
 
-    size_t save(CoreSensorType type, byte* data, byte dataSize);
+    size_t save(CoreSensor* sensor, byte* data, byte dataSize);
 
     CoreStoredData get(size_t idx) {return list[idx];};
+    CoreStoredData get(const String& name);
     size_t size(){return list.size();}
 
     CoreDataList getByType(CoreDataType type); // возвращает список показаний по типу
@@ -248,7 +250,7 @@ class CoreTextFormatProvider : public CoreDataFormatProvider // выводим �
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern CoreDataStoreClass CoreDataStore; // хранилище данных с датчиков
 //--------------------------------------------------------------------------------------------------------------------------------------
-#define CORE_HEADER1 0x49
+#define CORE_HEADER1 0x50
 #define CORE_HEADER2 0xED
 #define CORE_HEADER3 0x9F
 //--------------------------------------------------------------------------------------------------------------------------------------

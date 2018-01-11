@@ -158,9 +158,13 @@ public:
   static CoreDataType getDataType(CoreSensorType type); // возвращает тип данных с датчика
   static String getUnit(CoreDataType type); // возвращает единицы измерения для типов данных
 
+  String getName() {return mnemonicName;} // мнемоническое имя датчика
+  void setName(const String& name) {mnemonicName = name;};
+
 protected:
 
   CoreSensorType type;
+  String mnemonicName; // мнемоническое имя
 
 };
 //--------------------------------------------------------------------------------------------------------------------------------------

@@ -89,6 +89,17 @@ bool CoreConfigIterator::readRecord()
   {
     case SensorRecord: // данные по датчику
     {
+
+      // читаем имя датчика
+      char ch = '\0';
+      String sensorName;
+      do
+      {
+        ch = read();
+        if(ch != '\0')
+          sensorName += ch;
+      } while(ch != '\0');
+      
         // тут читаем тип датчика
         b = read();
       
@@ -108,7 +119,7 @@ bool CoreConfigIterator::readRecord()
         for(byte i=0;i<dataLen;i++)
           record[i] = read();
       
-        applySensorRecord(type,record);
+        applySensorRecord(sensorName,type,record);
         delete [] record;
             
     }
@@ -334,12 +345,13 @@ bool CoreConfigIterator::readRecord()
   return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreConfigIterator::applySensorRecord(CoreSensorType type,byte* record)
+void CoreConfigIterator::applySensorRecord(const String& sensorName, CoreSensorType type,byte* record)
 {
   // тут применяем настройки из записи
   CoreSensor* s = CoreSensorsFactory::createSensor(type);
   if(s)
   {
+    s->setName(sensorName);
     s->begin(record); // просим датчик прочитать свои настройки
     // добавляем в список
     Core.Sensors()->add(s);
@@ -454,7 +466,7 @@ void CoreClass::initSensors()
     {
       // говорим, что пока нет данных с датчика
       CoreSensor* sensor = list.get(i);
-      CoreDataStore.save(sensor->getType(),NULL,0);  
+      CoreDataStore.save(sensor,NULL,0);  
     }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -1235,11 +1247,25 @@ CoreDataList CoreDataStoreClass::getBySensor(CoreSensorType type)
   for(size_t i=0;i<list.size();i++)
   {
     CoreStoredData dt = list[i];
-    if(dt.sensorType == type)
+    if(dt.sensor->getType() == type)
       result.push_back(dt);
   }
 
    return result;  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreStoredData CoreDataStoreClass::get(const String& name)
+{
+  for(size_t i=0;i<list.size();i++)
+  {
+    CoreStoredData dt = list[i];
+    if(dt.sensor->getName() == name)
+      return dt;
+  }
+
+  CoreStoredData dummy;
+  dummy.data = NULL;
+  return dummy;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreDataList CoreDataStoreClass::getByType(CoreDataType type)
@@ -1249,17 +1275,17 @@ CoreDataList CoreDataStoreClass::getByType(CoreDataType type)
   for(size_t i=0;i<list.size();i++)
   {
     CoreStoredData dt = list[i];
-    if(CoreSensor::getDataType(dt.sensorType) == type)
+    if(CoreSensor::getDataType(/*dt.sensorType*/dt.sensor->getType()) == type)
       result.push_back(dt);
   }
 
    return result;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-size_t CoreDataStoreClass::save(CoreSensorType type, byte* data, byte dataSize)
+size_t CoreDataStoreClass::save(CoreSensor* sensor, byte* data, byte dataSize)
 {
   CoreStoredData dt;
-  dt.sensorType = type;
+  dt.sensor = sensor;
   dt.data = data;
   dt.dataSize = dataSize;
 
@@ -1283,7 +1309,7 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
  if(dataStored.hasData())
   {
     // получаем тип данных, который хранит железка определённого вида
-    CoreDataType typeOfData = CoreSensor::getDataType(dataStored.sensorType);
+    CoreDataType typeOfData = CoreSensor::getDataType(dataStored.sensor->getType());
 
     switch(typeOfData)
     {
