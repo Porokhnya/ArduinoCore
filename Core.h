@@ -258,13 +258,13 @@ class CoreDataStoreClass
 
     size_t save(CoreSensor* sensor, byte* data, byte dataSize);
 
-    CoreStoredData get(size_t idx) {return list[idx];};
-    CoreStoredData get(const String& name);
-    CoreStoredData get(CoreSensorType type, uint8_t pin);
+    CoreStoredData get(size_t idx) {return list[idx];}; // возвращает данные по индексу
+    CoreStoredData get(const String& sensorMnemonicName); // возвращает данные для датчика по его мнемоническому имени
+    CoreStoredData get(CoreSensorType type, uint8_t pin); // возвращает данные для датчика аналогового или цифрового порта по номеру пина
     size_t size(){return list.size();}
 
-    CoreDataList getByType(CoreDataType type); // возвращает список показаний по типу
-    CoreDataList getBySensor(CoreSensorType type); // возвращает показания по типу железки
+    CoreDataList getByType(CoreDataType type); // возвращает список показаний по типу показаний (температура, влажность и т.п.)
+    CoreDataList getBySensor(CoreSensorType type); // возвращает писок показаний по типу железки датчика (DS18B20, DHT и т.п.)
 
     void clear();
 
@@ -276,7 +276,7 @@ class CoreDataStoreClass
 class CoreDataFormatProvider
 {
  public:
-  CoreDataFormatProvider() {};
+   CoreDataFormatProvider() {};
    virtual String format(const CoreStoredData& data, size_t sensorIndex, bool showUnits) = 0;
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
