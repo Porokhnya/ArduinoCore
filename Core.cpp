@@ -1159,10 +1159,13 @@ CoreStoredData::operator AnalogPortData() const
   if(!hasData())
     return result;
     
-  if(dataSize < sizeof(AnalogPortData))
+  if(dataSize < 3)//sizeof(AnalogPortData))
     return result;
 
-  memcpy(&(result),data,sizeof(AnalogPortData));
+  result.Pin = data[0];
+  memcpy(&(result.Value),&(data[1]),2);
+
+  //memcpy(&(result),data,sizeof(AnalogPortData));
   return result;  
   
   return result;
