@@ -1027,7 +1027,7 @@ void CoreClass::updateSignals()
 //--------------------------------------------------------------------------------------------------------------------------------------
 const char HEX_CHARS[]  PROGMEM = {"0123456789ABCDEF"};
 //--------------------------------------------------------------------------------------------------------------------------------------
-const char* CoreClass::byteToHex(byte i)
+const char* CoreClass::byteToHexString(byte i)
 {
   static char HEX_HOLDER[3] = {0}; // холдер для шестнадцатеричного представления байта в строковом виде
   
@@ -1456,13 +1456,12 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
       }
       break;
 
-      case UserData:
-      {
-          // пользовательские данные
+      case UserData: // пользовательские данные
+      {          
           result = "";
           for(byte i=0;i<dataStored.dataSize;i++)
           {
-            result += Core.byteToHex(dataStored.data[i]);
+            result += Core.byteToHexString(dataStored.data[i]);
             result += ' ';
           }
           

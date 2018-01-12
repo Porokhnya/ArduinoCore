@@ -137,7 +137,7 @@ class CoreClass
 	public:
 		CoreClass();
 
-    const char* byteToHex(byte i);
+    const char* byteToHexString(byte i);
 
     // обновляет показания с датчика в хранилище
     void pushToStorage(CoreSensor* sensor);
