@@ -348,9 +348,9 @@ void loop()
     } // for
 
     // теперь просто получаем данные с датчика по его строковому имени
-    CoreStoredData sensor5VValue = CoreDataStore.get(F("5V"));
-    AnalogPortData current5V = sensor5VValue;
-    Serial.print(F("CURRENT 5V VALUE: "));
+    CoreStoredData sensor5VStored = CoreDataStore.get(F("5V"));
+    AnalogPortData current5V = sensor5VStored;
+    Serial.print(F("\tCURRENT 5V VALUE: "));
     Serial.println(current5V.Value);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
