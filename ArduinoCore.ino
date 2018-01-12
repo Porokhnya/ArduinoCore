@@ -2,6 +2,8 @@
 #include "Core.h"
 #include "CoreConfig.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
+CorePinStateAction led13Blinker; // будем мигать на 13 пине светодиодом
+//--------------------------------------------------------------------------------------------------------------------------------------
 void unhandledCommandHandler(const String& command, Stream* outStream)
 {
   outStream->print(CORE_COMMAND_ANSWER_ERROR);
@@ -171,7 +173,7 @@ void setup()
 */  
 
   // будем для теста мигать встроенным светодиодом, проверяя корректность отработки слежения за портом
-  pinMode(LED_BUILTIN,OUTPUT);
+  led13Blinker.init(LED_BUILTIN, 100, 1200); // мигаем светодиодом на 13 пине, держа 100 мс включенным, и 1200 мс - выключенным
   
   
   // все необработанные данные из Serial будут перенаправлены в функцию unhandledCommandHandler
@@ -249,15 +251,9 @@ void loop()
   } // for
   unsigned long curMillis = millis();
 
-  // мигаем светодиодом раз в 1.2 секунды
-  static unsigned long blinkMillis = millis();
-  if(curMillis - blinkMillis > 1185)
-  {
-    blinkMillis = curMillis;
-    static bool isLedOn = false;
-    isLedOn = !isLedOn;
-    digitalWrite(LED_BUILTIN,isLedOn);
-  }
+
+  // обновляем нашу тестовую мигалку
+  led13Blinker.update();
 
 
   if(curMillis - lastMillis > 3000) // каждые 3 секунды и выводим данные с датчиков в Serial
