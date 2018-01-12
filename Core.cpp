@@ -681,6 +681,28 @@ bool CoreClass::getFREERAM(const char* commandPassed, Stream* pStream)
     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::getCPU(const char* commandPassed, Stream* pStream)
+{
+  if(commandPassed)
+  {
+      pStream->print(CORE_COMMAND_ANSWER_OK);
+      pStream->print(commandPassed);
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
+  }
+
+  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega328P__)
+    pStream->println(F("MEGA"));    
+  #elif defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible  
+    pStream->println(F("DUE"));
+  #else
+    pStream->println(F("NOP"));
+  #endif
+
+
+  return true;
+    
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::getSENSORS(const char* commandPassed, Stream* pStream)
 {
 
@@ -822,6 +844,7 @@ const char DATETIME_COMMAND[] PROGMEM = "DATETIME";
 const char SENSORS_COMMAND[] PROGMEM = "SENSORS";
 const char TRANSPORT_COMMAND[] PROGMEM = "TRANSPORT";
 const char FREERAM_COMMAND[] PROGMEM = "FREERAM";
+const char CPU_COMMAND[] PROGMEM = "CPU";
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::processCommand(const String& command,Stream* pStream)
 {
@@ -892,6 +915,11 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
         {
           commandHandled = getFREERAM(commandName,pStream);
         } // FREERAM_COMMAND
+        else
+        if(!strcmp_P(commandName, CPU_COMMAND))
+        {
+          commandHandled = getCPU(commandName,pStream);
+        } // CPU_COMMAND
         
         
         //TODO: тут разбор команды !!!

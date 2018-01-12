@@ -214,6 +214,9 @@ class CoreClass
    // Кол-во свободной памяти
    bool getFREERAM(const char* commandPassed, Stream* pStream);
 
+   // Вид процессора
+   bool getCPU(const char* commandPassed, Stream* pStream);
+
    // печатает результаты обработки известной команды SET в поток
    bool printBackSETResult(bool isOk, const char* command, Stream* pStream);
    
@@ -223,10 +226,9 @@ extern CoreClass Core;
 //--------------------------------------------------------------------------------------------------------------------------------------
 struct CoreStoredData
 {
-  byte* data;
-  byte dataSize;
-  //CoreSensorType sensorType;
-  CoreSensor* sensor;
+  byte* data; // сырые данные
+  byte dataSize; // размер сырых данных
+  CoreSensor* sensor; // датчик, с которого получены данные
 
   operator LuminosityData() const; // возвращает данные как освещённость
   operator TemperatureData() const; // возвращает данные, как температуру
