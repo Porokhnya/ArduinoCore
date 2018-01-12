@@ -864,6 +864,18 @@ void CoreClass::signal(uint16_t signalDelay,CoreSensor* sensor,int storeIndex)
   signals.push_back(ss);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreClass::pushToStorage(CoreSensor* s)
+{
+  for(size_t i=0;i<list.size();i++)
+  {
+    CoreSensor* sensor = list.get(i);
+    if(sensor == s)
+    {
+      readFromSensor(sensor,i);    
+    }
+  } // for  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::readFromSensor(CoreSensor* sensor,int storeIndex)
 {
   CoreStoredData* stored = &(CoreDataStore.list[storeIndex]);
@@ -1011,6 +1023,25 @@ void CoreClass::updateSignals()
       signals[i].sensor->update();
     }
   } // for
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+const char HEX_CHARS[]  PROGMEM = {"0123456789ABCDEF"};
+//--------------------------------------------------------------------------------------------------------------------------------------
+const char* CoreClass::byteToHex(byte i)
+{
+  static char HEX_HOLDER[3] = {0}; // холдер для шестнадцатеричного представления байта в строковом виде
+  
+  int idx = i & 0xF;
+  char char1 = (char) pgm_read_byte_near( HEX_CHARS + idx );
+  i>>=4;
+  idx = i & 0xF;
+  char char2 = (char) pgm_read_byte_near( HEX_CHARS + idx );
+  
+  HEX_HOLDER[0] = char2;
+  HEX_HOLDER[1] = char1;
+  
+  //return Out; 
+  return HEX_HOLDER;  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::update()
@@ -1422,6 +1453,19 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
         result = dtt;
         if(showUnits)
           result += CoreSensor::getUnit(typeOfData);
+      }
+      break;
+
+      case UserData:
+      {
+          // пользовательские данные
+          result = "";
+          for(byte i=0;i<dataStored.dataSize;i++)
+          {
+            result += Core.byteToHex(dataStored.data[i]);
+            result += ' ';
+          }
+          
       }
       break;
 

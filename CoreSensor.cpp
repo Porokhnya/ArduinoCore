@@ -115,6 +115,14 @@ CoreSensor* CoreSensorsFactory::createSensor(CoreSensorType type)
       return NULL;
     #endif            
 
+    case UserDataSensor:
+    
+    #ifdef CORE_USERDATA_SENSOR_ENABLED
+      return new CoreUserDataSensor();
+    #else
+      return NULL;
+    #endif            
+
     //TODO: Тут добавлять создание других датчиков!!!
       
     default:
@@ -158,6 +166,9 @@ String CoreSensor::getUnit(CoreDataType type)
       
     case AnalogPort:
       return "";
+
+    case UserData:
+      return "";
   }
 
   return "";
@@ -187,8 +198,12 @@ CoreDataType CoreSensor::getDataType(CoreSensorType type)
     case AnalogPortState:
       return AnalogPort;
 
+    case UserDataSensor:
+      return UserData;
+
     case Unknown:
       return UnknownType;
+
 
   }
   return UnknownType;
@@ -407,6 +422,47 @@ bool CoreSensorAnalogPort::read(uint8_t* buffer)
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_ANALOGPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_USERDATA_SENSOR_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreUserDataSensor::CoreUserDataSensor() : CoreSensor(UserDataSensor)
+{
+  data = NULL;
+  dataSize = 0;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreUserDataSensor::~CoreUserDataSensor()
+{
+  delete [] data;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint8_t CoreUserDataSensor::getDataSize()
+{
+  return dataSize;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreUserDataSensor::setData(uint8_t* dt,uint8_t sz)
+{
+  delete [] data;
+  dataSize = sz;
+  data = new uint8_t[sz];
+  memcpy(data,dt,sz);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreUserDataSensor::begin(uint8_t* configData)
+{
+  dataSize = *configData;
+  data = new byte[dataSize];
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreUserDataSensor::read(uint8_t* buffer)
+{
+  memcpy(buffer,data,dataSize);
+  
+  return true;  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_USERDATA_SENSOR_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_DHT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------

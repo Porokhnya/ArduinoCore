@@ -102,6 +102,17 @@ class CoreSensors
 
       return result;
     }
+
+    CoreSensor* get(const String& name)
+    {
+      for(size_t i=0;i<list.size();i++)
+      {
+         if(list[i]->getName() == name)
+          return list[i];
+      }
+      return NULL;
+    }
+    
     void clear();
 
   private:
@@ -125,6 +136,11 @@ class CoreClass
 {
 	public:
 		CoreClass();
+
+    const char* byteToHex(byte i);
+
+    // обновляет показания с датчика в хранилище
+    void pushToStorage(CoreSensor* sensor);
 
     char FractDelimiter; // разделитель целой и дробной частей
     byte TemperatureUnit; // вид измерения температуры (в цельсиях или фаренгейтах)
