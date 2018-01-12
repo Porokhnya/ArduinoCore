@@ -9,8 +9,10 @@ CorePinStateAction::CorePinStateAction()
   flags.isActive = true;
   tTimer = 0;
   timerPast = 0;
+  cyclesDone = 0;
   flags.lastPinState = 3;
   memset(&Settings,0,sizeof(Settings));
+  Settings.NumPasses = -1;
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void CorePinStateAction::on()
@@ -39,7 +41,12 @@ void CorePinStateAction::off()
      
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void CorePinStateAction::init(uint8_t pin, uint16_t HoldOnTime, uint16_t HoldOffTime, uint8_t OnLevel, uint8_t OffLevel)
+void CorePinStateAction::reset()
+{
+  cyclesDone = 0;
+}
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+void CorePinStateAction::init(uint8_t pin, int16_t NumPasses, uint16_t HoldOnTime, uint16_t HoldOffTime, uint8_t OnLevel, uint8_t OffLevel)
 {
 
  flags.stateOn = OnLevel;
@@ -47,6 +54,9 @@ void CorePinStateAction::init(uint8_t pin, uint16_t HoldOnTime, uint16_t HoldOff
  Settings.Pin = pin;
  Settings.HoldOnTime = HoldOnTime;
  Settings.HoldOffTime = HoldOffTime;
+ Settings.NumPasses = NumPasses;
+ reset();
+
   
   if(Settings.Pin)
   {
@@ -56,6 +66,7 @@ void CorePinStateAction::init(uint8_t pin, uint16_t HoldOnTime, uint16_t HoldOff
       on();
     else
       off();
+
   }
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -67,6 +78,13 @@ bool CorePinStateAction::isActive()
 void CorePinStateAction::update()
 {
   if(!isActive()) // таймер неактивен, выключаем пин и выходим
+  {
+    off();
+    return;
+  }
+
+  // проверяем, не достигли ли мы максимального кол-ва проходов?
+  if(Settings.NumPasses > 0 && cyclesDone >= Settings.NumPasses)
   {
     off();
     return;
@@ -91,6 +109,7 @@ void CorePinStateAction::update()
       off();
       tTimer = 0;
       flags.isHoldOnTimer = false;
+      cyclesDone++; // прибавляем кол-во циклов
     }
   }
   else
