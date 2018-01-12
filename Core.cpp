@@ -338,6 +338,53 @@ bool CoreConfigIterator::readRecord()
       
     }
     return true; // ESPSettingsRecord
+
+
+    case RS485SettingsRecord: // данные о настройках RS485
+    {
+      DBGLN(F("RS485 SETTINGS FOUND!!!"));
+      #ifdef CORE_RS485_DISPATCHER_ENABLED
+      
+        RS485Settings.UARTSpeed = read();
+        RS485Settings.SerialNumber = read();
+        RS485Settings.DEPin = read();
+        
+      #else
+        // пропускаем три байта
+        read();
+        read();
+        read();
+         
+      #endif
+    }
+    return true;
+
+    case RS485IncomingPacketRecord:
+    {
+      #ifdef CORE_RS485_DISPATCHER_ENABLED
+         byte headerLen = read();
+         byte* header = new byte[headerLen];
+          for(byte k=0;k<headerLen;k++)
+          {
+            header[k] = read();
+          }
+          byte packetLen = read();
+          byte packetID = read();
+
+          RS485.addKnownPacketHeader(header,headerLen,packetLen,packetID);
+
+          delete [] header;
+      #else
+        byte headerLen = read();
+        for(byte k=0;k<headerLen;k++)
+          read();
+
+       read();
+       read();
+      #endif
+      
+    }
+    return true;
     
     
   } // switch(b)
@@ -449,6 +496,10 @@ void CoreClass::clear()
   #ifdef CORE_DS18B20_ENABLED // надо попросить диспетчера DS18B20 очистить всех менеджеров линий
     CoreDS18B20Dispatcher.clear();
   #endif  
+
+  #ifdef CORE_RS485_DISPATCHER_ENABLED
+    RS485.clear();
+  #endif
   
   // очищаем сигналы
   while(signals.size())
@@ -1044,8 +1095,22 @@ const char* CoreClass::byteToHexString(byte i)
   return HEX_HOLDER;  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreClass::begin()
+{
+  #ifdef CORE_RS485_DISPATCHER_ENABLED
+    // обновляем транспорт RS-485
+    RS485.begin();
+  #endif  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::update()
 {
+
+  #ifdef CORE_RS485_DISPATCHER_ENABLED
+    // обновляем транспорт RS-485
+    RS485.update();
+  #endif
+  
   updateSignals(); // обновляем сигналы
   
   unsigned long curMillis = millis();
