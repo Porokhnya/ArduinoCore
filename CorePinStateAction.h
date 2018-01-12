@@ -1,5 +1,5 @@
-#ifndef _CORE_PERIODIC_PIN_ACTION_H
-#define _CORE_PERIODIC_PIN_ACTION_H
+#ifndef _CORE_PIN_STATE_ACTION_H
+#define _CORE_PIN_STATE_ACTION_H
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #include <Arduino.h>
 #include "CoreConfig.h"
