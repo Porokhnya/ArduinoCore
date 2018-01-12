@@ -223,6 +223,7 @@ class CoreDataStoreClass
 
     CoreStoredData get(size_t idx) {return list[idx];};
     CoreStoredData get(const String& name);
+    CoreStoredData get(CoreSensorType type, uint8_t pin);
     size_t size(){return list.size();}
 
     CoreDataList getByType(CoreDataType type); // возвращает список показаний по типу

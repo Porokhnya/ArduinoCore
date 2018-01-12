@@ -1280,6 +1280,33 @@ CoreStoredData CoreDataStoreClass::get(const String& name)
   return dummy;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+CoreStoredData CoreDataStoreClass::get(CoreSensorType type, uint8_t pin)
+{
+  CoreStoredData result;
+  if(!(type == AnalogPortState || type == DigitalPortState))
+    return result;
+
+  CoreDataList lst = getBySensor(type);
+  for(size_t i=0;i<lst.size();i++)
+  {
+    CoreStoredData dt = lst[i];
+    if(type == AnalogPortState)
+    {
+      AnalogPortData apd = dt;
+      if(apd.Pin == pin)
+        return dt;
+    }
+    else
+    {
+      DigitalPortData dpd = dt;
+      if(dpd.Pin == pin)
+        return dt;      
+    }
+  }
+
+  return result;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 CoreDataList CoreDataStoreClass::getByType(CoreDataType type)
 {
   CoreDataList result;

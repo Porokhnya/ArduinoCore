@@ -353,6 +353,13 @@ void loop()
     Serial.print(F("\tCURRENT 5V VALUE: "));
     Serial.println(current5V.Value);
 
+
+    // теперь получаем данные по типу датчика и пину
+    AnalogPortData my5VData = CoreDataStore.get(AnalogPortState,power_200);
+    Serial.print(F("\tCURRENT power_200 VALUE: "));
+    Serial.println(my5VData.Value);
+    
+
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     
     // теперь получаем показания всех датчиков влажности
