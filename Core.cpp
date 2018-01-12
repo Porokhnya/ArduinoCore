@@ -187,13 +187,14 @@ bool CoreConfigIterator::readRecord()
 
         writeOut(dataLen);
 
-#ifdef _CORE_DEBUG
-  if(!outStream)
-  {      
-        DBG(F("Stored data len: "));
-        DBGLN(dataLen);
-  }
-#endif        
+        #ifdef _CORE_DEBUG
+          if(!outStream)
+          {      
+                DBG(F("Stored data len: "));
+                DBGLN(dataLen);
+          }
+        #endif
+                
         // есть информация по датчику, читаем её
         byte* record = new byte[dataLen];
         for(byte i=0;i<dataLen;i++)
@@ -251,12 +252,13 @@ bool CoreConfigIterator::readRecord()
     case ESPSettingsRecord: // данные о настройках ESP
     {
 
-#ifdef _CORE_DEBUG
-  if(!outStream)
-  {      
-    DBGLN(F("ESP SETTINGS FOUND !!!"));
-  }
-#endif  
+      #ifdef _CORE_DEBUG
+        if(!outStream)
+        {      
+          DBGLN(F("ESP SETTINGS FOUND !!!"));
+        }
+      #endif  
+      
       char symbol = '\0';
 
       // флаг - поднимать ли точку доступа
@@ -265,7 +267,7 @@ bool CoreConfigIterator::readRecord()
         if(!writeOut(b))
           ESPTransportSettings.Flags.CreateAP = b;
       #else
-        read(); // пропускаем
+        writeOut(read()); // пропускаем
       #endif // CORE_ESP_TRANSPORT_ENABLED
 
       // имя точки доступа (набор байт, заканчивающийся нулевым байтом)
@@ -288,20 +290,22 @@ bool CoreConfigIterator::readRecord()
             
         } while(symbol != '\0');
 
-#ifdef _CORE_DEBUG
-  if(!outStream)
-  {
-        DBG(F("AP Name: "));
-        DBGLN(ESPTransportSettings.APName);
-  }
-#endif  
+        #ifdef _CORE_DEBUG
+          if(!outStream)
+          {
+                DBG(F("AP Name: "));
+                DBGLN(ESPTransportSettings.APName);
+          }
+        #endif  
         
       #else
         // пропускаем
         do
         {
           symbol = read();
+          writeOut(symbol);
         } while(symbol != '\0');
+        
       #endif // CORE_ESP_TRANSPORT_ENABLED
 
 
@@ -325,20 +329,22 @@ bool CoreConfigIterator::readRecord()
             
         } while(symbol != '\0');
 
-#ifdef _CORE_DEBUG
-  if(!outStream)
-  {
-        DBG(F("AP Password: "));
-        DBGLN(ESPTransportSettings.APPassword);
-  }
-#endif  
+        #ifdef _CORE_DEBUG
+          if(!outStream)
+          {
+                DBG(F("AP Password: "));
+                DBGLN(ESPTransportSettings.APPassword);
+          }
+        #endif  
         
       #else
         // пропускаем
         do
         {
           symbol = read();
+          writeOut(symbol);
         } while(symbol != '\0');
+        
       #endif // CORE_ESP_TRANSPORT_ENABLED      
 
 
@@ -348,7 +354,7 @@ bool CoreConfigIterator::readRecord()
         if(!writeOut(b))
           ESPTransportSettings.Flags.ConnectToRouter = b;
       #else
-        read(); // пропускаем
+        writeOut(read()); // пропускаем
       #endif // CORE_ESP_TRANSPORT_ENABLED
 
 
@@ -369,22 +375,26 @@ bool CoreConfigIterator::readRecord()
           }
           else
             writeOut(symbol);
+            
         } while(symbol != '\0');
 
-#ifdef _CORE_DEBUG
-  if(!outStream)
-  {
-        DBG(F("Router SSID: "));
-        DBGLN(ESPTransportSettings.RouterID);
-  }
-#endif  
+        #ifdef _CORE_DEBUG
+          if(!outStream)
+          {
+                DBG(F("Router SSID: "));
+                DBGLN(ESPTransportSettings.RouterID);
+          }
+        #endif  
         
       #else
         // пропускаем
         do
         {
           symbol = read();
+          writeOut(symbol);
+          
         } while(symbol != '\0');
+        
       #endif // CORE_ESP_TRANSPORT_ENABLED            
 
 
@@ -405,20 +415,23 @@ bool CoreConfigIterator::readRecord()
             writeOut(symbol);
         } while(symbol != '\0');
 
-#ifdef _CORE_DEBUG
-  if(!outStream)
-  {
-        DBG(F("Router Password: "));
-        DBGLN(ESPTransportSettings.RouterPassword);
-  }
-#endif  
+          #ifdef _CORE_DEBUG
+            if(!outStream)
+            {
+                  DBG(F("Router Password: "));
+                  DBGLN(ESPTransportSettings.RouterPassword);
+            }
+          #endif  
         
       #else
         // пропускаем
         do
         {
           symbol = read();
+          writeOut(symbol);
+          
         } while(symbol != '\0');
+        
       #endif // CORE_ESP_TRANSPORT_ENABLED          
 
 
@@ -430,7 +443,7 @@ bool CoreConfigIterator::readRecord()
           ESPTransportSettings.UARTSpeed = b;
       #else
         // пропускаем
-        read();
+        writeOut(read());
       #endif // CORE_ESP_TRANSPORT_ENABLED
 
       // номер Serial, который используется для работы с ESP (1 - Serial1, 2 - Serial2, 3 - Serial 3)
@@ -441,7 +454,7 @@ bool CoreConfigIterator::readRecord()
           ESPTransportSettings.SerialNumber = b;
       #else
         // пропускаем
-        read();
+        writeOut(read());
       #endif // CORE_ESP_TRANSPORT_ENABLED
       
       // использовать ли пин пересброса питания при зависании ESP (0 - не использовать, 1 - использовать)
@@ -452,7 +465,7 @@ bool CoreConfigIterator::readRecord()
           ESPTransportSettings.Flags.UseRebootPin = b;
       #else
         // пропускаем
-        read();
+        writeOut(read());
       #endif // CORE_ESP_TRANSPORT_ENABLED
       
       // номер пина для пересброса питания ESP
@@ -463,7 +476,7 @@ bool CoreConfigIterator::readRecord()
           ESPTransportSettings.RebootPin = b;
       #else
         // пропускаем
-        read();
+        writeOut(read());
       #endif // CORE_ESP_TRANSPORT_ENABLED
 
       // кол-во секунд, по истечении которых модем считается зависшим (не пришёл ответ на команду)
@@ -474,7 +487,7 @@ bool CoreConfigIterator::readRecord()
           ESPTransportSettings.HangTimeout = b;
       #else
         // пропускаем
-        read();
+        writeOut(read());
       #endif // CORE_ESP_TRANSPORT_ENABLED
 
       // сколько секунд держать питание выключенным при перезагрузке ESP, если он завис
@@ -485,7 +498,7 @@ bool CoreConfigIterator::readRecord()
           ESPTransportSettings.HangPowerOffTime = b;
       #else
         // пропускаем
-        read();
+        writeOut(read());
       #endif // CORE_ESP_TRANSPORT_ENABLED
       
       // сколько секунд ждать загрузки модема при инициализации/переинициализации
@@ -496,7 +509,7 @@ bool CoreConfigIterator::readRecord()
           ESPTransportSettings.WaitInitTIme = b;
       #else
         // пропускаем
-        read();
+        writeOut(read());
       #endif // CORE_ESP_TRANSPORT_ENABLED
 
       // уровень для включения питания (1 - HIGH, 0 - LOW)
@@ -507,7 +520,7 @@ bool CoreConfigIterator::readRecord()
           ESPTransportSettings.PowerOnLevel = b;
       #else
         // пропускаем
-        read();
+        writeOut(read());
       #endif // CORE_ESP_TRANSPORT_ENABLED
       
       
@@ -517,13 +530,13 @@ bool CoreConfigIterator::readRecord()
 
     case RS485SettingsRecord: // данные о настройках RS485
     {
-#ifdef _CORE_DEBUG
-  if(!outStream)
-  {      
-      DBGLN(F("RS485 SETTINGS FOUND!!!"));
-  }
-#endif  
-
+      
+      #ifdef _CORE_DEBUG
+        if(!outStream)
+        {      
+            DBGLN(F("RS485 SETTINGS FOUND!!!"));
+        }
+      #endif
       
       #ifdef CORE_RS485_TRANSPORT_ENABLED
 
@@ -541,9 +554,9 @@ bool CoreConfigIterator::readRecord()
         
       #else
         // пропускаем три байта
-        read();
-        read();
-        read();
+        writeOut(read());
+        writeOut(read());
+        writeOut(read());
          
       #endif
     }
@@ -552,14 +565,18 @@ bool CoreConfigIterator::readRecord()
     case RS485IncomingPacketRecord:
     {
       #ifdef CORE_RS485_TRANSPORT_ENABLED
+      
          byte headerLen = read();
          writeOut(headerLen);
+         
          byte* header = new byte[headerLen];
+         
           for(byte k=0;k<headerLen;k++)
           {
             header[k] = read();
             writeOut(header[k]);
           }
+          
           byte packetLen = read();
           byte packetID = read();
 
@@ -571,12 +588,18 @@ bool CoreConfigIterator::readRecord()
 
           delete [] header;
       #else
+      
         byte headerLen = read();
+        writeOut(headerLen);
+        
         for(byte k=0;k<headerLen;k++)
-          read();
+        {
+          writeOut(read());
+        }
 
-       read();
-       read();
+       writeOut(read());
+       writeOut(read());
+       
       #endif
       
     }
