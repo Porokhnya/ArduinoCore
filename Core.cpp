@@ -666,6 +666,21 @@ bool CoreClass::getTRANSPORT(const char* commandPassed, Stream* pStream)
     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::getFREERAM(const char* commandPassed, Stream* pStream)
+{
+  if(commandPassed)
+  {
+      pStream->print(CORE_COMMAND_ANSWER_OK);
+      pStream->print(commandPassed);
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
+  }
+
+  pStream->println(getFreeMemory());
+
+  return true;
+    
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::getSENSORS(const char* commandPassed, Stream* pStream)
 {
 
@@ -806,14 +821,12 @@ const char DATETIME_COMMAND[] PROGMEM = "DATETIME";
 #endif
 const char SENSORS_COMMAND[] PROGMEM = "SENSORS";
 const char TRANSPORT_COMMAND[] PROGMEM = "TRANSPORT";
+const char FREERAM_COMMAND[] PROGMEM = "FREERAM";
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::processCommand(const String& command,Stream* pStream)
 {
-   DBG(F("Command resuested: ")); 
-   DBGLN(command);
-
     bool commandHandled = false;
-    // 
+
     if(command.startsWith(CORE_COMMAND_SET))
     {
       // команда на установку свойств
@@ -874,6 +887,11 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
         {
           commandHandled = getTRANSPORT(commandName,pStream);
         } // TRANSPORT_COMMAND
+        else
+        if(!strcmp_P(commandName, FREERAM_COMMAND))
+        {
+          commandHandled = getFREERAM(commandName,pStream);
+        } // FREERAM_COMMAND
         
         
         //TODO: тут разбор команды !!!
