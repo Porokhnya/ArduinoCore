@@ -189,6 +189,20 @@ void setup()
 
   ramFree();
 
+      // грузим конфиг из flash в EEPROM
+  Core.saveConfig(unitTestConfig,sizeof(unitTestConfig),true);
+  if(Core.loadConfig())
+  {
+    Serial.println(F("LOADED FROM EEPROM!"));
+  }     
+  else
+  {
+    Serial.println(F("ERROR LOADING CONFIG!!!"));
+  }
+
+
+  /*
+
   // пробуем загрузить конфиг из EEPROM, если не получится - грузим из флеша конфиг по умолчанию
   if(Core.loadConfig())
   {
@@ -206,7 +220,7 @@ void setup()
       Serial.println(F("LOADED FROM EEPROM AFTER SAVE!"));
     }
   }
-
+*/
 
 
   ramFree();
@@ -229,7 +243,7 @@ void loop()
   {
     CoreStoredData dataStored = catchList[i];
     DigitalPortData dt = dataStored;
-    if(dt.Pin == 13)
+    if(dt.Pin == LED_BUILTIN)
     {
       // наш тестовый пин
       static int state = -1;
@@ -241,7 +255,7 @@ void loop()
         state = dt.Value;
         
         Serial.println(F("-----------------------------------------------------------------"));
-        Serial.print(F("PIN 13 TRIGGERED, VALUE: "));
+        Serial.print(F("BUILTIN LED TRIGGERED, VALUE: "));
         if(dt.Value)
           Serial.println(F("HIGH"));
         else          

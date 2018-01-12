@@ -23,7 +23,7 @@
   #if MEMORY_USED == 1
     #pragma message "CHANGED MEMORY_USED AUTOMATICALLY!!!"
     #undef MEMORY_USED
-    #define MEMORY_USED 6
+    #define MEMORY_USED 2
   #endif
 #endif
 //--------------------------------------------------------------------------------------------------------------------------------------
