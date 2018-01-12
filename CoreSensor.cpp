@@ -387,7 +387,7 @@ CoreSensorAnalogPort::CoreSensorAnalogPort() : CoreSensor(AnalogPortState)
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreSensorAnalogPort::getDataSize()
 {
-  return 2;
+  return 3;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorAnalogPort::begin(uint8_t* configData)
@@ -399,7 +399,9 @@ bool CoreSensorAnalogPort::read(uint8_t* buffer)
 {
   
  *buffer++ = pin;
- *buffer = analogRead(pin);
+
+ uint16_t val = analogRead(pin);
+ memcpy(buffer,&val,sizeof(val));
   
   return true;  
 }

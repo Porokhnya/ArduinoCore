@@ -1144,7 +1144,7 @@ CoreStoredData::operator DigitalPortData() const
   if(!hasData())
     return result;
     
-  if(dataSize < sizeof(DigitalPortData))
+  if(dataSize < 2)
     return result;
 
   memcpy(&(result),data,sizeof(DigitalPortData));
@@ -1159,10 +1159,12 @@ CoreStoredData::operator AnalogPortData() const
   if(!hasData())
     return result;
     
-  if(dataSize < sizeof(AnalogPortData))
+  if(dataSize < 3)
     return result;
 
-  memcpy(&(result),data,sizeof(AnalogPortData));
+  result.Pin = data[0];
+  memcpy(&(result.Value),&(data[1]),sizeof(uint16_t));
+  
   return result;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
