@@ -297,18 +297,22 @@ void loop()
   unsigned long curMillis = millis();
 
   // каждую секунду обновляем там тестовый пользовательский датчик
-  static unsigned long userDataSensorMillis = 0;
-  if(curMillis - userDataSensorMillis > 1000)
+  
+  if(mySensor) // если такой датчик есть в конфиге
   {
-    userDataSensorMillis = curMillis;
-    bUserData[0]++;
-    bUserData[1]--;
-
-    // устанавливаем данные в датчик
-    mySensor->setData(bUserData,sizeof(bUserData));
-    // говорим ядру, чтобы НЕМЕДЛЕННО поместило данные с датчика в хранилище
-    Core.pushToStorage(mySensor);
-  }
+    static unsigned long userDataSensorMillis = 0;
+    if(curMillis - userDataSensorMillis > 1000)
+    {
+      userDataSensorMillis = curMillis;
+      bUserData[0]++;
+      bUserData[1]--;
+  
+      // устанавливаем данные в датчик
+      mySensor->setData(bUserData,sizeof(bUserData));
+      // говорим ядру, чтобы НЕМЕДЛЕННО поместило данные с датчика в хранилище
+      Core.pushToStorage(mySensor);
+    }
+  } // if(mySensor)
 
 
   // обновляем нашу тестовую мигалку
