@@ -111,7 +111,7 @@ const byte unitTestConfig[] PROGMEM = { // тестовый конфиг в па
       'U', 'D', '\0', // даём датчику имя "UD"
       UserDataSensor, // пользовательские данные любого вида
       1, // длина данных
-      2, // длина буфера, хранимого датчиков - 2 байта
+      2, // длина буфера, хранимого датчиком - 2 байта
     //---------------------------------------
       ESPSettingsRecord, // настройки ESP
       0, // флаг - поднимать ли точку доступа (1 - поднимать, 0 - не поднимать)
@@ -296,19 +296,21 @@ void loop()
   } // for
   unsigned long curMillis = millis();
 
-  // каждую секунду обновляем там тестовый пользовательский датчик
-  
+  // каждую секунду обновляем показания в нашем тестовом пользовательском датчике
   if(mySensor) // если такой датчик есть в конфиге
   {
     static unsigned long userDataSensorMillis = 0;
     if(curMillis - userDataSensorMillis > 1000)
     {
       userDataSensorMillis = curMillis;
+
+      // просто меняем байтики
       bUserData[0]++;
       bUserData[1]--;
   
       // устанавливаем данные в датчик
       mySensor->setData(bUserData,sizeof(bUserData));
+      
       // говорим ядру, чтобы НЕМЕДЛЕННО поместило данные с датчика в хранилище
       Core.pushToStorage(mySensor);
     }
@@ -319,7 +321,7 @@ void loop()
   led13Blinker.update();
 
 
-  if(curMillis - lastMillis > 3000) // каждые 3 секунды и выводим данные с датчиков в Serial
+  if(curMillis - lastMillis > 3000) // каждые 3 секунды выводим данные с датчиков в Serial
   {
     // данные с датчиков обновляются ядром автоматически, тут нам надо только их прочесть
     

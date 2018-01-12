@@ -103,7 +103,7 @@ class CoreSensors
       return result;
     }
 
-    CoreSensor* get(const String& name)
+    CoreSensor* get(const String& name) // возвращает датчик по его мнемоническому имени
     {
       for(size_t i=0;i<list.size();i++)
       {
@@ -137,14 +137,15 @@ class CoreClass
 	public:
 		CoreClass();
 
-    const char* byteToHexString(byte i);
-
-    // обновляет показания с датчика в хранилище
-    void pushToStorage(CoreSensor* sensor);
-
     char FractDelimiter; // разделитель целой и дробной частей
     byte TemperatureUnit; // вид измерения температуры (в цельсиях или фаренгейтах)
-    unsigned long SensorsUpdateInterval;
+    unsigned long SensorsUpdateInterval; // интервал обновления показаний с датчиков
+
+
+    const char* byteToHexString(byte i); // конвертирует байт в его строковое представление в шестнадцатеричном виде
+
+    void pushToStorage(CoreSensor* sensor); // обновляет показания с датчика в хранилище
+
 
     int getPinMode(int pin); // возвращает режим работы пина - вход или выход
     int getPinState(int pin); // возвращает состояние пина, вне зависимости от его режима работы
@@ -154,10 +155,10 @@ class CoreClass
     void printVersion(Stream& s); // печатает версию ядра в поток
     void printSupportedSensors(Stream& s); // печатает список поддерживаемых датчиков в поток
     
-    int getFreeMemory();
+    int getFreeMemory(); // возвращает кол-во свободной оперативной памяти
 
-   uint8_t memRead(unsigned int address);
-   void memWrite(unsigned int address, uint8_t val);
+   uint8_t memRead(unsigned int address); // читает байт из EEPROM
+   void memWrite(unsigned int address, uint8_t val); // пишет байт в EEPROM
 
    // обрабатывает команду и пишет результат её обработки в вызвавший поток. Команды приходят во внутреннем формате, и в поток ответ пишется тоже во внутреннем формате
    void processCommand(const String& command,Stream* outStream);
@@ -170,7 +171,7 @@ class CoreClass
    
    void clear(); // очищает все датчики из списка, сбрасывает конфиг в ноль - после вызова этого метода датчиков больше нет в системе
 
-   CoreSensors* Sensors() {return &list;}
+   CoreSensors* Sensors() {return &list;} // возвращает список датчиков
 
    // грузит конфиг из EEPROM
    bool loadConfig(); 
