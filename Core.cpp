@@ -1028,7 +1028,7 @@ void CoreClass::readFromSensor(CoreSensor* sensor,int storeIndex)
 int CoreClass::getPinMode(int p)
 {
 
-  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || ( defined (__arm__) && defined (__SAM3X8E__) )
      const int max_pin = 69;
   #else
      const int max_pin = 19;
