@@ -1,7 +1,7 @@
 #include "CoreTransport.h"
 #include "Core.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
-#ifdef CORE_RS485_DISPATCHER_ENABLED
+#ifdef CORE_RS485_TRANSPORT_ENABLED
 CoreRS485Settings RS485Settings;
 CoreRS485 RS485;
 #endif
@@ -40,7 +40,7 @@ void CoreTransport::setClientBuffer(CoreTransportClient& client,const uint8_t* b
   client.setBuffer(buff,sz);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-#ifdef CORE_RS485_DISPATCHER_ENABLED
+#ifdef CORE_RS485_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreRS485::CoreRS485()
 {
@@ -84,7 +84,6 @@ void CoreRS485::onReceive(RS485ReceiveDataHandler handler)
 void CoreRS485::begin()
 {
   workStream = getMyStream(RS485Settings.SerialNumber);
-
   
   if(RS485Settings.UARTSpeed > 0)
     workStream->begin(RS485Settings.UARTSpeed*9600);
@@ -331,7 +330,7 @@ void CoreRS485::sendData(byte* data, byte dataSize)
   switchToReceive();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-#endif // CORE_RS485_DISPATCHER_ENABLED
+#endif // CORE_RS485_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 
 

@@ -208,6 +208,9 @@ class CoreClass
   // Список поддерживаемых датчиков
    bool getSENSORS(const char* commandPassed, Stream* pStream);
 
+   // Список поддерживаемых транспортов
+   bool getTRANSPORT(const char* commandPassed, Stream* pStream);
+
    // печатает результаты обработки известной команды SET в поток
    bool printBackSETResult(bool isOk, const char* command, Stream* pStream);
    

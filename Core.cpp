@@ -343,7 +343,7 @@ bool CoreConfigIterator::readRecord()
     case RS485SettingsRecord: // данные о настройках RS485
     {
       DBGLN(F("RS485 SETTINGS FOUND!!!"));
-      #ifdef CORE_RS485_DISPATCHER_ENABLED
+      #ifdef CORE_RS485_TRANSPORT_ENABLED
       
         RS485Settings.UARTSpeed = read();
         RS485Settings.SerialNumber = read();
@@ -361,7 +361,7 @@ bool CoreConfigIterator::readRecord()
 
     case RS485IncomingPacketRecord:
     {
-      #ifdef CORE_RS485_DISPATCHER_ENABLED
+      #ifdef CORE_RS485_TRANSPORT_ENABLED
          byte headerLen = read();
          byte* header = new byte[headerLen];
           for(byte k=0;k<headerLen;k++)
@@ -497,7 +497,7 @@ void CoreClass::clear()
     CoreDS18B20Dispatcher.clear();
   #endif  
 
-  #ifdef CORE_RS485_DISPATCHER_ENABLED
+  #ifdef CORE_RS485_TRANSPORT_ENABLED
     RS485.clear();
   #endif
   
@@ -636,6 +636,36 @@ bool CoreClass::setDATETIME(const char* param)
   #endif // CORE_DS3231_ENABLED
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::getTRANSPORT(const char* commandPassed, Stream* pStream)
+{
+  if(commandPassed)
+  {
+      pStream->print(CORE_COMMAND_ANSWER_OK);
+      pStream->print(commandPassed);
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
+  }
+
+  int written = 0;
+  #ifdef CORE_ESP_TRANSPORT_ENABLED
+   pStream->print(F("ESP")); 
+   written++;
+  #endif
+
+  #ifdef CORE_RS485_TRANSPORT_ENABLED
+    if(written)
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+      
+    written++;
+    pStream->print(F("RS485")); 
+  #endif  
+
+
+  pStream->println();
+
+  return true;
+    
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::getSENSORS(const char* commandPassed, Stream* pStream)
 {
 
@@ -691,11 +721,27 @@ bool CoreClass::getSENSORS(const char* commandPassed, Stream* pStream)
     written++;
     pStream->print(F("DPORT")); 
   #endif  
+
+  #ifdef CORE_ANALOGPORT_ENABLED
+    if(written)
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+      
+    written++;
+    pStream->print(F("APORT")); 
+  #endif  
+
+  #ifdef CORE_USERDATA_SENSOR_ENABLED
+    if(written)
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+      
+    written++;
+    pStream->print(F("USENSOR")); 
+  #endif  
   
 
   pStream->println();
 
-    return true;
+  return true;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::getDATETIME(const char* commandPassed, Stream* pStream)
@@ -759,6 +805,7 @@ bool CoreClass::printBackSETResult(bool isOK, const char* command, Stream* pStre
 const char DATETIME_COMMAND[] PROGMEM = "DATETIME";
 #endif
 const char SENSORS_COMMAND[] PROGMEM = "SENSORS";
+const char TRANSPORT_COMMAND[] PROGMEM = "TRANSPORT";
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::processCommand(const String& command,Stream* pStream)
 {
@@ -822,6 +869,12 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
           commandHandled = getSENSORS(commandName,pStream);
                     
         } // SENSORS_COMMAND
+        else
+        if(!strcmp_P(commandName, TRANSPORT_COMMAND))
+        {
+          commandHandled = getTRANSPORT(commandName,pStream);
+        } // TRANSPORT_COMMAND
+        
         
         //TODO: тут разбор команды !!!
         
@@ -1097,7 +1150,7 @@ const char* CoreClass::byteToHexString(byte i)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::begin()
 {
-  #ifdef CORE_RS485_DISPATCHER_ENABLED
+  #ifdef CORE_RS485_TRANSPORT_ENABLED
     // обновляем транспорт RS-485
     RS485.begin();
   #endif  
@@ -1106,7 +1159,7 @@ void CoreClass::begin()
 void CoreClass::update()
 {
 
-  #ifdef CORE_RS485_DISPATCHER_ENABLED
+  #ifdef CORE_RS485_TRANSPORT_ENABLED
     // обновляем транспорт RS-485
     RS485.update();
   #endif
