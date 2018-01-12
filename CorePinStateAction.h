@@ -9,7 +9,7 @@
 // структура таймера
 typedef struct
 {
-  byte Pin; // номер пина, на который таймер будет выдавать сигнал
+  uint8_t Pin; // номер пина, на который таймер будет выдавать сигнал
   uint16_t HoldOnTime; // сколько времени держать сигнал "включено", в миллисекундах
   uint16_t HoldOffTime; // сколько времени держать сигнал "выключено", в миллисекундах
     
@@ -18,10 +18,10 @@ typedef struct
 typedef struct
 {
   bool isHoldOnTimer : 1; // если true - то ждём истечения периода включения, иначе - истечение периода выключения
-  byte lastPinState : 2;
-  byte isActive : 1;
-  byte stateOn : 2; 
-  byte stateOff : 2; 
+  uint8_t lastPinState : 2;
+  uint8_t isActive : 1;
+  uint8_t stateOn : 2; 
+  uint8_t stateOff : 2; 
   
 } CorePinStateFlags;
 //--------------------------------------------------------------------------------------------------------------------------------
@@ -35,7 +35,7 @@ class CorePinStateAction
   void update(); // обновляет таймер
 
   bool isActive(); // возвращает true, если таймер активен
-  void init(byte pin, uint16_t HoldOnTime, uint16_t HoldOffTime, byte OnLevel=HIGH, byte OffLevel=LOW); // инициализирует таймер
+  void init(uint8_t pin, uint16_t HoldOnTime, uint16_t HoldOffTime, uint8_t OnLevel=HIGH, uint8_t OffLevel=LOW); // инициализирует таймер
 
   void on();
   void off();

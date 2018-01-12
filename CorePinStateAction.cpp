@@ -39,7 +39,7 @@ void CorePinStateAction::off()
      
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void CorePinStateAction::init(byte pin, uint16_t HoldOnTime, uint16_t HoldOffTime, byte OnLevel, byte OffLevel)
+void CorePinStateAction::init(uint8_t pin, uint16_t HoldOnTime, uint16_t HoldOffTime, uint8_t OnLevel, uint8_t OffLevel)
 {
 
  flags.stateOn = OnLevel;
