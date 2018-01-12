@@ -19,10 +19,34 @@ CoreConfigIterator::CoreConfigIterator()
   address = NULL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool CoreConfigIterator::first(const void* addr, uint16_t sz)
+bool CoreConfigIterator::writeOut(byte b)
 {
+  if(outStream)
+  {
+    if(asHexString)
+    {
+      outStream->print(Core.byteToHexString(b));
+    }
+    else
+    {
+      outStream->write(b);
+    }
+    return true;
+  }  
+  return false;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreConfigIterator::first(const void* addr, uint16_t sz, Stream* out, bool asHex)
+{
+  outStream = out; // запоминаем поток, в который нас попросили просто прочитать данные
+  asHexString = asHex; // запоминаем формат, в котором нас попросили прочитать данные
 
-  DBGLN(F("Start iterate config..."));
+#ifdef _CORE_DEBUG
+  if(!outStream)
+  {
+    DBGLN(F("Start iterate config..."));
+  }
+#endif  
 
   if(sz < 4) // у нас минимум 4 байта на голову и хвост
     return false;
@@ -34,23 +58,49 @@ bool CoreConfigIterator::first(const void* addr, uint16_t sz)
   // проверяем заголовок
   if(read() != CORE_HEADER1)
   {
-    DBGLN(F("!CORE_HEADER1"));
+    #ifdef _CORE_DEBUG
+    if(!outStream)
+    {
+      DBGLN(F("!CORE_HEADER1"));
+    }
+    #endif
     return false;
   }
 
   if(read() != CORE_HEADER2)
   {
-    DBGLN(F("!CORE_HEADER2"));
+    #ifdef _CORE_DEBUG
+    if(!outStream)
+    {
+      DBGLN(F("!CORE_HEADER2"));
+    }
+    #endif
+    
     return false;
   }
 
   if(read() != CORE_HEADER3)
   {
-    DBGLN(F("!CORE_HEADER3"));
+    #ifdef _CORE_DEBUG
+    if(!outStream)
+    {
+      DBGLN(F("!CORE_HEADER3"));
+    }
+    #endif
     return false;
   }
   // встали за заголовок, на начало данных
-  DBGLN(F("Header OK."));
+  #ifdef _CORE_DEBUG
+  if(!outStream)
+  {
+    DBGLN(F("Header OK."));
+  }
+  #endif
+
+  // смотрим - надо ли вывести конфиг в поток?
+  writeOut(CORE_HEADER1);
+  writeOut(CORE_HEADER2);
+  writeOut(CORE_HEADER3);
 
   return readRecord(); // если есть хоть одна запись - она прочитается
     
@@ -76,16 +126,26 @@ byte CoreConfigIterator::read()
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreConfigIterator::readRecord()
 {
-  byte b = read();
-  //if(!(b == SensorRecord))
-  if(!(b > DummyFirstRecord && b < DummyLastRecord))
+  byte recordType = read();
+
+  if(!(recordType > DummyFirstRecord && recordType < DummyLastRecord))
   {
     // неизвестный тип записи, выходим
-    DBGLN(F("End of config."));
+    #ifdef _CORE_DEBUG
+    if(!outStream)
+    {
+      DBGLN(F("End of config."));
+    }
+    #endif
+
+    writeOut(CORE_HEADER1);
+    
     return false;
   }
 
-  switch(b)
+  writeOut(recordType);
+
+  switch(recordType)
   {
     case SensorRecord: // данные по датчику
     {
@@ -97,29 +157,55 @@ bool CoreConfigIterator::readRecord()
       {
         ch = read();
         if(ch != '\0')
-          sensorName += ch;
+        {
+          if(!writeOut(ch))
+          {
+            sensorName += ch;
+          }
+        }
+        else
+          writeOut(ch);
+          
       } while(ch != '\0');
       
         // тут читаем тип датчика
-        b = read();
+        byte b = read();
+        writeOut(b);
       
-        DBG(F("Type of sensor: "));
-        DBGLN(b);
+        #ifdef _CORE_DEBUG
+        if(!outStream)
+        {
+          DBG(F("Type of sensor: "));
+          DBGLN(b);
+        }
+        #endif
       
         CoreSensorType type = (CoreSensorType) b;
       
         // читаем длину данных, сохранённых датчиком
         byte dataLen = read();
-      
+
+        writeOut(dataLen);
+
+#ifdef _CORE_DEBUG
+  if(!outStream)
+  {      
         DBG(F("Stored data len: "));
         DBGLN(dataLen);
-         
+  }
+#endif        
         // есть информация по датчику, читаем её
         byte* record = new byte[dataLen];
         for(byte i=0;i<dataLen;i++)
+        {
           record[i] = read();
+          writeOut(record[i]);
+          
+        }
       
-        applySensorRecord(sensorName,type,record);
+        if(!outStream)
+          applySensorRecord(sensorName,type,record);
+          
         delete [] record;
             
     }
@@ -127,55 +213,88 @@ bool CoreConfigIterator::readRecord()
 
     case FractDelimiterRecord: // разделитель целой и дробной частей
     {
-      Core.FractDelimiter = read();
-      DBG(F("FractDelimiter: "));
-      DBGLN(Core.FractDelimiter);
+      byte b = read();
+      if(!writeOut(b))
+      {
+        Core.FractDelimiter = b;
+        DBG(F("FractDelimiter: "));
+        DBGLN(Core.FractDelimiter);
+      }
     }
     return true; // FractDelimiterRecord
 
     case TemperatureUnitRecord: // вид измеряемой температуры
     {
-      Core.TemperatureUnit = read();
-      DBG(F("TemperatureUnit: "));
-      DBGLN(Core.TemperatureUnit);
+      byte b = read();
+      if(!writeOut(b))
+      {
+        Core.TemperatureUnit = b;
+        DBG(F("TemperatureUnit: "));
+        DBGLN(Core.TemperatureUnit);
+      }
     }
     return true; // TemperatureUnitRecord
 
     case SensorsUpdateIntervalRecord: // интервал опроса датчиков
     {
-      Core.SensorsUpdateInterval = read();
-      Core.SensorsUpdateInterval *= 1000; // переводим в миллисекунды
-      DBG(F("SensorsUpdateInterval: "));
-      DBGLN(Core.SensorsUpdateInterval);      
+      byte b = read();
+      if(!writeOut(b))
+      {
+        Core.SensorsUpdateInterval = b;
+        Core.SensorsUpdateInterval *= 1000; // переводим в миллисекунды
+        DBG(F("SensorsUpdateInterval: "));
+        DBGLN(Core.SensorsUpdateInterval);      
+      }
     }
     return true; // SensorsUpdateIntervalRecord
 
     case ESPSettingsRecord: // данные о настройках ESP
     {
 
-      DBGLN(F("ESP SETTINGS FOUND !!!"));
+#ifdef _CORE_DEBUG
+  if(!outStream)
+  {      
+    DBGLN(F("ESP SETTINGS FOUND !!!"));
+  }
+#endif  
       char symbol = '\0';
 
       // флаг - поднимать ли точку доступа
       #ifdef CORE_ESP_TRANSPORT_ENABLED
-        ESPTransportSettings.Flags.CreateAP = read();
+        byte b = read();
+        if(!writeOut(b))
+          ESPTransportSettings.Flags.CreateAP = b;
       #else
         read(); // пропускаем
       #endif // CORE_ESP_TRANSPORT_ENABLED
 
       // имя точки доступа (набор байт, заканчивающийся нулевым байтом)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
+      
         // сохраняем
-        ESPTransportSettings.APName = "";
+        if(!outStream)
+          ESPTransportSettings.APName = "";
+          
         do
         {
           symbol = read();
           if(symbol != '\0')
-            ESPTransportSettings.APName += symbol;
+          {
+            if(!writeOut(symbol))
+              ESPTransportSettings.APName += symbol;
+          }
+          else
+            writeOut(symbol);
+            
         } while(symbol != '\0');
 
+#ifdef _CORE_DEBUG
+  if(!outStream)
+  {
         DBG(F("AP Name: "));
         DBGLN(ESPTransportSettings.APName);
+  }
+#endif  
         
       #else
         // пропускаем
@@ -189,16 +308,30 @@ bool CoreConfigIterator::readRecord()
       // пароль точки доступа (набор байт, заканчивающийся нулевым байтом)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
-        ESPTransportSettings.APPassword = "";
+        if(!outStream)
+          ESPTransportSettings.APPassword = "";
+          
         do
         {
           symbol = read();
           if(symbol != '\0')
-            ESPTransportSettings.APPassword += symbol;
+          {
+            if(!writeOut(symbol))
+              ESPTransportSettings.APPassword += symbol;
+              
+          }
+          else
+            writeOut(symbol);
+            
         } while(symbol != '\0');
 
+#ifdef _CORE_DEBUG
+  if(!outStream)
+  {
         DBG(F("AP Password: "));
         DBGLN(ESPTransportSettings.APPassword);
+  }
+#endif  
         
       #else
         // пропускаем
@@ -211,7 +344,9 @@ bool CoreConfigIterator::readRecord()
 
       // флаг - коннектиться ли к роутеру
       #ifdef CORE_ESP_TRANSPORT_ENABLED
-        ESPTransportSettings.Flags.ConnectToRouter = read();
+        b = read();
+        if(!writeOut(b))
+          ESPTransportSettings.Flags.ConnectToRouter = b;
       #else
         read(); // пропускаем
       #endif // CORE_ESP_TRANSPORT_ENABLED
@@ -220,16 +355,29 @@ bool CoreConfigIterator::readRecord()
       // SSID роутера (набор байт, заканчивающийся нулевым байтом)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
-        ESPTransportSettings.RouterID = "";
+        if(!outStream)
+          ESPTransportSettings.RouterID = "";
+          
         do
         {
           symbol = read();
           if(symbol != '\0')
-            ESPTransportSettings.RouterID += symbol;
+          {
+            if(!writeOut(symbol))
+              ESPTransportSettings.RouterID += symbol;
+              
+          }
+          else
+            writeOut(symbol);
         } while(symbol != '\0');
 
+#ifdef _CORE_DEBUG
+  if(!outStream)
+  {
         DBG(F("Router SSID: "));
         DBGLN(ESPTransportSettings.RouterID);
+  }
+#endif  
         
       #else
         // пропускаем
@@ -243,16 +391,27 @@ bool CoreConfigIterator::readRecord()
       // пароль роутера (набор байт, заканчивающийся нулевым байтом)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
-        ESPTransportSettings.RouterPassword = "";
+        if(!outStream)
+          ESPTransportSettings.RouterPassword = "";
         do
         {
           symbol = read();
           if(symbol != '\0')
-            ESPTransportSettings.RouterPassword += symbol;
+          {
+            if(!writeOut(symbol))
+              ESPTransportSettings.RouterPassword += symbol;
+          }
+          else
+            writeOut(symbol);
         } while(symbol != '\0');
 
+#ifdef _CORE_DEBUG
+  if(!outStream)
+  {
         DBG(F("Router Password: "));
         DBGLN(ESPTransportSettings.RouterPassword);
+  }
+#endif  
         
       #else
         // пропускаем
@@ -266,7 +425,9 @@ bool CoreConfigIterator::readRecord()
       // скорость работы с ESP (1 - 9600, 2 - 19200, 4 - 38400, 6 - 57600, 12 - 115200)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
-        ESPTransportSettings.UARTSpeed = read();
+        b = read();
+        if(!writeOut(b))
+          ESPTransportSettings.UARTSpeed = b;
       #else
         // пропускаем
         read();
@@ -275,7 +436,9 @@ bool CoreConfigIterator::readRecord()
       // номер Serial, который используется для работы с ESP (1 - Serial1, 2 - Serial2, 3 - Serial 3)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
-        ESPTransportSettings.SerialNumber = read();
+        b = read();
+        if(!writeOut(b))
+          ESPTransportSettings.SerialNumber = b;
       #else
         // пропускаем
         read();
@@ -284,7 +447,9 @@ bool CoreConfigIterator::readRecord()
       // использовать ли пин пересброса питания при зависании ESP (0 - не использовать, 1 - использовать)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
-        ESPTransportSettings.Flags.UseRebootPin = read();
+        b = read();
+        if(!writeOut(b))
+          ESPTransportSettings.Flags.UseRebootPin = b;
       #else
         // пропускаем
         read();
@@ -293,7 +458,9 @@ bool CoreConfigIterator::readRecord()
       // номер пина для пересброса питания ESP
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
-        ESPTransportSettings.RebootPin = read();
+        b = read();
+        if(!writeOut(b))
+          ESPTransportSettings.RebootPin = b;
       #else
         // пропускаем
         read();
@@ -302,7 +469,9 @@ bool CoreConfigIterator::readRecord()
       // кол-во секунд, по истечении которых модем считается зависшим (не пришёл ответ на команду)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
-        ESPTransportSettings.HangTimeout = read();
+        b = read();
+        if(!writeOut(b))
+          ESPTransportSettings.HangTimeout = b;
       #else
         // пропускаем
         read();
@@ -311,7 +480,9 @@ bool CoreConfigIterator::readRecord()
       // сколько секунд держать питание выключенным при перезагрузке ESP, если он завис
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
-        ESPTransportSettings.HangPowerOffTime = read();
+        b = read();
+        if(!writeOut(b))
+          ESPTransportSettings.HangPowerOffTime = b;
       #else
         // пропускаем
         read();
@@ -320,7 +491,9 @@ bool CoreConfigIterator::readRecord()
       // сколько секунд ждать загрузки модема при инициализации/переинициализации
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
-        ESPTransportSettings.WaitInitTIme = read();
+        b = read();
+        if(!writeOut(b))
+          ESPTransportSettings.WaitInitTIme = b;
       #else
         // пропускаем
         read();
@@ -329,7 +502,9 @@ bool CoreConfigIterator::readRecord()
       // уровень для включения питания (1 - HIGH, 0 - LOW)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
-        ESPTransportSettings.PowerOnLevel = read();
+        b = read();
+        if(!writeOut(b))
+          ESPTransportSettings.PowerOnLevel = b;
       #else
         // пропускаем
         read();
@@ -342,12 +517,27 @@ bool CoreConfigIterator::readRecord()
 
     case RS485SettingsRecord: // данные о настройках RS485
     {
+#ifdef _CORE_DEBUG
+  if(!outStream)
+  {      
       DBGLN(F("RS485 SETTINGS FOUND!!!"));
-      #ifdef CORE_RS485_TRANSPORT_ENABLED
+  }
+#endif  
+
       
-        RS485Settings.UARTSpeed = read();
-        RS485Settings.SerialNumber = read();
-        RS485Settings.DEPin = read();
+      #ifdef CORE_RS485_TRANSPORT_ENABLED
+
+        byte b = read();
+        if(!writeOut(b))
+          RS485Settings.UARTSpeed = b;
+
+        b = read();
+        if(!writeOut(b))
+          RS485Settings.SerialNumber = b;
+
+        b = read();
+        if(!writeOut(b))          
+          RS485Settings.DEPin = b;
         
       #else
         // пропускаем три байта
@@ -363,15 +553,21 @@ bool CoreConfigIterator::readRecord()
     {
       #ifdef CORE_RS485_TRANSPORT_ENABLED
          byte headerLen = read();
+         writeOut(headerLen);
          byte* header = new byte[headerLen];
           for(byte k=0;k<headerLen;k++)
           {
             header[k] = read();
+            writeOut(header[k]);
           }
           byte packetLen = read();
           byte packetID = read();
 
-          RS485.addKnownPacketHeader(header,headerLen,packetLen,packetID);
+          writeOut(packetLen);
+          writeOut(packetID);
+
+          if(!outStream)
+            RS485.addKnownPacketHeader(header,headerLen,packetLen,packetID);
 
           delete [] header;
       #else
@@ -681,6 +877,42 @@ bool CoreClass::getFREERAM(const char* commandPassed, Stream* pStream)
     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::getCONFIG(const char* commandPassed, Stream* pStream)
+{
+  if(commandPassed)
+  {
+      pStream->print(CORE_COMMAND_ANSWER_OK);
+      pStream->print(commandPassed);
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
+  }
+
+  CoreEEPROMConfigIterator iter;
+  uint16_t sz = 0;
+
+  #if MEMORY_USED == 1
+    sz = E2END;
+  #elif MEMORY_USED == 2
+     sz = 4096-1;
+  #elif MEMORY_USED == 3
+    sz = 4096*2-1;
+  #elif MEMORY_USED == 4
+   sz = 4096*4-1;
+  #elif MEMORY_USED == 5
+   sz = 4096*8-1;
+  #elif MEMORY_USED == 6
+    sz = 4096*16-1;
+  #endif   
+  
+  if(iter.first((void*)CORE_STORE_ADDRESS,sz,pStream,true))
+  {
+    while(iter.next());
+  }
+
+  pStream->println();
+  
+  return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::getCPU(const char* commandPassed, Stream* pStream)
 {
   if(commandPassed)
@@ -845,6 +1077,7 @@ const char SENSORS_COMMAND[] PROGMEM = "SENSORS";
 const char TRANSPORT_COMMAND[] PROGMEM = "TRANSPORT";
 const char FREERAM_COMMAND[] PROGMEM = "FREERAM";
 const char CPU_COMMAND[] PROGMEM = "CPU";
+const char CONFIG_COMMAND[] PROGMEM = "CONFIG";
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::processCommand(const String& command,Stream* pStream)
 {
@@ -920,6 +1153,11 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
         {
           commandHandled = getCPU(commandName,pStream);
         } // CPU_COMMAND
+        else
+        if(!strcmp_P(commandName, CONFIG_COMMAND))
+        {
+          commandHandled = getCONFIG(commandName,pStream);
+        } // CONFIG_COMMAND
         
         
         //TODO: тут разбор команды !!!

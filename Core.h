@@ -49,7 +49,7 @@ typedef enum
 class CoreConfigIterator
 {
   public:
-    bool first(const void* address, uint16_t dataSize); // ищет первую запись в конфиге, если не находит - возвращает false
+    bool first(const void* address, uint16_t dataSize, Stream* outStream=NULL, bool asHexString=true); // ищет первую запись в конфиге, если не находит - возвращает false
     bool next(); // проходит по всем записям в конфиге
 
     CoreConfigIterator();
@@ -68,6 +68,11 @@ class CoreConfigIterator
     byte read();
     bool readRecord();
     void applySensorRecord(const String& sensorName, CoreSensorType type,byte* record);
+    
+    Stream* outStream;
+    bool asHexString;
+
+    bool writeOut(byte b);
    
   
 };
@@ -216,6 +221,9 @@ class CoreClass
 
    // Вид процессора
    bool getCPU(const char* commandPassed, Stream* pStream);
+
+   // Вернуть в поток конфиг, закодированный в HEX
+   bool getCONFIG(const char* commandPassed, Stream* pStream);
 
    // печатает результаты обработки известной команды SET в поток
    bool printBackSETResult(bool isOk, const char* command, Stream* pStream);
