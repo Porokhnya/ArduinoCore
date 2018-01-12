@@ -1144,10 +1144,12 @@ CoreStoredData::operator DigitalPortData() const
   if(!hasData())
     return result;
     
-  if(dataSize < sizeof(DigitalPortData))
+  if(dataSize < 2)
     return result;
 
-  memcpy(&(result),data,sizeof(DigitalPortData));
+   result.Pin = data[0];
+   result.Value = data[1];
+
   return result;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -1159,13 +1161,12 @@ CoreStoredData::operator AnalogPortData() const
   if(!hasData())
     return result;
     
-  if(dataSize < 3)//sizeof(AnalogPortData))
+  if(dataSize < 3)
     return result;
 
   result.Pin = data[0];
-  memcpy(&(result.Value),&(data[1]),2);
+  memcpy(&(result.Value),&(data[1]),sizeof(uint16_t));
 
-  //memcpy(&(result),data,sizeof(AnalogPortData));
   return result;  
   
   return result;
@@ -1181,7 +1182,7 @@ CoreStoredData::operator TemperatureData() const
     return result;
   }
 
-  if(dataSize < sizeof(TemperatureData))
+  if(dataSize < 2)
   {
     return result;
   }
@@ -1223,7 +1224,7 @@ CoreStoredData::operator HumidityData() const
   if(!hasData())
     return result;
 
-  if(dataSize < sizeof(TemperatureData)*2)
+  if(dataSize < 4)
     return result;
 
 
