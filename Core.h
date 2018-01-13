@@ -149,6 +149,9 @@ class CoreClass
     unsigned long SensorsUpdateInterval; // интервал обновления показаний с датчиков
 
 
+    // устанавливает дату/время для всех DS3231
+    void setCurrentDateTime(uint8_t dayOfMonth, uint8_t month, uint16_t year, uint8_t hour, uint8_t minute, uint8_t second);
+
     const char* byteToHexString(byte i); // конвертирует байт в его строковое представление в шестнадцатеричном виде
 
     void pushToStorage(CoreSensor* sensor); // обновляет показания с датчика в хранилище

@@ -826,6 +826,7 @@ bool CoreClass::setDATETIME(const char* param)
 
     second = atoi(workBuff);
 
+  /*
     // вычисляем день недели
     int dow;
     byte mArr[12] = {6,2,2,5,0,3,5,1,4,6,2,4};
@@ -849,10 +850,41 @@ bool CoreClass::setDATETIME(const char* param)
       CoreSensorDS3231* sensor = (CoreSensorDS3231*) rtcSensors[i];
       sensor->setTime(second, minute, hour, dow, day, month, year);
     }
+    */
+
+    setCurrentDateTime(day, month, year,hour,minute,second);
+    
   return true;
   #else  
     return false;
   #endif // CORE_DS3231_ENABLED
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreClass::setCurrentDateTime(uint8_t day, uint8_t month, uint16_t year, uint8_t hour, uint8_t minute, uint8_t second)
+{
+   // вычисляем день недели
+    int dow;
+    byte mArr[12] = {6,2,2,5,0,3,5,1,4,6,2,4};
+    dow = (year % 100);
+    dow = dow*1.25;
+    dow += day;
+    dow += mArr[month-1];
+    
+    if (((year % 4)==0) && (month<3))
+     dow -= 1;
+     
+    while (dow>7)
+     dow -= 7;  
+
+
+    // получили список DS3231 в системе
+    CoreSensorsList rtcSensors = list.getByType(DS3231);
+    for(size_t i=0;i<rtcSensors.size();i++)
+    {
+      // теперь каждому девайсу устанавливаем время
+      CoreSensorDS3231* sensor = (CoreSensorDS3231*) rtcSensors[i];
+      sensor->setTime(second, minute, hour, dow, day, month, year);
+    }     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::getTRANSPORT(const char* commandPassed, Stream* pStream)
