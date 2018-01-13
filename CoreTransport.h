@@ -319,6 +319,10 @@ extern ESPTransportSettingsClass ESPTransportSettings;
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_RS485_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
+extern "C" {
+  void ON_RS485_RECEIVE(byte packetID, byte dataLen, byte* data);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
   byte UARTSpeed; // скорость работы с RS-485 (1 - 9600, 2 - 19200, 4 - 38400, 6 - 57600, 12 - 115200)
@@ -347,8 +351,6 @@ typedef enum
   
 } RS485State;
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef void (*RS485ReceiveDataHandler)(byte packetID, byte dataLen, byte* data);
-//--------------------------------------------------------------------------------------------------------------------------------------
 class CoreRS485
 {
   public:
@@ -361,7 +363,6 @@ class CoreRS485
     void sendData(byte* data, byte dataSize); // отправляет данные в шину
     void addKnownPacketHeader(byte* header, byte headerSize, byte packetDataLen, byte packetID); // добавляем пакет в известные пакеты на шине
 
-    void onReceive(RS485ReceiveDataHandler handler);
 
 private:
 
@@ -376,7 +377,6 @@ private:
   RS485State machineState;
 
   RS485KnownHeadersList knownHeaders;
-  RS485ReceiveDataHandler receiveHandler;
 
   void switchToReceive();
   void switchToSend();

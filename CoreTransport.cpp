@@ -4,7 +4,14 @@
 #ifdef CORE_RS485_TRANSPORT_ENABLED
 CoreRS485Settings RS485Settings;
 CoreRS485 RS485;
-#endif
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern "C" {
+static void __nors485(byte packetID, byte dataLen, byte* data){}
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void ON_RS485_RECEIVE(byte packetID, byte dataLen, byte* data) __attribute__ ((weak, alias("__nors485")));
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_RS485_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_ESP_TRANSPORT_ENABLED
 ESPTransportSettingsClass ESPTransportSettings;
@@ -51,8 +58,6 @@ CoreRS485::CoreRS485()
   dataBufferLen = 0;
   writeIterator = 0;
   
-  receiveHandler = NULL;
-
   machineState = rs485WaitingHeader;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -74,11 +79,6 @@ HardwareSerial* CoreRS485::getMyStream(byte SerialNumber)
     default:
       return NULL;
   }
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreRS485::onReceive(RS485ReceiveDataHandler handler)
-{
-  receiveHandler = handler;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::begin()
@@ -208,8 +208,7 @@ void CoreRS485::update()
         if(writeIterator >= (currentHeader->headerLen + currentHeader->packetDataLen))
         {
           // получили пакет полностью, надо формировать событие
-          if(receiveHandler)
-            receiveHandler(currentHeader->packetID,writeIterator, dataBuffer);
+            ON_RS485_RECEIVE(currentHeader->packetID,writeIterator, dataBuffer);
           
           #ifdef _CORE_DEBUG
             Serial.print(F("RECEIVE RS-485 PACKET #"));
