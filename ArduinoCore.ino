@@ -203,9 +203,9 @@ void myWriteDone(CoreTransportClient& client, bool isWriteSucceeded)
 // Если настройка CORE_LORA_TRANSPORT_ENABLED закомментирована в CoreConfig.h - то глобальный
 // объект LoRa будет недоступен !!!
 //--------------------------------------------------------------------------------------------------------------------------------------
-void ON_LORA_RECEIVE(int packetSize) 
+ void ON_LORA_RECEIVE(int packetSize) 
 {
-  
+
   Serial.println(F("Packet received from LoRa: "));
 
 
@@ -226,6 +226,7 @@ void ON_LORA_RECEIVE(int packetSize)
   LoRa.endPacket();                     // заканчиваем пакет
 
   LoRa.receive();  // переключаемся на приём
+
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
