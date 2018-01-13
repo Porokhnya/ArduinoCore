@@ -7,8 +7,13 @@
 #include "CoreSensor.h"
 #include "CoreTransport.h"
 #include "CorePinStateAction.h"
+#include "LoRa.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
 #define CORE_VERSION F("Core v.1.0")
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern "C" {
+  void ON_LORA_RECEIVE(int);
+}
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef _CORE_DEBUG
   #define DBG(s) Serial << (s)
@@ -25,17 +30,18 @@ typedef void (*CoreUnhandledCommandsHandler)(const String& str, Stream* outStrea
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef enum
 {
-  DummyFirstRecord = 0x1, // первая запись, для проверки вхождения в диапазон
+  DummyFirstRecord = 1, // первая запись, для проверки вхождения в диапазон
   
-  SensorRecord = 0x2, // данные о датчике
-  FractDelimiterRecord = 0x3, // данные о разделителе целой и дробной частей
-  TemperatureUnitRecord = 0x04, // тип измерений температуры (цельсии или фаренгейты)
-  ESPSettingsRecord = 0x05, // данные о настройках ESP
-  SensorsUpdateIntervalRecord = 0x06, // интервал опроса датчиков
-  RS485SettingsRecord = 0x07, // данные о настройках RS-485
-  RS485IncomingPacketRecord = 0x08, // данные об известном пакете RS-485
+  SensorRecord = 2, // данные о датчике
+  FractDelimiterRecord = 3, // данные о разделителе целой и дробной частей
+  TemperatureUnitRecord = 4, // тип измерений температуры (цельсии или фаренгейты)
+  ESPSettingsRecord = 5, // данные о настройках ESP
+  SensorsUpdateIntervalRecord = 6, // интервал опроса датчиков
+  RS485SettingsRecord = 7, // данные о настройках RS-485
+  RS485IncomingPacketRecord = 8, // данные об известном пакете RS-485
+  LoRaSettingsRecord = 9, // данные по настройкам LoRa
 
-  DummyLastRecord = 0x09 // последняя запись, для проверки вхождения в диапазон
+  DummyLastRecord = 10 // последняя запись, для проверки вхождения в диапазон
   
 } CoreConfigRecordType;
 //--------------------------------------------------------------------------------------------------------------------------------------

@@ -9,6 +9,12 @@
   AT24CX* memory;  
 #endif
 //--------------------------------------------------------------------------------------------------------------------------------------
+extern "C" {
+static void __nolora(int dummy){}
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void ON_LORA_RECEIVE(int) __attribute__ ((weak, alias("__nolora")));
+//--------------------------------------------------------------------------------------------------------------------------------------
 #include "CoreTransport.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
 // CoreConfigIterator
@@ -602,6 +608,51 @@ bool CoreConfigIterator::readRecord()
        
       #endif
       
+    }
+    return true;
+
+    case LoRaSettingsRecord:
+    {
+      #ifdef _CORE_DEBUG
+        if(!outStream)
+        {      
+            DBGLN(F("LoRa SETTINGS FOUND!!!"));
+        }
+      #endif
+      
+      #ifdef CORE_LORA_TRANSPORT_ENABLED
+        byte loraB = read();
+        if(!writeOut(loraB))
+          LoRaSettings.frequency = loraB;
+
+        loraB = read();
+        if(!writeOut(loraB))
+          LoRaSettings.ss = loraB;
+
+        loraB = read();
+        if(!writeOut(loraB))
+          LoRaSettings.reset = loraB;
+
+        loraB = read();
+        if(!writeOut(loraB))
+          LoRaSettings.dio = loraB;
+
+        loraB = read();
+        if(!writeOut(loraB))
+          LoRaSettings.txPower = loraB;
+
+        loraB = read();
+        if(!writeOut(loraB))
+          LoRaSettings.bandwidth = loraB;
+
+        loraB = read();
+        if(!writeOut(loraB))
+          LoRaSettings.useCrc = loraB;
+          
+      #else
+        for(byte j=0;j<7;j++) // пропускаем 7 байт (настройки LoRa)
+          writeOut(read());
+      #endif
     }
     return true;
     
@@ -1493,6 +1544,85 @@ void CoreClass::begin()
     // обновляем транспорт RS-485
     RS485.begin();
   #endif  
+
+  #ifdef CORE_LORA_TRANSPORT_ENABLED
+
+    int8_t reset = LoRaSettings.reset == 0xFF ? -1 : LoRaSettings.reset;
+
+    LoRa.setPins(LoRaSettings.ss, reset, LoRaSettings.dio);
+
+    long frequency = 915E6;
+    switch(LoRaSettings.frequency)
+    {
+      case 1:
+        frequency = 433E6;
+      break;
+
+      case 2:
+        frequency = 866E6;
+      break;
+
+      case 3:
+        frequency = 915E6;
+      break;
+    }
+    
+    LoRa.begin(frequency);
+
+    LoRa.setTxPower(LoRaSettings.txPower);
+
+    long signalBandwidth = 125E3;
+    
+    switch(LoRaSettings.bandwidth)
+    {
+      case 1:
+        signalBandwidth = 7.8E3;
+      break;
+      
+      case 2:
+        signalBandwidth = 10.4E3;
+      break;
+      
+      case 3:
+        signalBandwidth = 15.6E3;
+      break;
+      
+      case 4:
+        signalBandwidth = 20.8E3;
+      break;
+      
+      case 5:
+        signalBandwidth = 31.25E3;
+      break;
+      
+      case 6:
+        signalBandwidth = 41.7E3;
+      break;
+      
+      case 7:
+        signalBandwidth = 62.5E3;
+      break;
+      
+      case 8:
+        signalBandwidth = 125E3;
+      break;
+      
+      case 9:
+        signalBandwidth = 250E3;
+      break;
+    }
+
+    
+    LoRa.setSignalBandwidth(signalBandwidth);
+
+    if(LoRaSettings.useCrc)
+      LoRa.enableCrc();
+    else
+      LoRa.disableCrc();
+  
+    LoRa.onReceive(ON_LORA_RECEIVE);
+    LoRa.receive(); // переключаемся на приём
+  #endif
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::update()
