@@ -955,7 +955,6 @@ bool CoreClass::getTRANSPORT(const char* commandPassed, Stream* pStream)
     pStream->print(F("RS485")); 
   #endif
 
-  
   #ifdef CORE_LORA_TRANSPORT_ENABLED
     if(written)
       pStream->print(CORE_COMMAND_PARAM_DELIMITER);
@@ -963,7 +962,7 @@ bool CoreClass::getTRANSPORT(const char* commandPassed, Stream* pStream)
     written++;
     pStream->print(F("LORA")); 
   #endif
-  
+
 
   pStream->println();
 
