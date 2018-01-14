@@ -30,7 +30,7 @@ class CoreTransport
 {
   public:
   
-    CoreTransport(Stream* stream);
+    CoreTransport();
     virtual ~CoreTransport();
 
     virtual void update() = 0; // обновляем состояние транспорта
@@ -202,16 +202,17 @@ class CoreTransportClient
 class CoreSerialTransport : public CoreTransport
 {
   public:
-    CoreSerialTransport() : CoreTransport(&Serial) {thisClient = NULL;}
+    CoreSerialTransport() : CoreTransport() {thisClient = NULL;}
     ~CoreSerialTransport() {
       thisClient->Destroy();
       }
 
     void begin()
     {
+      pStream = &Serial;
     }
 
-    virtual CoreTransportClient* getFreeClient() // всегда возвращаем одного клиента
+    virtual CoreTransportClient* getFreeClient() // возвращаем одного свободного, ничем не занятого клиента
     {
         if(!thisClient)
           thisClient = CoreTransportClient::Create(this);

@@ -29,7 +29,7 @@ CoreRS485 RS485;
 ESPTransportSettingsClass ESPTransportSettings;
 #endif // CORE_ESP_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
-CoreTransport::CoreTransport(Stream* stream) : pStream(stream)
+CoreTransport::CoreTransport()
 {
   
 }
