@@ -75,6 +75,14 @@ bool CorePinStateAction::isActive()
  return flags.isActive;
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+bool CorePinStateAction::isDone()
+{
+  if(Settings.NumPasses > 0 && cyclesDone >= Settings.NumPasses)
+    return true;
+
+  return false;
+}
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void CorePinStateAction::update()
 {
   if(!isActive()) // таймер неактивен, выключаем пин и выходим
@@ -84,7 +92,7 @@ void CorePinStateAction::update()
   }
 
   // проверяем, не достигли ли мы максимального кол-ва проходов?
-  if(Settings.NumPasses > 0 && cyclesDone >= Settings.NumPasses)
+  if(isDone())
   {
     off();
     return;

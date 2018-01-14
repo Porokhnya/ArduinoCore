@@ -36,6 +36,8 @@ class CorePinStateAction
   void update(); // обновляет таймер
 
   bool isActive(); // возвращает true, если таймер активен
+  bool isDone(); // проверяет, закончили ли работу, если кол-во проходов отлично от бесконечного
+  
   void init(uint8_t pin, int16_t NumPasses, uint16_t HoldOnTime, uint16_t HoldOffTime, uint8_t OnLevel=HIGH, uint8_t OffLevel=LOW); // инициализирует таймер
   void reset(); // сбрасывает кол-во сделанных проходов
 
