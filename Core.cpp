@@ -1733,9 +1733,11 @@ uint8_t CoreClass::memRead(unsigned int address)
 void CoreClass::memWrite(unsigned int address, uint8_t val)
 {
   #if MEMORY_USED == 1
-    EEPROM.write(address, val);
+    if(memRead(address) != val)
+      EEPROM.write(address, val);
   #else
-    memory->write(address,val);
+    if(memRead(address) != val)
+      memory->write(address,val);
   #endif
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
