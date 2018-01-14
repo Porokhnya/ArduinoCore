@@ -5,26 +5,15 @@
 #include "CoreConfig.h"
 #include "CoreArray.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
+class CoreTransportClient;
+//--------------------------------------------------------------------------------------------------------------------------------------
 extern "C" {
   void ON_LORA_RECEIVE(int);
   void ON_RS485_RECEIVE(byte packetID, byte dataLen, byte* data);
+  void ON_CLIENT_CONNECT(CoreTransportClient& client);
+  void ON_CLIENT_DATA_RECEIVED(CoreTransportClient& client);
+  void ON_CLIENT_WRITE_DONE(CoreTransportClient& client, bool isWriteSucceeded);
 }
-//--------------------------------------------------------------------------------------------------------------------------------------
-class CoreTransportClient;
-//--------------------------------------------------------------------------------------------------------------------------------------
-typedef void (*OnConnectFunc)(CoreTransportClient& client); // обработчик обратного вызова результата соединения/отсоединения
-typedef void (*OnClientDataReceivedFunc)(CoreTransportClient& client); // обработчик прихода данных для клиента
-typedef void (*OnClientWriteDoneFunc)(CoreTransportClient& client, bool isWriteSucceeded); // обработчик завершения записи данных из клиента в транспорт
-//--------------------------------------------------------------------------------------------------------------------------------------
-typedef struct
-{
-  OnConnectFunc OnConnect; // событие "статус соединения клиента изменился"
-  OnClientDataReceivedFunc OnClientDataReceived; // событие "получены данные для клиента"
-  OnClientWriteDoneFunc OnClientWriteDone; // событие "данные клиента записаны в поток"
-  
-} CoreTransportEvents;
-//--------------------------------------------------------------------------------------------------------------------------------------
-class CoreTransportClient;
 //--------------------------------------------------------------------------------------------------------------------------------------
 // класс асинхронного транспорта, предназначен для предоставления интерфейса неблокирующей работы с AT-прошивками железок,
 // типа SIM800 или ESP.
@@ -44,8 +33,8 @@ class CoreTransport
     CoreTransport(Stream* stream);
     virtual ~CoreTransport();
 
-    virtual void init(CoreTransportEvents events); // начинаем работу, запоминаем привязку к событиям
     virtual void update() = 0; // обновляем состояние транспорта
+    virtual void begin() = 0; // начинаем работу
 
     virtual CoreTransportClient* getFreeClient() = 0; // возвращает свободного клиента (не законнекченного и не занятого делами)
 
@@ -56,7 +45,6 @@ protected:
   void setClientBuffer(CoreTransportClient& client,const uint8_t* buff, size_t sz);
   
 
-  CoreTransportEvents events;
   Stream* pStream;    
 
   friend class CoreTransportClient;
@@ -78,6 +66,11 @@ class CoreTransportClient
     CoreTransportClient* instance = new CoreTransportClient();
     instance->parent = transport;
     return instance;    
+  }
+
+  CoreTransport* getTransport() // возвращает транспорт
+  {
+    return parent;
   }
 
   void Destroy()
@@ -214,10 +207,8 @@ class CoreSerialTransport : public CoreTransport
       thisClient->Destroy();
       }
 
-    virtual void init(CoreTransportEvents events)
+    void begin()
     {
-      CoreTransport::init(events);
-
     }
 
     virtual CoreTransportClient* getFreeClient() // всегда возвращаем одного клиента
@@ -228,7 +219,7 @@ class CoreSerialTransport : public CoreTransport
        return thisClient;
     }
 
-    virtual void update() {}
+    void update() {}
 
   private:
 
@@ -241,22 +232,17 @@ class CoreSerialTransport : public CoreTransport
       // тут коннектимся, когда надо - дёргаем функцию OnConnect и сообщаем, что клиент соединён
       setClientID(client,123);
       setClientConnected(client,true);
+
+      ON_CLIENT_CONNECT(client);
       
-      if(events.OnConnect)
-      {        
-        events.OnConnect(client);
-      }
     }
 
     virtual void beginDisconnect(CoreTransportClient& client)
     {
        // отсоединяем клиента асинхронно, если надо. По результату дёргаем событие OnConnect.
         setClientConnected(client,false);
-        
-        if(events.OnConnect)
-        {
-          events.OnConnect(client);
-        }
+
+        ON_CLIENT_CONNECT(client);
       
     }
     
@@ -265,22 +251,23 @@ class CoreSerialTransport : public CoreTransport
        // тут начинаем асинхронную запись. Когда надо - получаем с клиента буфер и пишем в поток
         pStream->write(client.getBuffer(),client.getBufferSize());
 
-        if(events.OnClientWriteDone)
-        {
-          events.OnClientWriteDone(client, true); // говорим, что данные из клиента записаны
-        }
+        ON_CLIENT_WRITE_DONE(client,true); // говорим, что данные из клиента записаны
 
+
+        // тестово будем писать в клиент из транспорта
+        const char* pong = "pong";
+        setClientBuffer(client,(const uint8_t*)pong, strlen(pong)+1);
+
+        // говорим, что для клиента получены данные
+        ON_CLIENT_DATA_RECEIVED(client);
+        
         // очищаем буфер клиента
         client.clear();
 
         // тестово отсоединяем клиента
         setClientConnected(client,false);
-                
-        if(events.OnConnect)
-        {
-          events.OnConnect(client);
-        }
-   
+        ON_CLIENT_CONNECT(client);
+                   
     }
     
 };

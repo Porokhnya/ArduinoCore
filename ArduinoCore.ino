@@ -175,10 +175,9 @@ CoreUserDataSensor* mySensor = NULL;
 // эти два байта мы будем пихать в него, изменяя их каждую секунду в loop
 byte bUserData[2] = {0,0xFF};
 //--------------------------------------------------------------------------------------------------------------------------------------
-/*
-#ifdef _CORE_DEBUG
+// события для клиента любого транспорта
 //--------------------------------------------------------------------------------------------------------------------------------------
-void myConnect(CoreTransportClient& client)
+void ON_CLIENT_CONNECT(CoreTransportClient& client) // событие "клиент подсоединён или отсоединён"
 {
   Serial.print(F("Client #"));
   Serial.print(client.getID());
@@ -188,15 +187,22 @@ void myConnect(CoreTransportClient& client)
     Serial.println(F(" disconnected."));
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void myWriteDone(CoreTransportClient& client, bool isWriteSucceeded)
+void ON_CLIENT_WRITE_DONE(CoreTransportClient& client, bool isWriteSucceeded) // событие "данные записаны из клиента в транспорт"
 {
   Serial.print(F("Client #"));
   Serial.print(client.getID());
   Serial.println(F(" write done."));
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-#endif  // _CORE_DEBUG
-*/
+void ON_CLIENT_DATA_RECEIVED(CoreTransportClient& client) // событие "для клиента получены данные"
+{
+  Serial.print(F("Client #"));
+  Serial.print(client.getID());
+  Serial.print(F(" has data: "));
+  Serial.println((char*)client.getBuffer());
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+// LoRa
 //--------------------------------------------------------------------------------------------------------------------------------------
 // пример работы с LoRa: определяем функцию с именем ON_LORA_RECEIVE (это имя обязательно!!!),
 // внутри неё работаем с глобальным объектом LoRa. В packetSize - длина пришедших данных.
@@ -234,20 +240,18 @@ void setup()
 {
   Serial.begin(CORE_COMMUNICATION_SPEED);
 
-
-/*
-  // тестируем внешний транспорт
+  // тестируем внешний транспорт (для теста используем транспорт, который просто пишет в Serial)
   #ifdef _CORE_DEBUG
   
     CoreSerialTransport transport;
-    transport.init({myConnect,NULL, myWriteDone});
+    transport.begin();
 
     CoreTransportClient* client = transport.getFreeClient();
 
     if(client)
     {
       client->connect("",0);
-      const char* str = "Hello, world!\n";
+      const char* str = "ping\n";
       client->write((const uint8_t*) str,strlen(str));
     }
     else
@@ -255,8 +259,7 @@ void setup()
       Serial.println(F("NO FREE CLIENT FOUND!!!"));
     }
     
-  #endif 
-*/  
+  #endif   
 
   // будем для теста мигать встроенным светодиодом, проверяя корректность отработки слежения за портом
   led13Blinker.init(LED_BUILTIN, 23, 100, 1200); // мигаем светодиодом на 13 пине, держа 100 мс включенным, и 1200 мс - выключенным. Мигаем 23 раза, потом - перестаёт мигать.

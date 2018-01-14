@@ -4,12 +4,22 @@
 extern "C" {
 static void __nors485(byte packetID, byte dataLen, byte* data){}
 static void __nolora(int dummy){}
+static void __noclientconnect(CoreTransportClient& client) {}
+static void __noclientdatareceived(CoreTransportClient& client) {}
+static void __noclientwritedone(CoreTransportClient& client, bool isWriteSucceeded) {}
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_LORA_RECEIVE(int) __attribute__ ((weak, alias("__nolora")));
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_RS485_RECEIVE(byte packetID, byte dataLen, byte* data) __attribute__ ((weak, alias("__nors485")));
 //--------------------------------------------------------------------------------------------------------------------------------------
+void ON_CLIENT_CONNECT(CoreTransportClient& client) __attribute__ ((weak, alias("__noclientconnect")));
+//--------------------------------------------------------------------------------------------------------------------------------------
+void ON_CLIENT_DATA_RECEIVED(CoreTransportClient& client) __attribute__ ((weak, alias("__noclientdatareceived")));
+//--------------------------------------------------------------------------------------------------------------------------------------
+void ON_CLIENT_WRITE_DONE(CoreTransportClient& client, bool isWriteSucceeded) __attribute__ ((weak, alias("__noclientwritedone")));
+//--------------------------------------------------------------------------------------------------------------------------------------
+
 #ifdef CORE_RS485_TRANSPORT_ENABLED
 CoreRS485Settings RS485Settings;
 CoreRS485 RS485;
@@ -27,11 +37,6 @@ CoreTransport::CoreTransport(Stream* stream) : pStream(stream)
 CoreTransport::~CoreTransport()
 {
   
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::init(CoreTransportEvents ev)
-{
-  events = ev;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransport::setClientID(CoreTransportClient& client, uint8_t id)
