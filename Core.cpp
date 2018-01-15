@@ -224,6 +224,19 @@ bool CoreConfigIterator::readRecord()
     }
     return true; // FractDelimiterRecord
 
+    case DeviceIDRecord:
+    {
+      byte b = read();
+      if(!writeOut(b))
+      {
+        Core.DeviceID = b;
+        DBG(F("DeviceID: "));
+        DBGLN(Core.DeviceID);
+      }
+      
+    }
+    return true; // DeviceIDRecord
+
     case TemperatureUnitRecord: // вид измеряемой температуры
     {
       byte b = read();
@@ -703,6 +716,7 @@ CoreClass::CoreClass()
   FractDelimiter = CORE_FRACT_DELIMITER;
   TemperatureUnit = UnitCelsius;
   SensorsUpdateInterval = CORE_SENSORS_UPDATE_INTERVAL;
+  DeviceID = 0;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::saveConfig(const byte* address, uint16_t sz, bool isInFlashSource)
