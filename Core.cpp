@@ -1050,6 +1050,7 @@ bool CoreClass::getCPU(const char* commandPassed, Stream* pStream)
     pStream->println(F("DUE"));
   #else
     pStream->println(F("NOP"));
+    #error "Unknown target board!"
   #endif
 
 
@@ -1420,6 +1421,7 @@ int CoreClass::getPinMode(int p)
      const int max_pin = 69;
   #else
      const int max_pin = 19;
+     #error "Unknown target board!"
   #endif
 
    if (p > max_pin) 

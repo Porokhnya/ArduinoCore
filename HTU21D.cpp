@@ -60,7 +60,7 @@ bool HTU21D::begin(uint8_t _i2cIndex)
   TwoWire* wire = &Wire;
   #if defined (__arm__) && defined (__SAM3X8E__)
     if(i2cIndex == 1)
-      wire = &Wire1;
+      wire = &Wire1;      
   #endif  
 
 
