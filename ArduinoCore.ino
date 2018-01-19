@@ -175,6 +175,7 @@ const byte unitTestConfig[] PROGMEM = { // тестовый конфиг в па
 //--------------------------------------------------------------------------------------------------------------------------------------
 // наш датчик с любыми нужными нам данными
 CoreUserDataSensor* mySensor = NULL;
+CoreUserDataSensor* newUserDataSensor = NULL;
 // эти два байта мы будем пихать в него, изменяя их каждую секунду в loop
 byte bUserData[2] = {0,0xFF};
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -297,6 +298,29 @@ void setup()
   // наш датчик имеет имя UD, получаем его и приводим к нужному виду
   mySensor = (CoreUserDataSensor*) Core.Sensors()->get(F("UD"));
 
+  // добавляем произвольный датчик пользовательского типа, не из конфига (например, нам пришли данные по подписке MQTT)
+  newUserDataSensor = (CoreUserDataSensor*) Core.Sensors()->get(F("USERDATA"));
+  if(!newUserDataSensor)
+  {
+    Serial.println(F("No userdata sensor found, add it..."));
+    newUserDataSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
+    if(newUserDataSensor)
+    {
+      newUserDataSensor->setName(F("USERDATA")); // даём датчику имя
+      // назначаем данные
+      byte data = 123;
+      newUserDataSensor->setData(&data,1);
+
+      // и добавляем в список датчиков
+      Core.Sensors()->add(newUserDataSensor);
+
+      // также помещаем его в хранилище
+      Core.pushToStorage(newUserDataSensor);
+      
+      Serial.println(F("Userdata sensor added!"));
+    }
+  }
+
   /*
 
   // пробуем загрузить конфиг из EEPROM, если не получится - грузим из флеша конфиг по умолчанию
@@ -415,6 +439,13 @@ void loop()
       
       // говорим ядру, чтобы НЕМЕДЛЕННО поместило данные с датчика в хранилище
       Core.pushToStorage(mySensor);
+
+      // обновляем наш второй, динамически добавленный датчик
+      static byte secondUserDataSensorData = 0;
+      secondUserDataSensorData++;
+      newUserDataSensor->setData(&secondUserDataSensorData,1);
+      Core.pushToStorage(newUserDataSensor);
+
     }
   } // if(mySensor)
 

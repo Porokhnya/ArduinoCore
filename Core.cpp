@@ -1389,6 +1389,12 @@ void CoreClass::pushToStorage(CoreSensor* s)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::readFromSensor(CoreSensor* sensor,int storeIndex)
 {
+  while(storeIndex >= CoreDataStore.list.size())
+  {
+    // добавляем в хранилище записи, если необходимо
+    CoreDataStore.save(sensor,NULL,0);  
+  }
+  
   CoreStoredData* stored = &(CoreDataStore.list[storeIndex]);
 
   // говорим, что с датчика нет данных
