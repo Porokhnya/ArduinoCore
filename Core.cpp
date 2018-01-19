@@ -237,6 +237,19 @@ bool CoreConfigIterator::readRecord()
     }
     return true; // DeviceIDRecord
 
+    case ClusterIDRecord:
+    {
+      byte b = read();
+      if(!writeOut(b))
+      {
+        Core.ClusterID = b;
+        DBG(F("ClusterID: "));
+        DBGLN(Core.ClusterID);
+      }
+      
+    }
+    return true; // ClusterIDRecord
+
     case TemperatureUnitRecord: // вид измеряемой температуры
     {
       byte b = read();
@@ -717,6 +730,7 @@ CoreClass::CoreClass()
   TemperatureUnit = UnitCelsius;
   SensorsUpdateInterval = CORE_SENSORS_UPDATE_INTERVAL;
   DeviceID = 0;
+  ClusterID = 0;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::saveConfig(const byte* address, uint16_t sz, bool isInFlashSource)
