@@ -308,13 +308,16 @@ void setup()
     {
       newUserDataSensor->setName(F("USERDATA")); // даём датчику имя
       // назначаем данные
-      byte data = 123;
-      newUserDataSensor->setData(&data,1);
+      byte data[2] = {0,0};
+      newUserDataSensor->setData(data,2);
+
+      // говорим, что это - температура
+      newUserDataSensor->setUserDataType(Temperature);
 
       // и добавляем в список датчиков
       Core.Sensors()->add(newUserDataSensor);
 
-      // также помещаем его в хранилище
+      // также помещаем его показания в хранилище
       Core.pushToStorage(newUserDataSensor);
       
       Serial.println(F("Userdata sensor added!"));
@@ -441,9 +444,10 @@ void loop()
       Core.pushToStorage(mySensor);
 
       // обновляем наш второй, динамически добавленный датчик
-      static byte secondUserDataSensorData = 0;
-      secondUserDataSensorData++;
-      newUserDataSensor->setData(&secondUserDataSensorData,1);
+      static byte secondUserDataSensorData[2] = {0,0};
+      secondUserDataSensorData[0]++;
+      secondUserDataSensorData[1]--;
+      newUserDataSensor->setData(secondUserDataSensorData,2);
       Core.pushToStorage(newUserDataSensor);
 
     }

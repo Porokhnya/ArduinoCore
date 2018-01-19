@@ -429,6 +429,7 @@ CoreUserDataSensor::CoreUserDataSensor() : CoreSensor(UserDataSensor)
 {
   data = NULL;
   dataSize = 0;
+  userDataType = UserData;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreUserDataSensor::~CoreUserDataSensor()

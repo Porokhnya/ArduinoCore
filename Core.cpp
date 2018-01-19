@@ -1996,7 +1996,14 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
  if(dataStored.hasData())
   {
     // получаем тип данных, который хранит железка определённого вида
-    CoreDataType typeOfData = CoreSensor::getDataType(dataStored.sensor->getType());
+    CoreSensorType st = dataStored.sensor->getType();
+    CoreDataType typeOfData = CoreSensor::getDataType(st);
+
+    if(dataStored.sensor->isUserDataSensor())
+    {
+      CoreUserDataSensor* uds = (CoreUserDataSensor*) dataStored.sensor;
+      typeOfData = uds->getUserDataType();
+    }
 
     switch(typeOfData)
     {
