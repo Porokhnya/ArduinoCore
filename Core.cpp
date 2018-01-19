@@ -1004,6 +1004,72 @@ bool CoreClass::getFREERAM(const char* commandPassed, Stream* pStream)
     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::getSTORAGE(const char* commandPassed, Stream* pStream)
+{
+   if(commandPassed)
+  {
+      pStream->print(CORE_COMMAND_ANSWER_OK);
+      pStream->print(commandPassed);
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
+  } 
+
+  // проходим по всем датчикам хранилища
+  for(size_t i=0;i<CoreDataStore.size();i++)
+  {
+    CoreStoredData dt = CoreDataStore.get(i);
+    
+    // выводим имя датчика
+    String sensorName = dt.sensor->getName();
+
+    for(size_t j=0;j<sensorName.length();j++)
+    {
+      pStream->print(byteToHexString(sensorName[j]));
+    } // for
+
+    // выводим завершающий 0 после имени
+      pStream->print(byteToHexString(0));
+
+   // выводим тип железки датчика
+   pStream->print(byteToHexString(dt.sensor->getType()));
+
+   // выводим тип показаний датчика
+   if(dt.sensor->isUserDataSensor())
+   {
+      CoreUserDataSensor* uds = (CoreUserDataSensor*) dt.sensor;
+      pStream->print(byteToHexString(uds->getUserDataType()));
+   }
+   else
+   {
+    pStream->print(byteToHexString(CoreSensor::getDataType(dt.sensor->getType())));
+   }
+
+   // выводим длину данных датчика
+    if(dt.hasData())
+    {
+      pStream->print(byteToHexString(dt.dataSize));
+      // выводим данные датчика
+      for(byte k=0;k<dt.dataSize;k++)
+      {
+        pStream->print(byteToHexString(dt.data[k]));
+      }
+    }
+    else
+    {
+      // нет данных с датчика
+      pStream->print(byteToHexString(0));
+    }
+
+
+      
+    
+  } // for
+
+
+  pStream->println();
+  
+  return true;  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::getCONFIG(const char* commandPassed, Stream* pStream)
 {
   if(commandPassed)
@@ -1199,13 +1265,14 @@ bool CoreClass::printBackSETResult(bool isOK, const char* command, Stream* pStre
 // Список поддерживаемых команд
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_DS3231_ENABLED
-const char DATETIME_COMMAND[] PROGMEM = "DATETIME";
+const char DATETIME_COMMAND[] PROGMEM = "DATETIME"; // получить/установить дату/время на контроллер
 #endif
-const char SENSORS_COMMAND[] PROGMEM = "SENSORS";
-const char TRANSPORT_COMMAND[] PROGMEM = "TRANSPORT";
-const char FREERAM_COMMAND[] PROGMEM = "FREERAM";
-const char CPU_COMMAND[] PROGMEM = "CPU";
-const char CONFIG_COMMAND[] PROGMEM = "CONFIG";
+const char SENSORS_COMMAND[] PROGMEM = "SENSORS"; // получить информацию о поддерживаемых датчиках
+const char TRANSPORT_COMMAND[] PROGMEM = "TRANSPORT"; // получить информацию о поддерживаемых транспортах
+const char FREERAM_COMMAND[] PROGMEM = "FREERAM"; // получить информацию о свободной памяти
+const char CPU_COMMAND[] PROGMEM = "CPU"; // получить информацию о МК
+const char CONFIG_COMMAND[] PROGMEM = "CONFIG"; // получить конфиг
+const char STORAGE_COMMAND[] PROGMEM = "STORAGE"; // получить показания со всех датчиков хранилища
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::processCommand(const String& command,Stream* pStream)
 {
@@ -1286,6 +1353,11 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
         {
           commandHandled = getCONFIG(commandName,pStream);
         } // CONFIG_COMMAND
+        else
+        if(!strcmp_P(commandName, STORAGE_COMMAND))
+        {
+          commandHandled = getSTORAGE(commandName,pStream);
+        } // STORAGE_COMMAND
         
         
         //TODO: тут разбор команды !!!

@@ -234,6 +234,9 @@ class CoreClass
    // Вернуть в поток конфиг, закодированный в HEX
    bool getCONFIG(const char* commandPassed, Stream* pStream);
 
+   // вернуть в поток показания всех датчиков хранилища, закодированные в HEX
+   bool getSTORAGE(const char* commandPassed, Stream* pStream);
+
    // печатает результаты обработки известной команды SET в поток
    bool printBackSETResult(bool isOk, const char* command, Stream* pStream);
    
