@@ -1574,6 +1574,10 @@ void CoreClass::begin()
     RS485.begin();
   #endif  
 
+  #ifdef CORE_ESP_TRANSPORT_ENABLED
+    ESP.begin();
+  #endif
+
   #ifdef CORE_LORA_TRANSPORT_ENABLED
 
     int8_t reset = LoRaSettings.reset == 0xFF ? -1 : LoRaSettings.reset;
@@ -1660,6 +1664,10 @@ void CoreClass::update()
   #ifdef CORE_RS485_TRANSPORT_ENABLED
     // обновляем транспорт RS-485
     RS485.update();
+  #endif
+
+  #ifdef CORE_ESP_TRANSPORT_ENABLED
+    ESP.update();
   #endif
   
   updateSignals(); // обновляем сигналы

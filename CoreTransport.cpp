@@ -19,7 +19,6 @@ void ON_CLIENT_DATA_RECEIVED(CoreTransportClient& client) __attribute__ ((weak, 
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_CLIENT_WRITE_DONE(CoreTransportClient& client, bool isWriteSucceeded) __attribute__ ((weak, alias("__noclientwritedone")));
 //--------------------------------------------------------------------------------------------------------------------------------------
-
 #ifdef CORE_RS485_TRANSPORT_ENABLED
 CoreRS485Settings RS485Settings;
 CoreRS485 RS485;
@@ -37,6 +36,11 @@ CoreTransport::CoreTransport()
 CoreTransport::~CoreTransport()
 {
   
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::setClientBusy(CoreTransportClient& client,bool busy)
+{
+  client.setBusy(busy);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransport::setClientID(CoreTransportClient& client, uint8_t id)
@@ -338,5 +342,195 @@ void CoreRS485::sendData(byte* data, byte dataSize)
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_RS485_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_ESP_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreESPTransport ESP;
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreESPTransport::CoreESPTransport() : CoreTransport()
+{
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::update()
+{
+  //TODO: update ESP
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::begin()
+{
+  initClients();
+
+  HardwareSerial* hs = NULL;
+  switch(ESPTransportSettings.SerialNumber)
+  {
+    case 0:
+      hs = &Serial;
+    break;
+
+    case 1:
+      hs = &Serial1;
+    break;
+
+    case 2:
+      hs = &Serial2;
+    break;
+
+    case 3:
+      hs = &Serial3;
+    break;
+
+  } // switch
+
+  workStream = hs;
+  hs->begin(9600*ESPTransportSettings.UARTSpeed);
+
+  //TODO: Start job!!!
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreESPTransport::isInQueue(ESPClientsQueue& queue,CoreTransportClient* client)
+{
+  for(size_t i=0;i<queue.size();i++)
+  {
+    if(queue[i].client == client)
+      return true;
+  }
+
+  return false;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::addToQueue(ESPClientsQueue& queue,CoreTransportClient* client, const char* ip, uint16_t port)
+{
+  if(isInQueue(queue,client))
+    return;
+
+    ESPClientQueueData dt;
+    dt.client = client;
+    dt.ip = NULL;
+    if(ip)
+    {
+      dt.ip = new char[strlen(ip)+1];
+      strcpy(dt.ip,ip);
+    }
+    dt.port = port;
+
+    queue.push_back(dt);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::removeFromQueue(ESPClientsQueue& queue,CoreTransportClient* client)
+{
+  for(size_t i=0;i<queue.size();i++)
+  {
+    if(queue[i].client == client)
+    {
+      delete [] queue[i].ip;
+        for(size_t j=i+1;j<queue.size();j++)
+        {
+          queue[i] = queue[j];
+        }
+        queue.pop();
+        break;
+    }
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::initClients()
+{
+  for(int i=0;i<ESP_MAX_CLIENTS;i++)
+  {
+    CoreTransportClient* client = CoreTransportClient::Create(this);
+    setClientID(*client,i);
+    clients[i] = client;
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreTransportClient* CoreESPTransport::getFreeClient()
+{
+  //TODO: Тут проверяем - готовы ли мы к работе вообще (законнекчены к роутеру и т.п.)
+  
+  for(int i=0;i<ESP_MAX_CLIENTS;i++)
+  {
+    if(!clients[i]->connected() && !clients[i]->busy()) // возвращаем первого неподсоединённого и незанятого чем-либо клиента
+      return clients[i];
+  }
+
+  return NULL;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::beginWrite(CoreTransportClient& client)
+{
+  #ifdef _CORE_DEBUG
+    Serial.println(F("Write to ESP client..."));
+  #endif
+
+  if(!client.connected())
+  {
+    #ifdef _CORE_DEBUG
+      Serial.println(F("ESP client not connected!"));
+    #endif
+
+    return;
+  }
+
+  //говорим, что клиент занят
+  setClientBusy(client,true);
+  
+  // добавляем клиента в очередь на запись
+  addToQueue(writeOutQueue,&client);
+
+  // клиент добавлен, теперь при обновлении транспорта мы начнём работать с записью в поток с этого клиента
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::beginConnect(CoreTransportClient& client, const char* ip, uint16_t port)
+{
+   #ifdef _CORE_DEBUG
+    Serial.println(F("Connect ESP client to IP..."));
+  #endif 
+
+  if(client.connected())
+  {
+    #ifdef _CORE_DEBUG
+      Serial.println(F("ESP client already connected!"));
+    #endif
+
+    return;
+  }
+
+  //говорим, что клиент занят
+  setClientBusy(client,true);
+
+  // добавляем клиента в очередь на соединение
+  addToQueue(connectQueue,&client, ip, port);
+
+  // клиент добавлен, теперь при обновлении транспорта мы начнём работать с соединением клиента
+
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::beginDisconnect(CoreTransportClient& client)
+{
+   #ifdef _CORE_DEBUG
+    Serial.println(F("Disconnect ESP client..."));
+  #endif 
+
+  if(!client.connected())
+  {
+    #ifdef _CORE_DEBUG
+      Serial.println(F("ESP client not connected!"));
+    #endif
+
+    return;
+  }
+
+  //говорим, что клиент занят
+  setClientBusy(client,true);
+
+  // добавляем клиента в очередь на соединение
+  addToQueue(disconnectQueue,&client);
+
+  // клиент добавлен, теперь при обновлении транспорта мы начнём работать с отсоединением клиента
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_ESP_TRANSPORT_ENABLED
 
 

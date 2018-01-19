@@ -43,9 +43,10 @@ protected:
   void setClientID(CoreTransportClient& client, uint8_t id);
   void setClientConnected(CoreTransportClient& client, bool connected);
   void setClientBuffer(CoreTransportClient& client,const uint8_t* buff, size_t sz);
+  void setClientBusy(CoreTransportClient& client,bool busy);
   
 
-  Stream* pStream;    
+  Stream* workStream; // поток, с которым мы работаем (читаем/пишем в/из него)
 
   friend class CoreTransportClient;
   virtual void beginWrite(CoreTransportClient& client) = 0; // начинаем писать в транспорт с клиента
@@ -113,6 +114,12 @@ class CoreTransportClient
     parent->beginConnect(*this,ip,port);
   }
 
+  bool busy() // проверяет, занят ли клиент чем-либо
+  {
+    return isBusy;
+  }
+  
+
   void disconnect()
   {
     if(!connected())
@@ -144,6 +151,11 @@ class CoreTransportClient
  protected:
 
     friend class CoreTransport;
+
+    void setBusy(bool flag)
+    {
+      isBusy = flag;
+    }
 
     void setConnected(bool flag)
     {
@@ -178,6 +190,7 @@ class CoreTransportClient
     {
       clientID = 0xFF;
       isConnected = false;
+      isBusy = false;
       buffer = NULL;
       bufferSize = 0;
       parent = NULL;
@@ -188,6 +201,7 @@ class CoreTransportClient
 
   uint8_t clientID;
   bool isConnected;
+  bool isBusy;
   CoreTransport* parent;
 
   uint8_t* buffer;
@@ -209,7 +223,7 @@ class CoreSerialTransport : public CoreTransport
 
     void begin()
     {
-      pStream = &Serial;
+      workStream = &Serial;
     }
 
     virtual CoreTransportClient* getFreeClient() // возвращаем одного свободного, ничем не занятого клиента
@@ -250,7 +264,7 @@ class CoreSerialTransport : public CoreTransport
     virtual void beginWrite(CoreTransportClient& client)
     {
        // тут начинаем асинхронную запись. Когда надо - получаем с клиента буфер и пишем в поток
-        pStream->write(client.getBuffer(),client.getBufferSize());
+        workStream->write(client.getBuffer(),client.getBufferSize());
 
         ON_CLIENT_WRITE_DONE(client,true); // говорим, что данные из клиента записаны
 
@@ -306,6 +320,58 @@ struct ESPTransportSettingsClass
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern ESPTransportSettingsClass ESPTransportSettings;
+//--------------------------------------------------------------------------------------------------------------------------------------
+// класс транспорта для ESP
+//--------------------------------------------------------------------------------------------------------------------------------------
+#define ESP_MAX_CLIENTS 4 // наш пул клиентов
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  CoreTransportClient* client; // ссылка на клиента
+  char* ip; // IP для подсоединения
+  uint16_t port; // порт для подсоединения
+   
+} ESPClientQueueData; // данные по клиенту в очереди
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<ESPClientQueueData> ESPClientsQueue; // очередь клиентов на совершение какой-либо исходящей операции (коннект, дисконнект, запись)
+//--------------------------------------------------------------------------------------------------------------------------------------
+class CoreESPTransport : public CoreTransport
+{
+  public:
+    CoreESPTransport();
+
+    virtual void update(); // обновляем состояние транспорта
+    virtual void begin(); // начинаем работу
+
+    virtual CoreTransportClient* getFreeClient(); // возвращает свободного клиента (не законнекченного и не занятого делами)
+
+
+  protected:
+
+    virtual void beginWrite(CoreTransportClient& client); // начинаем писать в транспорт с клиента
+    virtual void beginConnect(CoreTransportClient& client, const char* ip, uint16_t port); // начинаем коннектиться к адресу
+    virtual void beginDisconnect(CoreTransportClient& client); // начинаем отсоединение от адреса
+
+
+  private:
+
+      CoreTransportClient* clients[ESP_MAX_CLIENTS];
+      
+      ESPClientsQueue writeOutQueue; // очередь на запись
+      ESPClientsQueue connectQueue; // очередь на соединение
+      ESPClientsQueue disconnectQueue; // очередь на отсоединение
+
+      bool isInQueue(ESPClientsQueue& queue,CoreTransportClient* client); // тестирует - не в очереди ли уже клиент?
+      void addToQueue(ESPClientsQueue& queue,CoreTransportClient* client, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
+      void removeFromQueue(ESPClientsQueue& queue,CoreTransportClient* client); // удаляет клиента из очереди
+      
+      
+      void initClients();
+    
+  
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern CoreESPTransport ESP;
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_ESP_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
