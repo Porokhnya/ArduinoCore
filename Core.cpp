@@ -287,15 +287,6 @@ bool CoreConfigIterator::readRecord()
       
       char symbol = '\0';
 
-      // флаг - поднимать ли точку доступа
-      #ifdef CORE_ESP_TRANSPORT_ENABLED
-        byte b = read();
-        if(!writeOut(b))
-          ESPTransportSettings.Flags.CreateAP = b;
-      #else
-        writeOut(read()); // пропускаем
-      #endif // CORE_ESP_TRANSPORT_ENABLED
-
       // имя точки доступа (набор байт, заканчивающийся нулевым байтом)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
       
@@ -376,7 +367,7 @@ bool CoreConfigIterator::readRecord()
 
       // флаг - коннектиться ли к роутеру
       #ifdef CORE_ESP_TRANSPORT_ENABLED
-        b = read();
+        byte b = read();
         if(!writeOut(b))
           ESPTransportSettings.Flags.ConnectToRouter = b;
       #else
