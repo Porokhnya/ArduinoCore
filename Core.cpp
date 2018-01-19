@@ -1356,7 +1356,7 @@ void CoreClass::setup(CoreUnhandledCommandsHandler func)
  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreClass::signal(uint16_t signalDelay,CoreSensor* sensor,int storeIndex)
+void CoreClass::signal(uint16_t signalDelay,CoreSensor* sensor,uint16_t storeIndex)
 {
   if(!signalDelay)
   {
@@ -1387,7 +1387,7 @@ void CoreClass::pushToStorage(CoreSensor* s)
   } // for  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreClass::readFromSensor(CoreSensor* sensor,int storeIndex)
+void CoreClass::readFromSensor(CoreSensor* sensor,uint16_t storeIndex)
 {
   while(storeIndex >= CoreDataStore.list.size())
   {

@@ -216,6 +216,8 @@ void ON_CLIENT_DATA_RECEIVED(CoreTransportClient& client) // событие "д�
 void ON_LORA_RECEIVE(int packetSize) 
 {
 
+#ifdef CORE_LORA_TRANSPORT_ENABLED
+
   Serial.println(F("Packet received from LoRa: "));
 
 
@@ -236,7 +238,7 @@ void ON_LORA_RECEIVE(int packetSize)
   LoRa.endPacket();                     // заканчиваем пакет
 
   LoRa.receive();  // переключаемся на приём
-
+#endif
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -372,6 +374,7 @@ void setup()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_RS485_RECEIVE(byte packetID, byte receivedDataLen, byte* receivedData)
 {
+  #ifdef CORE_RS485_TRANSPORT_ENABLED
   // в receivedData - все данные вместе с заголовком, длиной receivedDataLen
   // в packetID - внутренний идентификатор пакета, описанный в конфиге
 
@@ -382,6 +385,8 @@ void ON_RS485_RECEIVE(byte packetID, byte receivedDataLen, byte* receivedData)
   RS485.sendData((byte*)dataToSend, dataToSendLen);
 
   // данные отправляются в виде потока байт, после отправки менеджер RS-485 сразу переключается на приём информации
+
+  #endif
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 unsigned long lastMillis = 0;

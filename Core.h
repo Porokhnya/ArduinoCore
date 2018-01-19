@@ -206,10 +206,10 @@ class CoreClass
 
    CoreSensors list;
    CoreSensorSignals signals;
-   void signal(uint16_t signalDelay,CoreSensor* sensor,int storeIndex);
+   void signal(uint16_t signalDelay,CoreSensor* sensor,uint16_t storeIndex);
    bool waitingSignal(CoreSensor* sensor);
    void updateSignals();
-   void readFromSensor(CoreSensor* sensor,int storeIndex);
+   void readFromSensor(CoreSensor* sensor,uint16_t storeIndex);
 
    // обработчики команд GET и SET
 
