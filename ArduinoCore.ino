@@ -347,12 +347,12 @@ void setup()
   }
 */
 
-  // печатаем версию ядра
-  Core.printVersion(Serial);
-
 
   // говорим ядру, чтобы начинало работу
   Core.begin();
+
+  // печатаем версию ядра
+  Core.printVersion(Serial);
 
 
   ramFree();
