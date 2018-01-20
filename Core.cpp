@@ -568,9 +568,14 @@ bool CoreConfigIterator::readRecord()
         b = read();
         if(!writeOut(b))          
           RS485Settings.DEPin = b;
+
+        b = read();
+        if(!writeOut(b))          
+          RS485Settings.isMasterMode = (b == 1);
         
       #else
-        // пропускаем три байта
+        // пропускаем 4 байта
+        writeOut(read());
         writeOut(read());
         writeOut(read());
         writeOut(read());

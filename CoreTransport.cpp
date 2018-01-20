@@ -63,6 +63,7 @@ void CoreTransport::setClientBuffer(CoreTransportClient& client,const uint8_t* b
 CoreRS485::CoreRS485()
 {
   memset(&RS485Settings,0,sizeof(RS485Settings));
+  RS485Settings.isMasterMode = true; // по умолчанию - в режиме мастера
   workStream = NULL;
   
   dataBuffer = NULL;
@@ -102,7 +103,13 @@ void CoreRS485::begin()
   if(RS485Settings.DEPin > 0)
     pinMode(RS485Settings.DEPin,OUTPUT);
 
-  switchToReceive();
+  if(RS485Settings.isMasterMode)
+  {
+    // работаем в режиме мастера
+    switchToSend();
+  }
+  else
+    switchToReceive();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::switchToReceive()
@@ -121,12 +128,10 @@ void CoreRS485::switchToSend()
   digitalWrite(RS485Settings.DEPin,HIGH); // переводим контроллер RS-485 на передачу
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreRS485::update()
+void CoreRS485::updateSlaveMode()
 {
-  if(!dataBuffer || !workStream) // нет буфера для данных или неизвестный Serial
-    return;
 
-  if(!workStream->available()) // нет данных с потока
+ if(!workStream->available()) // нет данных с потока
     return;
 
   while(workStream->available())
@@ -247,6 +252,312 @@ void CoreRS485::update()
     } // switch(machineState)
    
   } // workStream->available()
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreRS485::updateMasterMode()
+{
+
+  if(!workStream)
+    return;
+    
+  // тут обновляем данные, посылая в линию запросы на получение информации с датчиков
+
+   static unsigned long past = 0;
+   unsigned long now = millis();
+
+   static int currentClientNumber = 0;
+
+  if(now - past > CORE_RS485_POLL_INTERVAL)
+  {
+
+     unsigned long tmoDivider = RS485Settings.UARTSpeed;
+     tmoDivider *= 9600;
+     unsigned long readTimeout  = (10000000ul/tmoDivider)*10; // кол-во микросекунд, необходимое для вычитки десяти байт
+     
+     #ifdef _CORE_DEBUG
+      Serial.print(F("RS485: Poll client #"));
+      Serial.println(currentClientNumber);
+     #endif
+
+     // тут формируем пакет, который запрашивает очередное устройство на шине
+     CoreTransportPacket packet;
+     packet.header1 = CORE_HEADER1;
+     packet.header2 = CORE_HEADER2;
+     packet.header3 = CORE_HEADER3;
+
+     packet.clusterID = Core.ClusterID;
+     packet.deviceID = Core.DeviceID;
+
+     packet.packetType = CoreDataRequest; // это пакет с запросом информации о кол-ве данных на шине у устройства
+
+     CoreDataRequestPacket drp;
+     drp.toDeviceID = currentClientNumber;
+     drp.dataCount = 0;
+
+     memcpy(packet.packetData,&drp,sizeof(CoreDataRequestPacket));
+
+     // считаем CRC
+     packet.crc = Core.crc8((byte*) &packet, sizeof(CoreTransportPacket)-1);
+
+     // теперь пишем в шину запрос
+     sendData((byte*)&packet,sizeof(CoreTransportPacket));
+
+     #ifdef _CORE_DEBUG
+     /*
+      byte* hexWriter = (byte*)&packet;
+      for(byte q = 0;q<sizeof(CoreTransportPacket);q++)
+      {
+        Serial.print('$');
+        Serial.print(Core.byteToHexString(hexWriter[q]));
+      }
+      Serial.println();
+      */
+     
+      Serial.print(F("RS485: Data for client #"));
+      Serial.print(currentClientNumber);
+      Serial.println(F(" was sent, waiting answer..."));
+     #endif
+
+     // обнуляем пакет
+     memset(&packet,0,sizeof(CoreTransportPacket));
+     byte bytesReaded = 0;
+     bool received = false;
+     byte* writePtr = (byte*)&packet;
+     
+     // принимаем данные
+     
+     // запоминаем время начала чтения
+     unsigned long startReadingTime = micros();
+
+  // начинаем читать данные
+      while(1)
+      {
+        if( micros() - startReadingTime > readTimeout)
+        {
+          
+          #ifdef _CORE_DEBUG
+            Serial.print(F("RS485: client #"));
+            Serial.print(currentClientNumber);
+            Serial.println(F(" timeout!"));
+          #endif
+          
+          break;
+        } // if
+
+        if(workStream->available())
+        {
+          startReadingTime = micros(); // сбрасываем таймаут
+          byte bIncoming = (byte) workStream->read();
+          *writePtr++ = bIncoming;
+          bytesReaded++;
+        } // if available
+
+        if(bytesReaded == sizeof(CoreTransportPacket)) // прочитали весь пакет
+        {
+          #ifdef _CORE_DEBUG
+            Serial.println(F("RS485: Packet received from client!"));
+          #endif
+
+          received = true;
+          break;
+        }
+    
+     } // while
+
+     if(received)
+     {
+        // получили полный пакет, проверяем CRC
+        byte crc = Core.crc8((byte*)&packet,sizeof(CoreTransportPacket)-1);
+
+        if(crc == packet.crc)
+        {
+          #ifdef _CORE_DEBUG
+            Serial.println(F("RS485:CRC OK, continue..."));
+          #endif
+
+          // контрольная сумма совпала, проверяем другие данные
+          CoreDataRequestPacket* requestPacket = (CoreDataRequestPacket*) packet.packetData;
+          if(packet.header1 == CORE_HEADER1 && 
+          packet.header2 == CORE_HEADER2 && 
+          packet.header3 == CORE_HEADER3 && 
+          packet.clusterID == Core.ClusterID && 
+          packet.deviceID == currentClientNumber && 
+          requestPacket->toDeviceID == Core.DeviceID)
+          {
+            #ifdef _CORE_DEBUG
+              Serial.println(F("RS485: our packet, parse..."));
+            #endif  
+
+            // получаем кол-во показаний
+            byte dataCount = requestPacket->dataCount;
+
+            // теперь для каждого из показаний посылаем запрос на чтение этих показаний, чтобы добавить их в систему
+            for(byte kk=0;kk < dataCount; kk++)
+            {
+              // формируем пакет запроса показаний, и отправляем его на шину
+              packet.packetType = CoreSensorData; // запрашиваем показания с датчиков
+              packet.packetData[0] =  currentClientNumber; //говорим, какое устройство опрашивается
+              packet.packetData[1] = kk; // говорим, с какого датчика запрашиваем
+
+              // считаем CRC
+              packet.crc = Core.crc8((byte*)&packet,sizeof(CoreTransportPacket)-1);
+
+              // отсылаем данные
+              sendData((byte*)&packet,sizeof(CoreTransportPacket));
+              startReadingTime = micros();
+              bytesReaded = 0;
+              writePtr = (byte*)&packet;
+
+              // читаем из шины ответ
+                while(1)
+                {
+                  if( micros() - startReadingTime > readTimeout)
+                  {
+                    
+                    #ifdef _CORE_DEBUG
+                      Serial.print(F("RS485: client #"));
+                      Serial.print(currentClientNumber);
+                      Serial.println(F(" not answering!"));
+                    #endif
+                    
+                    break;
+                  } // if
+          
+                  if(workStream->available())
+                  {
+                    startReadingTime = micros(); // сбрасываем таймаут
+                    *writePtr++ = (byte) workStream->read();
+                    bytesReaded++;
+                  } // if available
+          
+                  if(bytesReaded == sizeof(CoreTransportPacket)) // прочитали весь пакет
+                  {
+                    #ifdef _CORE_DEBUG
+                      Serial.println(F("RS485: Data packet received from client!"));
+                    #endif
+
+                    byte crc = Core.crc8((byte*)&packet,sizeof(CoreTransportPacket)-1);
+          
+                      // тут разбираем, что там пришло
+                      if(packet.header1 == CORE_HEADER1 && 
+                        packet.header2 == CORE_HEADER2 && 
+                        packet.header3 == CORE_HEADER3 && 
+                        packet.clusterID == Core.ClusterID && 
+                        packet.deviceID == currentClientNumber &&
+                        packet.crc == crc &&
+                        packet.packetType == CoreSensorData)
+                        {
+                              // нам пришла информация о датчике, добавляем его в систему
+                            DBGLN(F("RS485: Sensor data packet received, parse..."));
+    
+                            CoreSensorDataPacket* sensorData = (CoreSensorDataPacket*) packet.packetData;
+                            String sensorName;
+                            
+                            char* namePtr = sensorData->sensorName;
+                            while(*namePtr)
+                            {
+                              sensorName += *namePtr++;
+                            }
+    
+                            CoreUserDataSensor* newSensor = (CoreUserDataSensor*) Core.Sensors()->get(sensorName);
+                            
+                            if(!newSensor)
+                            {
+                              newSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
+                            }
+    
+                            if(newSensor)
+                            {
+                              newSensor->setName(sensorName); // даём датчику имя
+    
+                              // назначаем данные
+                              newSensor->setData(sensorData->data,sensorData->dataLen);
+    
+                              // назначаем тип данных
+                              newSensor->setUserDataType((CoreDataType)sensorData->dataType);
+    
+                             // и добавляем в список датчиков
+                              Core.Sensors()->add(newSensor);
+                        
+                              // также помещаем его показания в хранилище
+                              Core.pushToStorage(newSensor);
+                              
+                              DBGLN(F("RS485: Userdata sensor added!"));                          
+                              
+                            } // if(newSensor)                          
+                                              
+                        } // if
+
+                    break;
+                  }
+              
+               } // while              
+              
+            } // for
+            
+          }
+          else
+          {
+            #ifdef _CORE_DEBUG
+              Serial.println(F("RS485: bad packet!"));
+            #endif                      
+          }
+          
+        } // crc
+        else
+        {
+          #ifdef _CORE_DEBUG
+            Serial.println(F("RS485: BAD CRC!"));
+          #endif          
+        }
+      
+     } // if(received)
+     else
+     {
+          #ifdef _CORE_DEBUG
+          if(!bytesReaded)
+          {
+            Serial.print(F("RS485: NO DATA FROM CLIENT #"));
+            Serial.println(currentClientNumber);
+          }
+          else
+          {
+            Serial.print(F("RS485: client UNCOMPLETED DATA - "));
+              // выводим ответ клиента
+              char* ch = (char*)&packet;
+              for(byte zz=0;zz<bytesReaded;zz++)
+                Serial.print((char)*ch++);
+
+             Serial.println();
+          }
+          #endif                
+     } // else
+
+
+     currentClientNumber++;
+
+     if(currentClientNumber > 256) // начнём сначала
+      currentClientNumber = 0;
+
+     past = millis();
+  } // if
+
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreRS485::update()
+{
+  if(!dataBuffer || !workStream) // нет буфера для данных или неизвестный Serial
+    return;
+
+
+  if(RS485Settings.isMasterMode)
+    updateMasterMode();
+  else
+    updateSlaveMode();
+    
+
+ 
   
   
 }
