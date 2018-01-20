@@ -272,8 +272,37 @@ void CoreRS485::updateMasterMode()
 
    static int currentClientNumber = 0;
 
-  if(now - past > CORE_RS485_POLL_INTERVAL)
+   unsigned long pollInterval = 0;//CORE_RS485_POLL_INTERVAL;
+
+   // когда мало клиентов - минимальное время опроса между ними надо увеличивать, т.к. незачем дёргать два несчастных клиента несколько раз в секунду.
+   // для этого мы смотрим - если живых клиентов мало, то мы пересчитываем интервал обновления.
+   byte offlineClients = getOfflineModulesCount();
+   byte aliveClients = CORE_RS485_MAX_ADDRESS - offlineClients + 1;
+
+   // мы должны опросить aliveClients за CORE_RS485_ROUNDTRIP секунд
+   unsigned long roundtrip = CORE_RS485_ROUNDTRIP;
+   roundtrip *= 1000;
+
+   // вычисляем, как часто опрашивать
+   pollInterval = roundtrip/aliveClients;
+     
+   // проверяем, чтобы всё равно был минимальный интервал
+   if(pollInterval < CORE_RS485_POLL_INTERVAL)
+    pollInterval = CORE_RS485_POLL_INTERVAL;
+
+  if(now - past > pollInterval)
   {
+
+    // смотрим, не находится ли модуль в списке исключений, т.е. долго не отвечал
+    while(inExcludedList(currentClientNumber))
+    {
+      currentClientNumber++;
+      if(currentClientNumber > CORE_RS485_MAX_ADDRESS)
+      {
+        currentClientNumber = 0; // всё, нечего опрашивать, на шине никого нет
+        return;
+      }
+    }
 
      unsigned long tmoDivider = RS485Settings.UARTSpeed;
      tmoDivider *= 9600;
@@ -368,7 +397,7 @@ void CoreRS485::updateMasterMode()
         if(crc == packet.crc)
         {
           #ifdef _CORE_DEBUG
-            Serial.println(F("RS485:CRC OK, continue..."));
+            Serial.println(F("RS485: CRC OK, continue..."));
           #endif
 
           // контрольная сумма совпала, проверяем другие данные
@@ -512,9 +541,10 @@ void CoreRS485::updateMasterMode()
         */
       
      } // if(received)
-     /*
+     
      else
      {
+      /*
           #ifdef _CORE_DEBUG
           if(!bytesReaded)
           {
@@ -531,9 +561,14 @@ void CoreRS485::updateMasterMode()
 
              Serial.println();
           }
-          #endif                
+          #endif
+          */
+
+          // ничего не получили с модуля, добавляем в список несуществующих на шине
+          addToExcludedList(currentClientNumber);
+                          
      } // else
-    */
+    
 
      currentClientNumber++;
 
@@ -543,6 +578,60 @@ void CoreRS485::updateMasterMode()
      past = millis();
   } // if
 
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+byte CoreRS485::getOfflineModulesCount()
+{
+  byte result = 0;
+
+ for(size_t i=0;i<excludedList.size();i++)
+  {
+    if(excludedList[i].readingAttempts >= CORE_RS485_MAX_BAD_READINGS)
+      result++;
+  }  
+
+  return result;
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreRS485::inExcludedList(byte clientNumber)
+{
+  for(size_t i=0;i<excludedList.size();i++)
+  {
+    if(excludedList[i].clientNumber == clientNumber && excludedList[i].readingAttempts >= CORE_RS485_MAX_BAD_READINGS)
+      return true;
+  }
+
+  return false;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreRS485::addToExcludedList(byte clientNumber)
+{
+  for(size_t i=0;i<excludedList.size();i++)
+  {
+    if(excludedList[i].clientNumber == clientNumber)
+    {
+      excludedList[i].readingAttempts++;
+      if(excludedList[i].readingAttempts >= CORE_RS485_MAX_BAD_READINGS)
+      {
+        excludedList[i].readingAttempts = CORE_RS485_MAX_BAD_READINGS;
+
+        #ifdef _CORE_DEBUG
+          Serial.print(F("RS485: Client #"));
+          Serial.print(clientNumber);
+          Serial.println(F(" excluded from query!"));
+        #endif
+      }
+
+        return;
+    }
+  }
+
+  CoreRS485ExcludeRecord rec;
+  rec.clientNumber = clientNumber;
+  rec.readingAttempts = 1;
+
+  excludedList.push_back(rec);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::update()

@@ -2197,7 +2197,7 @@ CoreDataList CoreDataStoreClass::getByType(CoreDataType type)
   for(size_t i=0;i<list.size();i++)
   {
     CoreStoredData dt = list[i];
-    if(CoreSensor::getDataType(/*dt.sensorType*/dt.sensor->getType()) == type)
+    if(CoreSensor::getDataType(dt.sensor->getType()) == type)
       result.push_back(dt);
   }
 
