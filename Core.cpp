@@ -1811,6 +1811,8 @@ void CoreClass::coreLoraReceive(int packetSize)
                         if(!newSensor)
                         {
                           newSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
+                         // добавляем в список датчиков
+                          Core.Sensors()->add(newSensor);
                         }
 
                         if(newSensor)
@@ -1823,8 +1825,6 @@ void CoreClass::coreLoraReceive(int packetSize)
                           // назначаем тип данных
                           newSensor->setUserDataType((CoreDataType)sensorData->dataType);
 
-                         // и добавляем в список датчиков
-                          Core.Sensors()->add(newSensor);
                     
                           // также помещаем его показания в хранилище
                           Core.pushToStorage(newSensor);

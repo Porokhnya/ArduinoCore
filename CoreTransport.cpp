@@ -98,7 +98,11 @@ void CoreRS485::begin()
   workStream = getMyStream(RS485Settings.SerialNumber);
   
   if(RS485Settings.UARTSpeed > 0)
-    workStream->begin(RS485Settings.UARTSpeed*9600);
+  {
+    unsigned long uspeed = RS485Settings.UARTSpeed;
+    uspeed *= 9600;
+    workStream->begin(uspeed);
+  }
 
   if(RS485Settings.DEPin > 0)
     pinMode(RS485Settings.DEPin,OUTPUT);
@@ -274,12 +278,13 @@ void CoreRS485::updateMasterMode()
      unsigned long tmoDivider = RS485Settings.UARTSpeed;
      tmoDivider *= 9600;
      unsigned long readTimeout  = (10000000ul/tmoDivider)*10; // кол-во микросекунд, необходимое для вычитки десяти байт
-     
+
+/*     
      #ifdef _CORE_DEBUG
       Serial.print(F("RS485: Poll client #"));
       Serial.println(currentClientNumber);
      #endif
-
+*/
      // тут формируем пакет, который запрашивает очередное устройство на шине
      CoreTransportPacket packet;
      packet.header1 = CORE_HEADER1;
@@ -302,23 +307,13 @@ void CoreRS485::updateMasterMode()
 
      // теперь пишем в шину запрос
      sendData((byte*)&packet,sizeof(CoreTransportPacket));
-
+/*
      #ifdef _CORE_DEBUG
-     /*
-      byte* hexWriter = (byte*)&packet;
-      for(byte q = 0;q<sizeof(CoreTransportPacket);q++)
-      {
-        Serial.print('$');
-        Serial.print(Core.byteToHexString(hexWriter[q]));
-      }
-      Serial.println();
-      */
-     
       Serial.print(F("RS485: Data for client #"));
       Serial.print(currentClientNumber);
       Serial.println(F(" was sent, waiting answer..."));
      #endif
-
+*/
      // обнуляем пакет
      memset(&packet,0,sizeof(CoreTransportPacket));
      byte bytesReaded = 0;
@@ -335,13 +330,13 @@ void CoreRS485::updateMasterMode()
       {
         if( micros() - startReadingTime > readTimeout)
         {
-          
+          /*
           #ifdef _CORE_DEBUG
             Serial.print(F("RS485: client #"));
             Serial.print(currentClientNumber);
             Serial.println(F(" timeout!"));
           #endif
-          
+          */
           break;
         } // if
 
@@ -414,12 +409,13 @@ void CoreRS485::updateMasterMode()
                 {
                   if( micros() - startReadingTime > readTimeout)
                   {
-                    
+                    /*
                     #ifdef _CORE_DEBUG
                       Serial.print(F("RS485: client #"));
                       Serial.print(currentClientNumber);
                       Serial.println(F(" not answering!"));
                     #endif
+                    */
                     
                     break;
                   } // if
@@ -465,6 +461,8 @@ void CoreRS485::updateMasterMode()
                             if(!newSensor)
                             {
                               newSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
+                             // добавляем в список датчиков
+                              Core.Sensors()->add(newSensor);
                             }
     
                             if(newSensor)
@@ -476,10 +474,7 @@ void CoreRS485::updateMasterMode()
     
                               // назначаем тип данных
                               newSensor->setUserDataType((CoreDataType)sensorData->dataType);
-    
-                             // и добавляем в список датчиков
-                              Core.Sensors()->add(newSensor);
-                        
+                            
                               // также помещаем его показания в хранилище
                               Core.pushToStorage(newSensor);
                               
@@ -497,22 +492,27 @@ void CoreRS485::updateMasterMode()
             } // for
             
           }
+          /*
           else
           {
             #ifdef _CORE_DEBUG
               Serial.println(F("RS485: bad packet!"));
             #endif                      
           }
+          */
           
         } // crc
+        /*
         else
         {
           #ifdef _CORE_DEBUG
             Serial.println(F("RS485: BAD CRC!"));
           #endif          
         }
+        */
       
      } // if(received)
+     /*
      else
      {
           #ifdef _CORE_DEBUG
@@ -533,7 +533,7 @@ void CoreRS485::updateMasterMode()
           }
           #endif                
      } // else
-
+    */
 
      currentClientNumber++;
 
@@ -693,7 +693,9 @@ void CoreESPTransport::begin()
   } // switch
 
   workStream = hs;
-  hs->begin(9600*ESPTransportSettings.UARTSpeed);
+  unsigned long uspeed = ESPTransportSettings.UARTSpeed;
+  uspeed *= 9600;
+  hs->begin(uspeed);
 
   //TODO: Start job!!!
 }

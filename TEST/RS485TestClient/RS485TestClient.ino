@@ -116,7 +116,8 @@ void processRS485Packet()
       
             // говорим, что у нас два датчика
             drp->dataCount = 2;
-      
+
+            drp->toDeviceID = rs485Packet.deviceID;
             rs485Packet.deviceID = MY_DEVICE_ID;
       
             // пересчитываем CRC
@@ -141,7 +142,7 @@ void processRS485Packet()
               rs485WritePtr = 0;
               return;
              }
-      
+
               rs485Packet.deviceID = MY_DEVICE_ID;
       
               CoreSensorDataPacket* sdp = (CoreSensorDataPacket*) rs485Packet.packetData;
@@ -154,7 +155,8 @@ void processRS485Packet()
                   strcpy(sdp->sensorName, "Remote1");
                   sdp->dataType = Temperature;
                   sdp->dataLen = 2;
-                  sdp->data[0] = 12;
+                  static int8_t tempWhole = 0;
+                  sdp->data[0] = ++tempWhole;
                   sdp->data[1] = 25;
                 }
                 break;
