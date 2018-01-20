@@ -537,7 +537,7 @@ void CoreRS485::updateMasterMode()
 
      currentClientNumber++;
 
-     if(currentClientNumber > 256) // начнём сначала
+     if(currentClientNumber > CORE_RS485_MAX_ADDRESS) // начнём сначала
       currentClientNumber = 0;
 
      past = millis();
