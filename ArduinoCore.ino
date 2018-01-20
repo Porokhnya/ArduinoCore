@@ -276,8 +276,6 @@ void setup()
   // все необработанные данные из Serial будут перенаправлены в функцию unhandledCommandHandler
   Core.setup(unhandledCommandHandler);
 
-  // печатаем версию ядра
-  Core.printVersion(Serial);
 
   // печатаем информацию о поддерживаемых датчиках
   //Serial.print(F("Supported sensors: "));
@@ -349,6 +347,10 @@ void setup()
   }
 */
 
+  // печатаем версию ядра
+  Core.printVersion(Serial);
+
+
   // говорим ядру, чтобы начинало работу
   Core.begin();
 
@@ -403,7 +405,6 @@ void loop()
   
   // обрабатываем входящие по Serial команды
   Core.handleCommands();
-
 
   // тут пробуем поймать изменение состояния порта
   CoreDataList catchList = CoreDataStore.getBySensor(DigitalPortState);
