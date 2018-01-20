@@ -3,13 +3,13 @@
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern "C" {
 static void __nors485(byte packetID, byte dataLen, byte* data){}
-static void __nolora(int dummy){}
+static void __nolora(byte* b, int dummy){}
 static void __noclientconnect(CoreTransportClient& client) {}
 static void __noclientdatareceived(CoreTransportClient& client) {}
 static void __noclientwritedone(CoreTransportClient& client, bool isWriteSucceeded) {}
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void ON_LORA_RECEIVE(int) __attribute__ ((weak, alias("__nolora")));
+void ON_LORA_RECEIVE(byte*, int) __attribute__ ((weak, alias("__nolora")));
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_RS485_RECEIVE(byte packetID, byte dataLen, byte* data) __attribute__ ((weak, alias("__nors485")));
 //--------------------------------------------------------------------------------------------------------------------------------------

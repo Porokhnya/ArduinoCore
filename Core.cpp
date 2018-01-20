@@ -724,6 +724,24 @@ CoreClass::CoreClass()
   ClusterID = 0;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+byte CoreClass::crc8(const byte *addr, byte len)
+{
+  byte crc = 0;
+  while (len--) 
+    {
+    byte inbyte = *addr++;
+    for (byte i = 8; i; i--)
+      {
+      byte mix = (crc ^ inbyte) & 0x01;
+      crc >>= 1;
+      if (mix) 
+        crc ^= 0x8C;
+      inbyte >>= 1;
+      }  // end of for
+    }  // end of while
+  return crc;  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::saveConfig(const byte* address, uint16_t sz, bool isInFlashSource)
 {
    uint16_t writeAddress = CORE_STORE_ADDRESS;
@@ -1725,10 +1743,137 @@ void CoreClass::begin()
     else
       LoRa.disableCrc();
   
-    LoRa.onReceive(ON_LORA_RECEIVE);
+    LoRa.onReceive(coreLoraReceive);
     LoRa.receive(); // переключаемся на приём
-  #endif
+  #endif // CORE_LORA_TRANSPORT_ENABLED
 }
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_LORA_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreClass::coreLoraReceive(int packetSize)
+{
+  if(packetSize > 0)
+  {
+    byte* bPacket  = new byte[packetSize];
+    byte cntr = 0;
+    while(LoRa.available())
+    {
+      bPacket[cntr] = LoRa.read();
+      cntr++;
+    }
+
+    // тут смотрим - может, этот пакет - известный нам
+    if(packetSize == sizeof(CoreTransportPacket))
+    {
+        // длина данных совпадает, проверяем заголовок
+        CoreTransportPacket* packet = (CoreTransportPacket*) bPacket;
+
+        if(packet->header1 == CORE_HEADER1 && packet->header2 == CORE_HEADER2 && packet->header3 == CORE_HEADER3)
+        {
+            DBGLN(F("LoRa: packet header OK!"));
+            // пакет точно наш, проверяем CRC
+            byte crc = CoreClass::crc8(bPacket,packetSize-1);
+            if(crc == packet->crc)
+            {
+               // контрольная сумма совпадает, продолжаем
+               DBGLN(F("LoRa: CRC OK"));
+
+               if(packet->clusterID == Core.ClusterID)
+               {
+                  DBGLN(F("LoRa: Our cluster, continue..."));
+
+                  if(packet->deviceID != Core.DeviceID)
+                  {
+                    DBGLN(F("LoRa: Remote device detected, continue..."));
+
+                    switch(packet->packetType)
+                    {
+                      case CoreSensorData: // пакет с датчиками
+                      {                        
+                        DBGLN(F("LoRa: Sensor data packet detected, parse..."));
+
+                        CoreSensorDataPacket* sensorData = (CoreSensorDataPacket*) packet->packetData;
+                        String sensorName;
+                        
+                        char* namePtr = sensorData->sensorName;
+                        while(*namePtr)
+                        {
+                          sensorName += *namePtr++;
+                        }
+
+                        CoreUserDataSensor* newSensor = (CoreUserDataSensor*) Core.Sensors()->get(sensorName);
+                        
+                        if(!newSensor)
+                        {
+                          newSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
+                        }
+
+                        if(newSensor)
+                        {
+                          newSensor->setName(sensorName); // даём датчику имя
+
+                          // назначаем данные
+                          newSensor->setData(sensorData->data,sensorData->dataLen);
+
+                          // назначаем тип данных
+                          newSensor->setUserDataType((CoreDataType)sensorData->dataType);
+
+                         // и добавляем в список датчиков
+                          Core.Sensors()->add(newSensor);
+                    
+                          // также помещаем его показания в хранилище
+                          Core.pushToStorage(newSensor);
+                          
+                          DBGLN(F("LoRa: Userdata sensor added!"));                          
+                          
+                        } // if(newSensor)
+                        
+                      }
+                      break; // CoreSensorData
+
+                      default:
+                        // пакет не обработали, вызываем событие
+                        ON_LORA_RECEIVE(bPacket,packetSize);
+                      break;
+                      
+                    } // switch
+                  }
+                  else
+                  {
+                    DBGLN(F("LoRa: Same device ID, ignore!"));
+                  }
+               }
+               else
+               {
+                  DBGLN(F("LoRa: Unknown cluster!"));
+               }
+               
+            }
+            else
+            {
+              DBGLN(F("LoRa: CRC Fail!"));
+            }
+        }
+        else
+        {
+          DBGLN(F("LoRa: unknown packet, pass it to event..."));
+          // не наш пакет, вызываем событие, что принят пакет от LoRa
+          ON_LORA_RECEIVE(bPacket,packetSize);
+        }
+        
+    }
+    else
+    {
+      // не наш пакет, вызываем событие, что принят пакет от LoRa
+      ON_LORA_RECEIVE(bPacket,packetSize);
+    }
+
+    delete [] bPacket;
+    
+  } // if
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_LORA_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::update()
 {

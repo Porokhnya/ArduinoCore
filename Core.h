@@ -154,6 +154,7 @@ class CoreClass
     byte DeviceID; // уникальный адрес устройства
     byte ClusterID; // уникальный адрес кластера
 
+    static byte crc8(const byte *addr, byte len);
 
     // устанавливает дату/время для всех DS3231
     void setCurrentDateTime(uint8_t dayOfMonth, uint8_t month, uint16_t year, uint8_t hour, uint8_t minute, uint8_t second);
@@ -201,6 +202,10 @@ class CoreClass
 
    void memInit();
    void initSensors();
+
+   #ifdef CORE_LORA_TRANSPORT_ENABLED
+    static void coreLoraReceive(int packetSize);
+   #endif
 
 
    CoreUnhandledCommandsHandler pUnhandled;
