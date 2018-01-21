@@ -1920,7 +1920,7 @@ void CoreClass::update()
   #ifdef CORE_DS3231_ENABLED
   // с датчиков DS3231 надо обновлять показания каждую секунду, вне зависимости от выставленного интервала
   static unsigned long ds3231UpdateMillis = 0;
-  if(curMillis - ds3231UpdateMillis > 1000)
+  if(!ds3231UpdateMillis || curMillis - ds3231UpdateMillis > 1000)
   {
     ds3231UpdateMillis = curMillis;
     for(size_t i=0;i<list.size();i++)
