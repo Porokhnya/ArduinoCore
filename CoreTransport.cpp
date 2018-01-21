@@ -64,9 +64,11 @@ CoreRS485::CoreRS485()
   RS485Settings.isMasterMode = true; // по умолчанию - в режиме мастера
   workStream = NULL;
 
+#ifndef CORE_RS485_DISABLE_CORE_LOGIC
+
   rsPacketPtr = (byte*)&rs485Packet;
   rs485WritePtr = 0;
-
+#endif
   
 /*  
   dataBuffer = NULL;
@@ -148,6 +150,8 @@ void CoreRS485::switchToSend()
 
   digitalWrite(RS485Settings.DEPin,HIGH); // переводим контроллер RS-485 на передачу
 }
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifndef CORE_RS485_DISABLE_CORE_LOGIC
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreRS485::gotRS485Packet()
 {
@@ -873,18 +877,22 @@ void CoreRS485::addToExcludedList(byte clientNumber)
   excludedList.push_back(rec);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_RS485_DISABLE_CORE_LOGIC
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::update()
 {
   if(/*!dataBuffer || */!workStream) // нет буфера для данных или неизвестный Serial
     return;
 
+  #ifndef CORE_RS485_DISABLE_CORE_LOGIC
 
   if(RS485Settings.isMasterMode)
     updateMasterMode();
   else
     updateSlaveMode();
-    
 
+    
+  #endif
  
   
   

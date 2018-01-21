@@ -378,6 +378,7 @@ typedef struct
   
 } CoreRS485Settings;
 //--------------------------------------------------------------------------------------------------------------------------------------
+#ifndef CORE_RS485_DISABLE_CORE_LOGIC
 typedef struct
 {
   byte clientNumber;
@@ -386,6 +387,7 @@ typedef struct
 } CoreRS485ExcludeRecord;
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<CoreRS485ExcludeRecord> CoreRS485ExcludedList;
+#endif // CORE_RS485_DISABLE_CORE_LOGIC
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern CoreRS485Settings RS485Settings;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -418,16 +420,36 @@ class CoreRS485
     void update();
     void clear();
 
-    void sendData(byte* data, byte dataSize); // отправляет данные в шину
+    // возвращает UART, используемый для RS-485
+    HardwareSerial* getSerial() {return workStream; }
+
+    void sendData(byte* data, byte dataSize); // отправляет данные в шину: переключается на передачу, посылает данные, после отсыла - переключается на приём
+    void switchToReceive(); // переключается на приём
+    void switchToSend(); // переключается на передачу
+    void waitTransmitComplete(); //ждёт окончания передачи
+    
 //    void addKnownPacketHeader(byte* header, byte headerSize, byte packetDataLen, byte packetID); // добавляем пакет в известные пакеты на шине
 
 
 private:
 
+#ifndef CORE_RS485_DISABLE_CORE_LOGIC
+
   CoreRS485ExcludedList excludedList;
   bool inExcludedList(byte clientNumber);
   void addToExcludedList(byte clientNumber);
   byte getOfflineModulesCount();
+  void updateSlaveMode();
+  void updateMasterMode();
+
+  CoreTransportPacket rs485Packet;
+  byte* rsPacketPtr;
+  byte rs485WritePtr;
+
+  bool gotRS485Packet();
+  void processIncomingRS485Packets();
+  void processRS485Packet();
+#endif // CORE_RS485_DISABLE_CORE_LOGIC
 
   HardwareSerial* workStream;
   HardwareSerial* getMyStream(byte SerialNumber);
@@ -441,20 +463,7 @@ private:
 
 //  RS485KnownHeadersList knownHeaders;
 
-  void switchToReceive();
-  void switchToSend();
-  void waitTransmitComplete();
 
-  void updateSlaveMode();
-  void updateMasterMode();
-
-  CoreTransportPacket rs485Packet;
-  byte* rsPacketPtr;
-  byte rs485WritePtr;
-
-  bool gotRS485Packet();
-  void processIncomingRS485Packets();
-  void processRS485Packet();
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
