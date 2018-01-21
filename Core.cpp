@@ -589,7 +589,7 @@ bool CoreConfigIterator::readRecord()
       #endif
     }
     return true;
-
+/*
     case RS485IncomingPacketRecord:
     {
       #ifdef CORE_RS485_TRANSPORT_ENABLED
@@ -632,6 +632,7 @@ bool CoreConfigIterator::readRecord()
       
     }
     return true;
+    */
 
     case LoRaSettingsRecord:
     {
@@ -1515,19 +1516,24 @@ void CoreClass::readFromSensor(CoreSensor* sensor,uint16_t storeIndex)
   stored->data = NULL;
 
   uint8_t sz = sensor->getDataSize();
-  byte* dt = new byte[sz];
-  
-  //DBGLN(F("Read..."));
-  
-  if(sensor->read(dt))
-  {      
-      // на датчике есть данные
-      stored->data = dt;
-      stored->dataSize = sz;
-        
-  }   // if
-  else
-    delete [] dt;
+
+  if(sz)
+  {
+    byte* dt = new byte[sz];
+    
+    //DBGLN(F("Read..."));
+    
+    if(sensor->read(dt))
+    {      
+        // на датчике есть данные
+        stored->data = dt;
+        stored->dataSize = sz;
+          
+    }   // if
+    else
+      delete [] dt;
+      
+  } // if(sz)
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------

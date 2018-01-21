@@ -9,7 +9,6 @@ class CoreTransportClient;
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern "C" {
   void ON_LORA_RECEIVE(byte* packet, int packetSize);
-  void ON_RS485_RECEIVE(byte packetID, byte dataLen, byte* data);
   void ON_CLIENT_CONNECT(CoreTransportClient& client);
   void ON_CLIENT_DATA_RECEIVED(CoreTransportClient& client);
   void ON_CLIENT_WRITE_DONE(CoreTransportClient& client, bool isWriteSucceeded);
@@ -64,8 +63,11 @@ typedef struct
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
-  // имя датчика, максимум 10 символов, заканчивается '\0'
-  char sensorName[11]; 
+  // имя датчика, максимум 9 символов, заканчивается '\0'
+  char sensorName[10]; 
+
+  // признак наличия данных
+  byte hasData;
 
   // тип данных (температура, влажность, прочее)
   byte dataType;
@@ -387,6 +389,7 @@ typedef Vector<CoreRS485ExcludeRecord> CoreRS485ExcludedList;
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern CoreRS485Settings RS485Settings;
 //--------------------------------------------------------------------------------------------------------------------------------------
+/*
 typedef struct // информация об известном входящем пакете
 {
   byte headerLen; // длина известного заголовка
@@ -404,6 +407,7 @@ typedef enum
   rs485WaitingData
   
 } RS485State;
+*/
 //--------------------------------------------------------------------------------------------------------------------------------------
 class CoreRS485
 {
@@ -415,7 +419,7 @@ class CoreRS485
     void clear();
 
     void sendData(byte* data, byte dataSize); // отправляет данные в шину
-    void addKnownPacketHeader(byte* header, byte headerSize, byte packetDataLen, byte packetID); // добавляем пакет в известные пакеты на шине
+//    void addKnownPacketHeader(byte* header, byte headerSize, byte packetDataLen, byte packetID); // добавляем пакет в известные пакеты на шине
 
 
 private:
@@ -428,14 +432,14 @@ private:
   HardwareSerial* workStream;
   HardwareSerial* getMyStream(byte SerialNumber);
 
-  byte* dataBuffer;
-  byte dataBufferLen;
-  byte writeIterator;
-  RS485IncomingHeader* currentHeader;
+ // byte* dataBuffer;
+//  byte dataBufferLen;
+//  byte writeIterator;
+//  RS485IncomingHeader* currentHeader;
 
-  RS485State machineState;
+//  RS485State machineState;
 
-  RS485KnownHeadersList knownHeaders;
+//  RS485KnownHeadersList knownHeaders;
 
   void switchToReceive();
   void switchToSend();
@@ -443,6 +447,14 @@ private:
 
   void updateSlaveMode();
   void updateMasterMode();
+
+  CoreTransportPacket rs485Packet;
+  byte* rsPacketPtr;
+  byte rs485WritePtr;
+
+  bool gotRS485Packet();
+  void processIncomingRS485Packets();
+  void processRS485Packet();
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------

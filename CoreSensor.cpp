@@ -445,9 +445,15 @@ uint8_t CoreUserDataSensor::getDataSize()
 void CoreUserDataSensor::setData(uint8_t* dt,uint8_t sz)
 {
   delete [] data;
+  data = NULL;
   dataSize = sz;
-  data = new uint8_t[sz];
-  memcpy(data,dt,sz);
+  
+  if(sz && dt)
+  {
+    data = new uint8_t[sz];
+    memcpy(data,dt,sz);
+  }
+  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreUserDataSensor::begin(uint8_t* configData)
@@ -458,7 +464,10 @@ void CoreUserDataSensor::begin(uint8_t* configData)
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreUserDataSensor::read(uint8_t* buffer)
 {
-  memcpy(buffer,data,dataSize);
+  if(!data || !dataSize || !buffer)
+    return false;
+    
+   memcpy(buffer,data,dataSize);
   
   return true;  
 }

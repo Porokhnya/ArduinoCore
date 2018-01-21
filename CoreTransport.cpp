@@ -2,7 +2,6 @@
 #include "Core.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern "C" {
-static void __nors485(byte packetID, byte dataLen, byte* data){}
 static void __nolora(byte* b, int dummy){}
 static void __noclientconnect(CoreTransportClient& client) {}
 static void __noclientdatareceived(CoreTransportClient& client) {}
@@ -11,7 +10,6 @@ static void __noclientwritedone(CoreTransportClient& client, bool isWriteSucceed
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_LORA_RECEIVE(byte*, int) __attribute__ ((weak, alias("__nolora")));
 //--------------------------------------------------------------------------------------------------------------------------------------
-void ON_RS485_RECEIVE(byte packetID, byte dataLen, byte* data) __attribute__ ((weak, alias("__nors485")));
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_CLIENT_CONNECT(CoreTransportClient& client) __attribute__ ((weak, alias("__noclientconnect")));
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -65,12 +63,18 @@ CoreRS485::CoreRS485()
   memset(&RS485Settings,0,sizeof(RS485Settings));
   RS485Settings.isMasterMode = true; // по умолчанию - в режиме мастера
   workStream = NULL;
+
+  rsPacketPtr = (byte*)&rs485Packet;
+  rs485WritePtr = 0;
+
   
+/*  
   dataBuffer = NULL;
   dataBufferLen = 0;
   writeIterator = 0;
   
   machineState = rs485WaitingHeader;
+*/  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 HardwareSerial* CoreRS485::getMyStream(byte SerialNumber)
@@ -145,9 +149,213 @@ void CoreRS485::switchToSend()
   digitalWrite(RS485Settings.DEPin,HIGH); // переводим контроллер RS-485 на передачу
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreRS485::gotRS485Packet()
+{
+  // проверяем, есть ли у нас валидный RS-485 пакет
+  return rs485WritePtr > ( sizeof(CoreTransportPacket)-1 );
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreRS485::processRS485Packet()
+{
+
+  // обрабатываем входящий пакет. Тут могут возникнуть проблемы с синхронизацией
+  // начала пакета, поэтому мы сначала ищем заголовок и убеждаемся, что он валидный. 
+  // если мы нашли заголовок и он не в начале пакета - значит, с синхронизацией проблемы,
+  // и мы должны сдвинуть заголовок в начало пакета, чтобы потом дочитать остаток.
+  if(!(rs485Packet.header1 == CORE_HEADER1 && rs485Packet.header2 == CORE_HEADER2 && rs485Packet.header3 == CORE_HEADER3))
+  {
+     // заголовок неправильный, ищем возможное начало пакета
+     byte readPtr = 0;
+     bool startPacketFound = false;
+     while(readPtr < sizeof(CoreTransportPacket))
+     {
+       if(rsPacketPtr[readPtr] == CORE_HEADER1)
+       {
+        startPacketFound = true;
+        break;
+       }
+        readPtr++;
+     } // while
+
+     if(!startPacketFound) // не нашли начало пакета
+     {
+        rs485WritePtr = 0; // сбрасываем указатель чтения и выходим
+        return;
+     }
+
+     if(readPtr == 0)
+     {
+      // стартовый байт заголовка найден, но он в нулевой позиции, следовательно - что-то пошло не так
+        rs485WritePtr = 0; // сбрасываем указатель чтения и выходим
+        return;       
+     } // if
+
+     // начало пакета найдено, копируем всё, что после него, перемещая в начало буфера
+     byte writePtr = 0;
+     byte bytesWritten = 0;
+     while(readPtr < sizeof(CoreTransportPacket) )
+     {
+      rsPacketPtr[writePtr++] = rsPacketPtr[readPtr++];
+      bytesWritten++;
+     }
+
+     rs485WritePtr = bytesWritten; // запоминаем, куда писать следующий байт
+
+
+     return;
+         
+  } // if
+  else
+  {
+    // заголовок правильный 
+       
+        // отвечаем на пакет
+         byte crc = Core.crc8((byte*)&rs485Packet,sizeof(CoreTransportPacket)- 1);
+      
+         if(crc != rs485Packet.crc)
+         {
+          String str = F("BAD CRC!");
+          sendData((byte*)str.c_str(),str.length());
+          rs485WritePtr = 0;
+          return;
+         }
+      
+        if(!(rs485Packet.header1 == CORE_HEADER1 && rs485Packet.header2 == CORE_HEADER2 && rs485Packet.header3 == CORE_HEADER3))
+        {
+          String str = F("BAD HEADERS!");
+          sendData((byte*)str.c_str(),str.length());
+          rs485WritePtr = 0;
+          return;
+        }
+      
+        if(rs485Packet.clusterID != Core.ClusterID)
+        {
+          String str = F("BAD CLUSTER!");
+          sendData((byte*)str.c_str(),str.length());
+          rs485WritePtr = 0;
+          return;
+        }
+      
+      
+        if(!(rs485Packet.packetType == CoreDataRequest || rs485Packet.packetType == CoreSensorData))
+        {
+          String str = F("BAD PACKET TYPE!");
+          sendData((byte*)str.c_str(),str.length());
+          rs485WritePtr = 0;
+          return;
+        }
+      
+        // заполняем пакет данными
+        switch(rs485Packet.packetType)
+        {
+          case CoreDataRequest:
+          {
+            // попросили отдать, скольку у нас датчиков, но сначала проверим - нам ли пакет?
+            CoreDataRequestPacket* drp = (CoreDataRequestPacket*) rs485Packet.packetData;
+            
+            if(drp->toDeviceID != Core.DeviceID) // пакет не нам
+            {
+              String str = F("NOT FOT MY DEVICE!");
+              sendData((byte*)str.c_str(),str.length());
+              rs485WritePtr = 0;
+              return;
+            }
+      
+            // говорим, что у нас N датчиков
+            drp->dataCount = CoreDataStore.size();
+
+            drp->toDeviceID = rs485Packet.deviceID;
+            rs485Packet.deviceID = Core.DeviceID;
+      
+            // пересчитываем CRC
+            rs485Packet.crc = Core.crc8((byte*)&rs485Packet,sizeof(CoreTransportPacket)- 1);
+      
+            // пишем в поток
+            sendData((byte*)&rs485Packet,sizeof(CoreTransportPacket));
+            
+          }
+          break; // CoreDataRequest
+      
+          case CoreSensorData:
+          {
+             // попросили отдать данные с датчика, в первом байте данных пакета - лежит номер датчика, в нулевом байте - номер устройства на шине
+             byte requestID = rs485Packet.packetData[0];
+             byte sensorNumber = rs485Packet.packetData[1];
+      
+             if(requestID != Core.DeviceID) // пакет не нам
+             {
+              String str = F("NOT FOT MY DEVICE!");
+              sendData((byte*)str.c_str(),str.length());
+              rs485WritePtr = 0;
+              return;
+             }
+
+              rs485Packet.deviceID = Core.DeviceID;
+      
+              CoreSensorDataPacket* sdp = (CoreSensorDataPacket*) rs485Packet.packetData;
+              memset(sdp->sensorName,0,sizeof(sdp->sensorName));
+
+              // тут получаем данные с запрошенного датчика
+              CoreStoredData storedData = CoreDataStore.get(sensorNumber);
+
+              if(storedData.sensor) // есть датчик в хранилище
+              {
+                String sensorName = storedData.sensor->getName();
+                strcpy(sdp->sensorName, sensorName.c_str());
+                if(storedData.hasData())
+                {
+                  sdp->hasData = 1;
+                  sdp->dataType = (byte) CoreSensor::getDataType(storedData.sensor->getType());
+                  sdp->dataLen = storedData.dataSize;
+                  memcpy(sdp->data,storedData.data,storedData.dataSize);
+                }
+                else
+                {
+                  sdp->hasData = 0;
+                }
+              } // if(storedData.sensor)
+              else
+              {
+                sdp->hasData = 0xFF; // датчик не найден
+              }
+      
+              // отсылаем данные взад
+              rs485Packet.crc = Core.crc8((byte*)&rs485Packet,sizeof(CoreTransportPacket)- 1);
+              sendData((byte*)&rs485Packet,sizeof(CoreTransportPacket));
+          }
+          break; // CoreSensorData
+          
+        } // switch
+
+    rs485WritePtr = 0; // обнуляем указатель записи, т.к. всё уже приняли и обработали
+
+  } // правильный заголовок
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreRS485::processIncomingRS485Packets() // обрабатываем входящие пакеты по RS-485
+{
+  if(!workStream)
+    return;
+    
+  while(workStream->available())
+  {
+    rsPacketPtr[rs485WritePtr++] = (byte) workStream->read();
+   
+    if(gotRS485Packet())
+    {
+      processRS485Packet();
+    }
+  } // while
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::updateSlaveMode()
 {
 
+  processIncomingRS485Packets();
+  
+/*
  if(!workStream->available()) // нет данных с потока
     return;
 
@@ -269,6 +477,7 @@ void CoreRS485::updateSlaveMode()
     } // switch(machineState)
    
   } // workStream->available()
+*/  
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -488,43 +697,60 @@ void CoreRS485::updateMasterMode()
                         {
                               // нам пришла информация о датчике, добавляем его в систему
                             DBGLN(F("RS485: Sensor data packet received, parse..."));
-    
+
                             CoreSensorDataPacket* sensorData = (CoreSensorDataPacket*) packet.packetData;
-                            String sensorName;
-                            
-                            char* namePtr = sensorData->sensorName;
-                            while(*namePtr)
+                            bool hasSensorOnSlave = (sensorData->hasData != 0xFF);
+
+                            if(hasSensorOnSlave)
                             {
-                              sensorName += *namePtr++;
-                            }
-    
-                            CoreUserDataSensor* newSensor = (CoreUserDataSensor*) Core.Sensors()->get(sensorName);
-                            
-                            if(!newSensor)
-                            {
-                              newSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
-                             // добавляем в список датчиков
-                              Core.Sensors()->add(newSensor);
-                            }
-    
-                            if(newSensor)
-                            {
-                              newSensor->setName(sensorName); // даём датчику имя
-    
-                              // назначаем данные
-                              newSensor->setData(sensorData->data,sensorData->dataLen);
-    
-                              // назначаем тип данных
-                              newSensor->setUserDataType((CoreDataType)sensorData->dataType);
-                            
-                              // также помещаем его показания в хранилище
-                              Core.pushToStorage(newSensor);
+                                  
+                              String sensorName;
                               
-                              DBGLN(F("RS485: Userdata sensor added!"));                          
+                              char* namePtr = sensorData->sensorName;
+                              while(*namePtr)
+                              {
+                                sensorName += *namePtr++;
+                              }
+      
+                              CoreUserDataSensor* newSensor = (CoreUserDataSensor*) Core.Sensors()->get(sensorName);
                               
-                            } // if(newSensor)                          
+                              if(!newSensor)
+                              {
+                                newSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
+                               // добавляем в список датчиков
+                                Core.Sensors()->add(newSensor);
+                              }
+      
+                              if(newSensor)
+                              {
+                                newSensor->setName(sensorName); // даём датчику имя
+      
+                                // назначаем данные
+                                if(sensorData->hasData == 1)
+                                {
+                                  // данные есть, можно читать
+                                  newSensor->setData(sensorData->data,sensorData->dataLen);
+                                }
+                                else
+                                  newSensor->setData(NULL,0); // сбрасываем данные
+      
+                                // назначаем тип данных
+                                newSensor->setUserDataType((CoreDataType)sensorData->dataType);
+                              
+                                // также помещаем его показания в хранилище
+                                Core.pushToStorage(newSensor);
+                                
+                                DBGLN(F("RS485: Userdata sensor added!"));                          
+                                
+                              } // if(newSensor)   
+
+                            } // if(hasSensorOnSlave)
+                            else
+                            {
+                              DBGLN(F("RS485: Sensor on slave not found!!!"));
+                            }
                                               
-                        } // if
+                        } // if good packet
 
                     break;
                   }
@@ -649,7 +875,7 @@ void CoreRS485::addToExcludedList(byte clientNumber)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::update()
 {
-  if(!dataBuffer || !workStream) // нет буфера для данных или неизвестный Serial
+  if(/*!dataBuffer || */!workStream) // нет буфера для данных или неизвестный Serial
     return;
 
 
@@ -666,6 +892,7 @@ void CoreRS485::update()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::clear()
 {
+  /*
   // тут очищаем наши данные
   delete [] dataBuffer;
   dataBuffer = NULL;
@@ -680,8 +907,10 @@ void CoreRS485::clear()
 
   while(knownHeaders.size())
     knownHeaders.pop();
+    */
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+/*
 void CoreRS485::addKnownPacketHeader(byte* header, byte headerSize, byte packetDataLen, byte packetID)
 {
   RS485IncomingHeader knownHeader;
@@ -703,6 +932,7 @@ void CoreRS485::addKnownPacketHeader(byte* header, byte headerSize, byte packetD
   }
   
 }
+*/
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::waitTransmitComplete()
 {

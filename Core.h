@@ -38,12 +38,12 @@ typedef enum
   ESPSettingsRecord = 5, // данные о настройках ESP
   SensorsUpdateIntervalRecord = 6, // интервал опроса датчиков
   RS485SettingsRecord = 7, // данные о настройках RS-485
-  RS485IncomingPacketRecord = 8, // данные об известном пакете RS-485
-  LoRaSettingsRecord = 9, // данные по настройкам LoRa
-  DeviceIDRecord = 10, // данные по ID устройства
-  ClusterIDRecord = 11, // данные о ID кластера, к которому принадлежит группа устройств
+//  RS485IncomingPacketRecord = 8, // данные об известном пакете RS-485
+  LoRaSettingsRecord = 8, // данные по настройкам LoRa
+  DeviceIDRecord = 9, // данные по ID устройства
+  ClusterIDRecord = 10, // данные о ID кластера, к которому принадлежит группа устройств
 
-  DummyLastRecord = 12 // последняя запись, для проверки вхождения в диапазон
+  DummyLastRecord = 11 // последняя запись, для проверки вхождения в диапазон
   
 } CoreConfigRecordType;
 //--------------------------------------------------------------------------------------------------------------------------------------
