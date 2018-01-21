@@ -1148,6 +1148,8 @@ bool CoreClass::getCPU(const char* commandPassed, Stream* pStream)
     pStream->println(F("MEGA"));    
   #elif defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible  
     pStream->println(F("DUE"));
+  #elif defined(ESP8266)    
+    pStream->println(F("ESP"));
   #else
     pStream->println(F("NOP"));
     #error "Unknown target board!"
@@ -1425,7 +1427,7 @@ void CoreClass::handleCommands()
 //--------------------------------------------------------------------------------------------------------------------------------------
 int CoreClass::getFreeMemory()
 {
-  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega328P__)
+  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
   
     extern int __heap_start, *__brkval;
     int v;
@@ -1438,6 +1440,9 @@ int CoreClass::getFreeMemory()
     register char* stack_ptr asm("sp");
 
     return (stack_ptr - heapend + mi.fordblks);
+
+  #elif defined(ESP8266)
+    #error "NOT IMPLEMENTED!!!"    
   #else    
     #error "Unknown target board!"
   #endif   
@@ -1531,8 +1536,12 @@ int CoreClass::getPinMode(int p)
 
   #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || ( defined (__arm__) && defined (__SAM3X8E__) )
      const int max_pin = 69;
-  #else
+  #elif defined(ESP8266)
+    #error "NOT IMPLEMENTED!!!"  
+
+  #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)       
      const int max_pin = 19;
+  #else
      #error "Unknown target board!"
   #endif
 

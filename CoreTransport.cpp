@@ -75,10 +75,12 @@ CoreRS485::CoreRS485()
 //--------------------------------------------------------------------------------------------------------------------------------------
 HardwareSerial* CoreRS485::getMyStream(byte SerialNumber)
 {
+#if defined(__AVR_ATmega2560__) || (defined (__arm__) && defined (__SAM3X8E__))  
   switch(SerialNumber)
   {
     case 0:
       return &Serial;
+ 
     case 1:
       return &Serial1;
 
@@ -91,6 +93,13 @@ HardwareSerial* CoreRS485::getMyStream(byte SerialNumber)
     default:
       return NULL;
   }
+#elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)
+  return &Serial;
+#elif defined(ESP8266)
+  #error "NOT IMPLEMENTED!!!"
+#else
+  #error "Unknown target board!"
+#endif        
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::begin()
@@ -728,6 +737,10 @@ void CoreRS485::waitTransmitComplete()
     if(workStream == &Serial3)
       while((USART3->US_CSR & UART_SR_TXRDY) != UART_SR_TXRDY);
 
+  #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)      
+    while(!(UCSR0A & _BV(TXC0) ));
+  #elif defined(ESP8266)
+    #error "NOT IMPLEMENTED !!!"      
   #else
     #error "Unknown target board!"
   #endif  
@@ -768,6 +781,9 @@ void CoreESPTransport::begin()
   initClients();
 
   HardwareSerial* hs = NULL;
+
+  #if defined(__AVR_ATmega2560__) || (defined (__arm__) && defined (__SAM3X8E__))
+  
   switch(ESPTransportSettings.SerialNumber)
   {
     case 0:
@@ -787,6 +803,13 @@ void CoreESPTransport::begin()
     break;
 
   } // switch
+  #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)
+    hs = &Serial;
+  #elif defined(ESP8266)
+    #error "NOT IMPLEMENTED!!!"
+  #else
+    #error "Unknown target board!"
+  #endif    
 
   if(lastSerial) // надо закончить работу на старом порту
     lastSerial->end();
