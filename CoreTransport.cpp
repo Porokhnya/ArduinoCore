@@ -81,7 +81,7 @@ CoreRS485::CoreRS485()
 //--------------------------------------------------------------------------------------------------------------------------------------
 HardwareSerial* CoreRS485::getMyStream(byte SerialNumber)
 {
-#if defined(__AVR_ATmega2560__) || (defined (__arm__) && defined (__SAM3X8E__))  
+#if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1280__) || (defined (__arm__) && defined (__SAM3X8E__))  
   switch(SerialNumber)
   {
     case 0:
@@ -955,7 +955,7 @@ void CoreRS485::waitTransmitComplete()
   if(!workStream)
     return;
     
-  #if defined(__AVR_ATmega2560__)
+  #if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1280__)
 
     if(workStream == &Serial)
       while(!(UCSR0A & _BV(TXC0) ));
@@ -1028,7 +1028,7 @@ void CoreESPTransport::begin()
 
   HardwareSerial* hs = NULL;
 
-  #if defined(__AVR_ATmega2560__) || (defined (__arm__) && defined (__SAM3X8E__))
+  #if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1280__) || (defined (__arm__) && defined (__SAM3X8E__))
   
   switch(ESPTransportSettings.SerialNumber)
   {
