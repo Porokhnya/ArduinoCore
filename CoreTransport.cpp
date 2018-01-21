@@ -10,7 +10,6 @@ static void __noclientwritedone(CoreTransportClient& client, bool isWriteSucceed
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_LORA_RECEIVE(byte*, int) __attribute__ ((weak, alias("__nolora")));
 //--------------------------------------------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------------------------------------------
 void ON_CLIENT_CONNECT(CoreTransportClient& client) __attribute__ ((weak, alias("__noclientconnect")));
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_CLIENT_DATA_RECEIVED(CoreTransportClient& client) __attribute__ ((weak, alias("__noclientdatareceived")));
@@ -68,7 +67,8 @@ CoreRS485::CoreRS485()
 
   rsPacketPtr = (byte*)&rs485Packet;
   rs485WritePtr = 0;
-#endif
+  
+#endif // CORE_RS485_DISABLE_CORE_LOGIC
   
 /*  
   dataBuffer = NULL;
@@ -892,7 +892,7 @@ void CoreRS485::update()
     updateSlaveMode();
 
     
-  #endif
+  #endif // CORE_RS485_DISABLE_CORE_LOGIC
  
   
   
@@ -916,6 +916,14 @@ void CoreRS485::clear()
   while(knownHeaders.size())
     knownHeaders.pop();
     */
+
+  #ifndef CORE_RS485_DISABLE_CORE_LOGIC
+  
+    rsPacketPtr = (byte*)&rs485Packet;
+    rs485WritePtr = 0;
+    
+  #endif // CORE_RS485_DISABLE_CORE_LOGIC
+    
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 /*
