@@ -339,26 +339,6 @@ void setup()
 {
   Serial.begin(CORE_COMMUNICATION_SPEED);
 
-  // тестируем внешний транспорт (для теста используем транспорт, который просто пишет в Serial)
-  #ifdef _CORE_DEBUG
-  
-    CoreSerialTransport transport;
-    transport.begin();
-
-    CoreTransportClient* client = transport.getFreeClient();
-
-    if(client)
-    {
-      client->connect("",0);
-      const char* str = "ping\n";
-      client->write((const uint8_t*) str,strlen(str));
-    }
-    else
-    {
-      Serial.println(F("NO FREE CLIENT FOUND!!!"));
-    }
-    
-  #endif   
 
   // будем для теста мигать встроенным светодиодом, проверяя корректность отработки слежения за портом
   led13Blinker.init(LED_BUILTIN, 23, 100, 1200); // мигаем светодиодом на 13 пине, держа 100 мс включенным, и 1200 мс - выключенным. Мигаем 23 раза, потом - перестаёт мигать.
@@ -366,13 +346,7 @@ void setup()
   
   // все необработанные данные из Serial будут перенаправлены в функцию unhandledCommandHandler
   Core.setup(unhandledCommandHandler);
-
-
-  // печатаем информацию о поддерживаемых датчиках
-  //Serial.print(F("Supported sensors: "));
-  //Core.printSupportedSensors(Serial);
   
-
   ramFree();
 
   // грузим конфиг из flash в EEPROM

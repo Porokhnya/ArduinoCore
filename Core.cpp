@@ -1756,6 +1756,7 @@ void CoreClass::begin()
   
     LoRa.onReceive(coreLoraReceive);
     LoRa.receive(); // переключаемся на приём
+    
   #endif // CORE_LORA_TRANSPORT_ENABLED
 
   ON_CORE_BEGIN();
