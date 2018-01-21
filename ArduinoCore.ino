@@ -446,6 +446,9 @@ void loop()
   // обрабатываем входящие по Serial команды
   Core.handleCommands();
 
+    // обновляем нашу тестовую мигалку
+  led13Blinker.update();
+
   // каждую секунду обновляем показания в нашем тестовом пользовательском датчике
     static unsigned long userDataSensorMillis = 0;
     if(curMillis - userDataSensorMillis > 1000)
@@ -507,12 +510,6 @@ void loop()
       }
     }
   } // for
-
-
-
-
-  // обновляем нашу тестовую мигалку
-  led13Blinker.update();
 
 
   if(curMillis - lastMillis > 3000) // каждые 3 секунды выводим данные с датчиков в Serial
