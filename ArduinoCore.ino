@@ -299,6 +299,42 @@ void ON_LORA_RECEIVE(byte* packet, int packetSize)
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+// Событие вызывается, когда запрошен старт ядра в работу, например, при перезагрузке конфига из конфигуратора. 
+// Здесь можно добавлять свои датчики.
+void ON_CORE_BEGIN()
+{
+
+// наш датчик имеет имя UD, получаем его и приводим к нужному виду
+  mySensor = (CoreUserDataSensor*) Core.Sensors()->get(F("UD"));
+
+  // добавляем произвольный датчик пользовательского типа, не из конфига (например, нам пришли данные по подписке MQTT)
+  newUserDataSensor = (CoreUserDataSensor*) Core.Sensors()->get(F("USERDATA"));
+  if(!newUserDataSensor)
+  {
+    Serial.println(F("No userdata sensor found, add it..."));
+    newUserDataSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
+    if(newUserDataSensor)
+    {
+      newUserDataSensor->setName(F("USERDATA")); // даём датчику имя
+      // назначаем данные
+      byte data[2] = {0,0};
+      newUserDataSensor->setData(data,2);
+
+      // говорим, что это - температура
+      newUserDataSensor->setUserDataType(Temperature);
+
+      // и добавляем в список датчиков
+      Core.Sensors()->add(newUserDataSensor);
+
+      // также помещаем его показания в хранилище
+      Core.pushToStorage(newUserDataSensor);
+      
+      Serial.println(F("Userdata sensor added!"));
+    }
+  }
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void setup() 
 {
   Serial.begin(CORE_COMMUNICATION_SPEED);
@@ -352,34 +388,7 @@ void setup()
   }
 
 
-  // наш датчик имеет имя UD, получаем его и приводим к нужному виду
-  mySensor = (CoreUserDataSensor*) Core.Sensors()->get(F("UD"));
-
-  // добавляем произвольный датчик пользовательского типа, не из конфига (например, нам пришли данные по подписке MQTT)
-  newUserDataSensor = (CoreUserDataSensor*) Core.Sensors()->get(F("USERDATA"));
-  if(!newUserDataSensor)
-  {
-    Serial.println(F("No userdata sensor found, add it..."));
-    newUserDataSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
-    if(newUserDataSensor)
-    {
-      newUserDataSensor->setName(F("USERDATA")); // даём датчику имя
-      // назначаем данные
-      byte data[2] = {0,0};
-      newUserDataSensor->setData(data,2);
-
-      // говорим, что это - температура
-      newUserDataSensor->setUserDataType(Temperature);
-
-      // и добавляем в список датчиков
-      Core.Sensors()->add(newUserDataSensor);
-
-      // также помещаем его показания в хранилище
-      Core.pushToStorage(newUserDataSensor);
-      
-      Serial.println(F("Userdata sensor added!"));
-    }
-  }
+  
 
   /*
 
@@ -462,6 +471,41 @@ void loop()
   
   // обрабатываем входящие по Serial команды
   Core.handleCommands();
+
+  // каждую секунду обновляем показания в нашем тестовом пользовательском датчике
+    static unsigned long userDataSensorMillis = 0;
+    if(curMillis - userDataSensorMillis > 1000)
+    {
+      userDataSensorMillis = curMillis;
+      
+      if(mySensor) // если такой датчик есть в конфиге
+      {
+
+        // просто меняем байтики
+        bUserData[0]++;
+        bUserData[1]--;
+    
+        // устанавливаем данные в датчик
+        mySensor->setData(bUserData,sizeof(bUserData));
+        
+        // говорим ядру, чтобы НЕМЕДЛЕННО поместило данные с датчика в хранилище
+        Core.pushToStorage(mySensor);
+        
+      } // if(mySensor)
+
+      if(newUserDataSensor)
+      {
+        // обновляем наш второй, динамически добавленный датчик
+        static byte secondUserDataSensorData[2] = {0,0};
+        secondUserDataSensorData[0]++;
+        secondUserDataSensorData[1]--;
+        newUserDataSensor->setData(secondUserDataSensorData,2);
+        Core.pushToStorage(newUserDataSensor);
+      }
+
+    }
+
+  
 /*
   // тут пробуем поймать изменение состояния порта
   CoreDataList catchList = CoreDataStore.getBySensor(DigitalPortState);
@@ -490,33 +534,7 @@ void loop()
     }
   } // for
 
-  // каждую секунду обновляем показания в нашем тестовом пользовательском датчике
-  if(mySensor) // если такой датчик есть в конфиге
-  {
-    static unsigned long userDataSensorMillis = 0;
-    if(curMillis - userDataSensorMillis > 1000)
-    {
-      userDataSensorMillis = curMillis;
 
-      // просто меняем байтики
-      bUserData[0]++;
-      bUserData[1]--;
-  
-      // устанавливаем данные в датчик
-      mySensor->setData(bUserData,sizeof(bUserData));
-      
-      // говорим ядру, чтобы НЕМЕДЛЕННО поместило данные с датчика в хранилище
-      Core.pushToStorage(mySensor);
-
-      // обновляем наш второй, динамически добавленный датчик
-      static byte secondUserDataSensorData[2] = {0,0};
-      secondUserDataSensorData[0]++;
-      secondUserDataSensorData[1]--;
-      newUserDataSensor->setData(secondUserDataSensorData,2);
-      Core.pushToStorage(newUserDataSensor);
-
-    }
-  } // if(mySensor)
 
 
   // обновляем нашу тестовую мигалку

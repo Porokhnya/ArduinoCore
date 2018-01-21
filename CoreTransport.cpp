@@ -95,7 +95,11 @@ HardwareSerial* CoreRS485::getMyStream(byte SerialNumber)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::begin()
 {
+  if(workStream) // надо закончить работу на старом порту
+    workStream->end();
+
   workStream = getMyStream(RS485Settings.SerialNumber);
+  workStream->end();
   
   if(RS485Settings.UARTSpeed > 0)
   {
@@ -748,7 +752,10 @@ CoreESPTransport ESP;
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreESPTransport::CoreESPTransport() : CoreTransport()
 {
-  
+  for(int i=0;i<ESP_MAX_CLIENTS;i++)
+    clients[i] = NULL;
+
+    lastSerial = NULL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::update()
@@ -781,12 +788,29 @@ void CoreESPTransport::begin()
 
   } // switch
 
+  if(lastSerial) // надо закончить работу на старом порту
+    lastSerial->end();
+
+  lastSerial = hs;
+
   workStream = hs;
   unsigned long uspeed = ESPTransportSettings.UARTSpeed;
   uspeed *= 9600;
+
+  hs->end();
   hs->begin(uspeed);
 
-  //TODO: Start job!!!
+  while(writeOutQueue.size())
+    writeOutQueue.pop();
+
+  while(connectQueue.size())
+    connectQueue.pop();
+
+  while(disconnectQueue.size())
+    disconnectQueue.pop();
+
+
+  //TODO: тут переинициализация очередей и т.п. !!!
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreESPTransport::isInQueue(ESPClientsQueue& queue,CoreTransportClient* client)
@@ -839,6 +863,9 @@ void CoreESPTransport::initClients()
 {
   for(int i=0;i<ESP_MAX_CLIENTS;i++)
   {
+    if(clients[i])
+      clients[i]->Destroy();
+      
     CoreTransportClient* client = CoreTransportClient::Create(this);
     setClientID(*client,i);
     clients[i] = client;

@@ -419,6 +419,8 @@ class CoreESPTransport : public CoreTransport
   private:
 
       CoreTransportClient* clients[ESP_MAX_CLIENTS];
+
+      HardwareSerial* lastSerial;
       
       ESPClientsQueue writeOutQueue; // очередь на запись
       ESPClientsQueue connectQueue; // очередь на соединение
