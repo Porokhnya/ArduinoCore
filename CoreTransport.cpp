@@ -1069,14 +1069,8 @@ void CoreESPTransport::begin()
   hs->end();
   hs->begin(uspeed);
 
-  while(writeOutQueue.size())
-    writeOutQueue.pop();
-
-  while(connectQueue.size())
-    connectQueue.pop();
-
-  while(disconnectQueue.size())
-    disconnectQueue.pop();
+  while(clientsQueue.size())
+    clientsQueue.pop();
 
 
   //TODO: тут переинициализация очередей и т.п. !!!
@@ -1093,13 +1087,15 @@ bool CoreESPTransport::isInQueue(ESPClientsQueue& queue,CoreTransportClient* cli
   return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPTransport::addToQueue(ESPClientsQueue& queue,CoreTransportClient* client, const char* ip, uint16_t port)
+void CoreESPTransport::addToQueue(ESPClientsQueue& queue,CoreTransportClient* client, ESPClientAction action, const char* ip, uint16_t port)
 {
   if(isInQueue(queue,client))
     return;
 
     ESPClientQueueData dt;
     dt.client = client;
+    dt.action = action;
+    
     dt.ip = NULL;
     if(ip)
     {
@@ -1173,7 +1169,7 @@ void CoreESPTransport::beginWrite(CoreTransportClient& client)
   setClientBusy(client,true);
   
   // добавляем клиента в очередь на запись
-  addToQueue(writeOutQueue,&client);
+  addToQueue(clientsQueue,&client, actionWrite);
 
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с записью в поток с этого клиента
   
@@ -1198,7 +1194,7 @@ void CoreESPTransport::beginConnect(CoreTransportClient& client, const char* ip,
   setClientBusy(client,true);
 
   // добавляем клиента в очередь на соединение
-  addToQueue(connectQueue,&client, ip, port);
+  addToQueue(clientsQueue,&client, actionConnect, ip, port);
 
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с соединением клиента
 
@@ -1224,7 +1220,7 @@ void CoreESPTransport::beginDisconnect(CoreTransportClient& client)
   setClientBusy(client,true);
 
   // добавляем клиента в очередь на соединение
-  addToQueue(disconnectQueue,&client);
+  addToQueue(clientsQueue,&client, actionDisconnect);
 
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с отсоединением клиента
 }

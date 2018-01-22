@@ -281,6 +281,8 @@ typedef struct
   bool ConnectToRouter: 1; // коннектиться ли к роутеру ?
   bool UseRebootPin : 1; // использовать ли пин пересброса питания при зависании ESP ?
   
+  byte pad : 6;
+  
 } ESPTransportSettingsFlags;
 //--------------------------------------------------------------------------------------------------------------------------------------
 struct ESPTransportSettingsClass
@@ -310,8 +312,19 @@ extern ESPTransportSettingsClass ESPTransportSettings;
 //--------------------------------------------------------------------------------------------------------------------------------------
 #define ESP_MAX_CLIENTS 4 // наш пул клиентов
 //--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  
+  actionNone,
+  actionDisconnect, // запрошено отсоединение клиента
+  actionConnect, // запрошено подсоединение клиента
+  actionWrite, // запрошена запись из клиента в ESP
+  
+} ESPClientAction;
+//--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
+  ESPClientAction action; // действие, которое надо выполнить с клиентом
   CoreTransportClient* client; // ссылка на клиента
   char* ip; // IP для подсоединения
   uint16_t port; // порт для подсоединения
@@ -330,13 +343,11 @@ class CoreESPTransport : public CoreTransport
 
     virtual CoreTransportClient* getFreeClient(); // возвращает свободного клиента (не законнекченного и не занятого делами)
 
-
   protected:
 
     virtual void beginWrite(CoreTransportClient& client); // начинаем писать в транспорт с клиента
     virtual void beginConnect(CoreTransportClient& client, const char* ip, uint16_t port); // начинаем коннектиться к адресу
     virtual void beginDisconnect(CoreTransportClient& client); // начинаем отсоединение от адреса
-
 
   private:
 
@@ -344,18 +355,14 @@ class CoreESPTransport : public CoreTransport
 
       HardwareSerial* lastSerial;
       
-      ESPClientsQueue writeOutQueue; // очередь на запись
-      ESPClientsQueue connectQueue; // очередь на соединение
-      ESPClientsQueue disconnectQueue; // очередь на отсоединение
+      ESPClientsQueue clientsQueue; // очередь действий с клиентами
 
       bool isInQueue(ESPClientsQueue& queue,CoreTransportClient* client); // тестирует - не в очереди ли уже клиент?
-      void addToQueue(ESPClientsQueue& queue,CoreTransportClient* client, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
-      void removeFromQueue(ESPClientsQueue& queue,CoreTransportClient* client); // удаляет клиента из очереди
-      
+      void addToQueue(ESPClientsQueue& queue,CoreTransportClient* client, ESPClientAction action, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
+      void removeFromQueue(ESPClientsQueue& queue,CoreTransportClient* client); // удаляет клиента из очереди  
       
       void initClients();
     
-  
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern CoreESPTransport ESP;

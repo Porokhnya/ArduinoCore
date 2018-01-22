@@ -153,18 +153,16 @@ public:
   
   virtual uint8_t getDataSize(); // возвращает размер данных буфера показаний с датчика
   virtual bool read(uint8_t* buffer); // читает с датчика, возвращает false в случае, если с датчика не удалось прочитать
-
   
-  virtual bool isUserDataSensor() {return false; } // тестирует - не датчик ли это пользовательского типа с какими-то показаниями? С таких датчиков мы только обновляем хранилище, данные обновляет внешняя среда, а не ядро
+  /*virtual*/ bool isUserDataSensor() {return /*false*/ type == UserDataSensor; } // тестирует - не датчик ли это пользовательского типа с какими-то показаниями? С таких датчиков мы только обновляем хранилище, данные обновляет внешняя среда, а не ядро
 
-  
-  CoreSensorType getType() {return type;} // возвращает тип железки
+  CoreSensorType getType() { return type; } // возвращает тип железки
 
   static CoreDataType getDataType(CoreSensorType type); // возвращает тип данных с датчика
   static String getUnit(CoreDataType type); // возвращает единицы измерения для типов данных
 
   String getName() {return mnemonicName;} // мнемоническое имя датчика
-  void setName(const String& name) {mnemonicName = name;};
+  void setName(const String& name) { mnemonicName = name; } 
 
 protected:
 
@@ -257,7 +255,7 @@ class CoreUserDataSensor : public CoreSensor
 
   virtual void begin(uint8_t* configData); // инициализирует датчик
   virtual bool read(uint8_t* buffer); // читает с датчика, возвращает false в случае, если с датчика не удалось прочитать
-  virtual bool isUserDataSensor() {return true; }
+  //virtual bool isUserDataSensor() {return true; }
   
   virtual uint8_t getDataSize(); // возвращает размер данных буфера показаний с датчика
 
