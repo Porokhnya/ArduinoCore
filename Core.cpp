@@ -1844,7 +1844,10 @@ void CoreClass::coreLoraReceive(int packetSize)
                           newSensor->setName(sensorName); // даём датчику имя
 
                           // назначаем данные
-                          newSensor->setData(sensorData->data,sensorData->dataLen);
+                          if(sensorData->hasData == 1) // только если они есть                           
+                            newSensor->setData(sensorData->data,sensorData->dataLen);
+                          else // говорим, что датчик поломатый, и с него не стало данных
+                            newSensor->setData(NULL,0);
 
                           // назначаем тип данных
                           newSensor->setUserDataType((CoreDataType)sensorData->dataType);
@@ -1882,7 +1885,7 @@ void CoreClass::coreLoraReceive(int packetSize)
             {
               DBGLN(F("LoRa: CRC Fail!"));
             }
-        }
+        } // if headers ok
         else
         {
           DBGLN(F("LoRa: unknown packet, pass it to event..."));
