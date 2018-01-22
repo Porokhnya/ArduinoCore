@@ -109,7 +109,10 @@ HardwareSerial* CoreRS485::getMyStream(byte SerialNumber)
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::begin()
-{
+{  
+  if(RS485Settings.SerialNumber == 0 || RS485Settings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
+    return;
+  
   if(workStream) // надо закончить работу на старом порту
     workStream->end();
 
@@ -881,7 +884,7 @@ void CoreRS485::addToExcludedList(byte clientNumber)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::update()
 {
-  if(/*!dataBuffer || */!workStream) // нет буфера для данных или неизвестный Serial
+  if(!workStream) // нет буфера для данных или неизвестный Serial
     return;
 
   #ifndef CORE_RS485_DISABLE_CORE_LOGIC
@@ -1019,11 +1022,17 @@ CoreESPTransport::CoreESPTransport() : CoreTransport()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::update()
 {
+  if(!workStream)
+    return;
+    
   //TODO: update ESP
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::begin()
 {
+  if(ESPTransportSettings.SerialNumber == 0 || ESPTransportSettings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
+    return;
+  
   initClients();
 
   HardwareSerial* hs = NULL;

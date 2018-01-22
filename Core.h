@@ -211,6 +211,7 @@ class CoreClass
     static void coreLoraReceive(int packetSize);
    #endif
 
+    bool configLoaded;
 
    CoreUnhandledCommandsHandler pUnhandled;
    unsigned long lastMillis;

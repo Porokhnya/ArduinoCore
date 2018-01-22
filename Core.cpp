@@ -769,6 +769,7 @@ void CoreClass::saveConfig(const byte* address, uint16_t sz, bool isInFlashSourc
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::loadConfig()
 {
+  configLoaded = false;
   clear();
   
   CoreEEPROMConfigIterator iter;
@@ -799,6 +800,7 @@ bool CoreClass::loadConfig()
 
 
   lastMillis = SensorsUpdateInterval/2;
+  configLoaded = true;
 
    return true;
 }
@@ -1685,6 +1687,9 @@ const char* CoreClass::byteToHexString(byte i)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::begin()
 {
+  if(!configLoaded)
+    return;
+    
   #ifdef CORE_RS485_TRANSPORT_ENABLED
     // обновляем транспорт RS-485
     RS485.begin();
