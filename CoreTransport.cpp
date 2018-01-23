@@ -858,13 +858,13 @@ void CoreRS485::waitTransmitComplete()
       while((UART->UART_SR & UART_SR_TXRDY) != UART_SR_TXRDY);
     else
     if(workStream == &Serial1)
-      while((USART0->US_CSR & UART_SR_TXRDY) != UART_SR_TXRDY);
+      while((USART0->US_CSR & US_CSR_TXEMPTY) == 0);
     else
     if(workStream == &Serial2)
-      while((USART1->US_CSR & UART_SR_TXRDY) != UART_SR_TXRDY);      
+      while((USART1->US_CSR & US_CSR_TXEMPTY)  == 0);      
     else
     if(workStream == &Serial3)
-      while((USART2->US_CSR & UART_SR_TXRDY) != UART_SR_TXRDY);
+      while((USART2->US_CSR & US_CSR_TXEMPTY)  == 0);
 
   #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)      
     while(!(UCSR0A & _BV(TXC0) ));
