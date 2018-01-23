@@ -622,7 +622,7 @@ void LoraDispatcherClass::begin()
 //--------------------------------------------------------------------------------------------------------------------------------------
 unsigned long LoraDispatcherClass::getDefaultSendWaitTime()
 {
-  unsigned long swt = CORE_LORA_DATA_SHIFT;
+  unsigned long swt = CORE_LORA_TIME_SHIFT;
   swt *= Core.DeviceID;
   
   return swt;
