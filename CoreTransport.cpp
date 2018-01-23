@@ -92,7 +92,6 @@ HardwareSerial* CoreRS485::getMyStream(byte SerialNumber)
 
     case 2:
       return &Serial2;
-
     case 3:
       return &Serial3;
 
@@ -113,20 +112,17 @@ void CoreRS485::begin()
   if(RS485Settings.SerialNumber == 0 || RS485Settings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
     return;
 
-  /*
-  if(workStream) // надо закончить работу на старом порту
-    workStream->end();
-*/
+  
+ // if(workStream) // надо закончить работу на старом порту
+//    workStream->end();
+
   workStream = getMyStream(RS485Settings.SerialNumber);
   
-//  workStream->end();
+ // workStream->end();
   
-  if(RS485Settings.UARTSpeed > 0)
-  {
     unsigned long uspeed = RS485Settings.UARTSpeed;
     uspeed *= 9600;
     workStream->begin(uspeed);
-  }
 
   if(RS485Settings.DEPin > 0)
     pinMode(RS485Settings.DEPin,OUTPUT);
@@ -364,130 +360,6 @@ void CoreRS485::updateSlaveMode()
 
   processIncomingRS485Packets();
   
-/*
- if(!workStream->available()) // нет данных с потока
-    return;
-
-  while(workStream->available())
-  {
-
-    switch(machineState)
-    {
-
-      case rs485WaitingHeader:
-      {
-    
-        byte bIncomingByte = (byte) workStream->read();
-        dataBuffer[writeIterator] = bIncomingByte;
-        writeIterator++;
-
-        #ifdef _CORE_DEBUG
-          Serial.print(F("RS-485: waiting header, receive: "));
-          Serial.println(Core.byteToHexString(bIncomingByte));
-        #endif
-    
-        if(writeIterator > dataBufferLen)
-        {
-          #ifdef _CORE_DEBUG
-            Serial.println(F("RS-485: MALFORMED 1"));
-          #endif
-          writeIterator = 0;
-          continue;
-        }
-    
-        // тут смотрим - есть ли хоть один пакет с заголовком, соответствующим пакетам в списке.
-        // для этого проходимся по принятым данным, и ищем там заголовок одного из известных пакетов
-    
-        bool knownPacketFound = false;
-        
-        for(byte i=0;i<writeIterator;i++)
-        {
-          for(size_t k=0;k<knownHeaders.size();k++)
-          {
-              if(!memcmp(&(dataBuffer[i]),knownHeaders[k].header,knownHeaders[k].headerLen))
-              {
-                  #ifdef _CORE_DEBUG
-                    Serial.print(F("RS-485: FOUND KNOWN HEADER - "));
-                    for(byte q=0;q<knownHeaders[k].headerLen;q++)
-                    {
-                      Serial.print(Core.byteToHexString(knownHeaders[k].header[q]));
-                      Serial.print(' ');
-                    }
-                    Serial.println();
-                  #endif
-                          
-                currentHeader = &(knownHeaders[k]); // запомнили текущий известный заголовок
-                knownPacketFound = true; // нашли известный пакет, начиная с позиции i, перемещаем его в голову приёмного буфера
-                for(byte in=i, out=0; in <  writeIterator; in++, out++)
-                {
-                  dataBuffer[out] = dataBuffer[in];
-                }
-    
-                writeIterator -= i; // уменьшаем позицию записи, поскольку мы с позиции записи i переместили всё в голову приёмного буфера
-
-                // переключаемся на чтение собственно данных пакета
-                machineState = rs485WaitingData;
-              }
-          } // for
-    
-          if(knownPacketFound)
-            break;
-            
-        } // for
-    
-        if(!knownPacketFound && writeIterator >= dataBufferLen)
-        {
-          // не найдено ни одного известного пакета, сдвигаем всё в голову на 1 байт, но только в том случае, если мы забили весь приёмный буфер!!!
-          for(byte in=1,out=0; in < writeIterator;in++,out++)
-          {
-             dataBuffer[out] = dataBuffer[in];
-          }
-          writeIterator--;
-        }
-
-      } // case rs485WaitingHeader
-      break;
-
-      case rs485WaitingData:
-      {
-
-        byte bIncomingByte = (byte) workStream->read();
-        dataBuffer[writeIterator] = bIncomingByte;
-        writeIterator++;
-
-        if(writeIterator >= (currentHeader->headerLen + currentHeader->packetDataLen))
-        {
-          // получили пакет полностью, надо формировать событие
-            ON_RS485_RECEIVE(currentHeader->packetID,writeIterator, dataBuffer);
-          
-          #ifdef _CORE_DEBUG
-            Serial.print(F("RECEIVE RS-485 PACKET #"));
-            Serial.println(currentHeader->packetID);
-
-            // просто печатаем пакет побайтово
-            for(byte p=0;p<writeIterator;p++)
-            {
-              Serial.print(Core.byteToHexString(dataBuffer[p]));
-              Serial.print(' ');
-            }
-            Serial.println();
-            
-          #endif
-
-          machineState = rs485WaitingHeader;
-          writeIterator = 0;
-          // очищаем буфер в 0
-          memset(dataBuffer,0,dataBufferLen);
-        }
-        
-      }
-      break; // rs485WaitingData
-
-    } // switch(machineState)
-   
-  } // workStream->available()
-*/  
-  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::updateMasterMode()
@@ -560,13 +432,18 @@ void CoreRS485::updateMasterMode()
      drp.toDeviceID = currentClientNumber;
      drp.dataCount = 0;
 
+
      memcpy(packet.packetData,&drp,sizeof(CoreDataRequestPacket));
 
      // считаем CRC
      packet.crc = Core.crc8((byte*) &packet, sizeof(CoreTransportPacket)-1);
 
+
      // теперь пишем в шину запрос
      sendData((byte*)&packet,sizeof(CoreTransportPacket));
+
+
+     
 /*
      #ifdef _CORE_DEBUG
       Serial.print(F("RS485: Data for client #"));
@@ -886,6 +763,7 @@ void CoreRS485::addToExcludedList(byte clientNumber)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::update()
 {
+  
   if(!workStream) // нет буфера для данных или неизвестный Serial
     return;
 
@@ -977,16 +855,16 @@ void CoreRS485::waitTransmitComplete()
   #elif defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible
 
     if(workStream == &Serial)
-      while((USART0->US_CSR & UART_SR_TXRDY) != UART_SR_TXRDY);
+      while((UART->UART_SR & UART_SR_TXRDY) != UART_SR_TXRDY);
     else
     if(workStream == &Serial1)
-      while((USART1->US_CSR & UART_SR_TXRDY) != UART_SR_TXRDY);
+      while((USART0->US_CSR & UART_SR_TXRDY) != UART_SR_TXRDY);
     else
     if(workStream == &Serial2)
-      while((USART2->US_CSR & UART_SR_TXRDY) != UART_SR_TXRDY);
+      while((USART1->US_CSR & UART_SR_TXRDY) != UART_SR_TXRDY);      
     else
     if(workStream == &Serial3)
-      while((USART3->US_CSR & UART_SR_TXRDY) != UART_SR_TXRDY);
+      while((USART2->US_CSR & UART_SR_TXRDY) != UART_SR_TXRDY);
 
   #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)      
     while(!(UCSR0A & _BV(TXC0) ));
@@ -1002,10 +880,13 @@ void CoreRS485::sendData(byte* data, byte dataSize)
   if(!workStream)
     return;
 
+
   switchToSend();
   workStream->write(data,dataSize);
   waitTransmitComplete();
   switchToReceive();
+
+  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_RS485_TRANSPORT_ENABLED
@@ -1019,7 +900,7 @@ CoreESPTransport::CoreESPTransport() : CoreTransport()
   for(int i=0;i<ESP_MAX_CLIENTS;i++)
     clients[i] = NULL;
 
- //   lastSerial = NULL;
+//    lastSerial = NULL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::update()
@@ -1068,17 +949,17 @@ void CoreESPTransport::begin()
     #error "Unknown target board!"
   #endif    
 
-/*
-  if(lastSerial) // надо закончить работу на старом порту
-    lastSerial->end();
 
-  lastSerial = hs;
-*/
+ // if(lastSerial) // надо закончить работу на старом порту
+  //  lastSerial->end();
+
+//  lastSerial = hs;
+
   workStream = hs;
   unsigned long uspeed = ESPTransportSettings.UARTSpeed;
   uspeed *= 9600;
 
-//  hs->end();
+ // hs->end();
   hs->begin(uspeed);
 
   while(clientsQueue.size())
