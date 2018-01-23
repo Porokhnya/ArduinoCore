@@ -374,6 +374,7 @@ void setup()
 
   // грузим конфиг из flash в EEPROM
   Core.saveConfig(unitTestConfig,sizeof(unitTestConfig),true);
+
   
   if(Core.loadConfig())
   {

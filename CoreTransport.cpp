@@ -307,10 +307,11 @@ void CoreRS485::processRS485Packet()
               {
                 String sensorName = storedData.sensor->getName();
                 strcpy(sdp->sensorName, sensorName.c_str());
+                sdp->dataType = (byte) CoreSensor::getDataType(storedData.sensor->getType());
+                  
                 if(storedData.hasData())
                 {
                   sdp->hasData = 1;
-                  sdp->dataType = (byte) CoreSensor::getDataType(storedData.sensor->getType());
                   sdp->dataLen = storedData.dataSize;
                   memcpy(sdp->data,storedData.data,storedData.dataSize);
                 }

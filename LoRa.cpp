@@ -616,22 +616,157 @@ void LoraDispatcherClass::begin()
   
     LoRa.onReceive(coreLoraReceive);
     LoRa.receive(); // переключаемся на приём
+
   
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+unsigned long LoraDispatcherClass::getDefaultSendWaitTime()
+{
+  unsigned long swt = CORE_LORA_DATA_SHIFT;
+  swt *= Core.DeviceID;
+  
+  return swt;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void LoraDispatcherClass::clear()
 {
-  
+
+  sendWaitTime = getDefaultSendWaitTime();
+
+  slaveState = lssSendData; // отсылаем данные
+  slaveTimer = millis();
+
+  slaveSensorNumber = 0;
+  slaveReceiptReceived = false;
+  slaveFailTransmits = 0;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void LoraDispatcherClass::updateMasterMode()
 {
   //TODO: тут работа в режиме мастера !!!
+
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void LoraDispatcherClass::updateSlaveMode()
 {
-  //TODO: Тут работа в режиме слейва !!!
+  // работа в режиме слейва
+
+  if(!CoreDataStore.size()) // собственно, у нас нет датчиков, нечего отсылать
+    return;
+
+  /* 
+      алгоритм работы слейва: отсылаем следующий пакет данных, запоминаем время начала отсыла.
+      если пакет данных отослан успешно (получена квитанция от мастера) - то
+      отсылаем следующий. Если пакет не обработан мастером - то повторяем отправку через CORE_LORA_DATA_SHIFT*Core.DeviceID.
+      После N неуспешных попыток отправки - считаем, что мастер вообще не отвечает, и засыпаем на N секунд.
+   */
+   unsigned long now = millis();
+
+   switch(slaveState)
+   {
+      case lssSendData:
+      {
+          // режим отсылки данных, проверяем, можем ли мы отослать пакет?
+          if(now - slaveTimer > sendWaitTime)
+          {
+              DBGLN(F("LoRa: want to send next data packet!"));
+
+              slaveReceiptReceived = false; // считаем, что квитанция не получена
+              
+              // переходим в ожидание квитанции
+              slaveState = lssWaitReceipt;
+
+              // отсылаем пакет с показаниями следующего датчика
+              sendSensorDataPacket();
+
+              DBGLN(F("LoRa: data packet was sent."));
+
+              // и запоминаем время, когда мы отослали пакет
+              slaveTimer = millis();
+          } // if
+      }
+      break; // lssSendData
+
+      case lssWaitReceipt:
+      {
+          // ждём получения квитанции от мастера
+          if(slaveReceiptReceived)
+          {
+            
+            // квитанция получена, можно отсылать следующие данные
+
+              slaveFailTransmits = 0; // обнуляем счётчик неудачных попыток отсыла
+            
+              slaveSensorNumber++; // на следующий датчик
+              slaveTimer = millis();
+
+              if(slaveSensorNumber >= CoreDataStore.size())
+              {
+                DBGLN(F("LoRa: receipt received, cycle done, go to sleep..."));
+                
+                // дошли до конца списка, надо чуть-чуть поспать
+                slaveSensorNumber = 0;
+                slaveState = lssSleep;
+              }
+              else
+              {
+                DBGLN(F("LoRa: receipt received, switch to next sensor..."));
+                
+                sendWaitTime = 0; // обнулили таймер ожидания, т.к. мы успешно послали пакет, и следующий можно посылать сразу же,
+                // в надежде на то, что мастер будет свободен
+                
+                slaveState = lssSendData; // переключаемся на передачу опять
+              }
+          } // if(slaveReceiptReceived)
+          else
+          {
+            // квитанция всё ещё не получена, проверяем на таймаут
+            if(now - slaveTimer > CORE_LORA_RECEIPT_TIMEOUT)
+            {
+              // таймаут, проверяем, как у нас дела с попытками перепосылки
+              slaveFailTransmits++;
+              
+              if(slaveFailTransmits < CORE_LORA_RETRANSMIT_COUNT)
+              {
+              
+                DBGLN(F("LoRa: No receipt received, try to retransmit..."));
+                
+                sendWaitTime = getDefaultSendWaitTime(); // сдвигаем время следующего отсыла данных на маленькую величину
+                slaveTimer = millis();
+  
+                slaveState = lssSendData; // переключаемся на отсыл
+              } // if
+              else
+              {
+                  DBGLN(F("LoRa: Master not answering, sleep for some time..."));
+                  
+                  slaveFailTransmits = 0;
+                  slaveState = lssSleep;
+                  slaveTimer = millis();
+                
+              } // else
+              
+            } // if
+          } // else
+      }
+      break; // lssWaitReceipt
+
+      case lssSleep:
+      {
+        // тут спим определённое время
+        if(now - slaveTimer > CORE_LORA_SEND_DURATION)
+        {
+          DBGLN(F("LoRa: Sleep done, switch to send mode..."));
+          slaveState = lssSendData;
+          slaveTimer = millis();
+        }
+      }
+      break; // lssSleep
+      
+   } // switch
+
+
+   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void LoraDispatcherClass::update()
@@ -649,6 +784,169 @@ void LoraDispatcherClass::update()
 bool LoraDispatcherClass::checkHeaders(byte* packet)
 {
   return (packet[0] ==  CORE_HEADER1 && packet[1] ==  CORE_HEADER2 && packet[2] ==  CORE_HEADER3);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void LoraDispatcherClass::sendSensorDataPacket()
+{
+  DBG(F("LoRa: Send data - sensor #"));
+  DBGLN(slaveSensorNumber);
+  
+  
+  CoreTransportPacket packet;
+  memset(&packet,0,sizeof(CoreTransportPacket));
+  
+  packet.header1 = CORE_HEADER1;
+  packet.header2 = CORE_HEADER2;
+  packet.header3 = CORE_HEADER3;
+
+  packet.clusterID = Core.ClusterID;
+  packet.deviceID = Core.DeviceID;
+  packet.packetType = CoreSensorData;
+
+  CoreSensorDataPacket* sdp = (CoreSensorDataPacket*) &(packet.packetData);
+  
+  CoreStoredData storedData = CoreDataStore.get(slaveSensorNumber);
+  
+  if(storedData.sensor)
+  {
+      // есть такой датчик
+      String sensorName = storedData.sensor->getName();
+      strcpy(sdp->sensorName, sensorName.c_str());
+      sdp->dataType = (byte) CoreSensor::getDataType(storedData.sensor->getType());
+
+      if(storedData.hasData())
+      {
+          sdp->hasData = 1;
+          sdp->dataLen = storedData.dataSize;
+          memcpy(sdp->data,storedData.data,storedData.dataSize);
+      }
+      else
+      {
+        sdp->hasData = 0;
+      }
+    
+  } // if
+  else
+    sdp->hasData = 0xFF; // датчик не найден нахрен
+
+  packet.crc = Core.crc8((byte*)&packet,sizeof(CoreTransportPacket)- 1);
+
+  // пакет сформирован, отсылаем
+  LoRa.beginPacket(); 
+  LoRa.write((byte*)&packet,sizeof(CoreTransportPacket)); 
+  LoRa.endPacket();
+
+  LoRa.receive();  // переключаемся на приём   
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void LoraDispatcherClass::parseSensorDataPacket(CoreTransportPacket* packet)
+{
+  DBGLN(F("LoRa: Sensor data packet detected, parse..."));
+
+  CoreSensorDataPacket* sensorData = (CoreSensorDataPacket*) packet->packetData;
+
+  if(sensorData->hasData == 0xFF)
+  {
+    DBGLN(F("LoRa: Sensor not found on slave, can't add local!"));
+
+    // отправляем пустую квитанцию, что пакет обработан
+    sendDataReceipt(packet,"");
+    return;
+  }
+  
+  String sensorName;
+  
+  char* namePtr = sensorData->sensorName;
+  while(*namePtr)
+  {
+    sensorName += *namePtr++;
+  }
+
+  CoreUserDataSensor* newSensor = (CoreUserDataSensor*) Core.Sensors()->get(sensorName);
+  
+  if(!newSensor)
+  {
+    newSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
+   // добавляем в список датчиков
+    Core.Sensors()->add(newSensor);
+  }
+
+  if(newSensor)
+  {
+    newSensor->setName(sensorName); // даём датчику имя
+
+    // назначаем данные
+    if(sensorData->hasData == 1) // только если они есть                           
+      newSensor->setData(sensorData->data,sensorData->dataLen);
+    else // говорим, что датчик поломатый, и с него не стало данных
+      newSensor->setData(NULL,0);
+
+    // назначаем тип данных
+    newSensor->setUserDataType((CoreDataType)sensorData->dataType);
+
+
+    // также помещаем его показания в хранилище
+    Core.pushToStorage(newSensor);
+    
+    DBGLN(F("LoRa: Userdata sensor added!"));                          
+    
+  } // if(newSensor)
+
+   //тут необходимо посылать клиенту квитанцию, что данные получены.
+   // если клиент не получит квитанцию об обработке данных мастером - 
+   // он попытается переслать эти данные позже.
+   sendDataReceipt(packet,sensorName);
+   
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void LoraDispatcherClass::sendDataReceipt(CoreTransportPacket* packet, const String& sensorName)
+{
+  byte destDeviceID = packet->deviceID;
+  packet->deviceID = Core.DeviceID; // говорим, что пакет от нас
+
+  DBG(F("LoRa: Send receipt to device #"));
+  DBGLN(destDeviceID);
+
+  CoreDataReceiptPacket* receipt = (CoreDataReceiptPacket*) packet->packetData;
+  memset(receipt,0,sizeof(CoreDataReceiptPacket));
+
+  receipt->toDeviceID = destDeviceID;
+  strcpy(receipt->sensorName,sensorName.c_str());
+
+  packet->packetType = CoreDataReceipt;
+
+  packet->crc = Core.crc8((byte*)packet,sizeof(CoreTransportPacket)- 1);
+
+  // пакет сформирован, отсылаем
+  LoRa.beginPacket();
+  LoRa.write((byte*)packet,sizeof(CoreTransportPacket));
+  LoRa.endPacket();
+
+  LoRa.receive();  // переключаемся на приём 
+
+  DBGLN(F("LoRa: Receipt was sent."));
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void LoraDispatcherClass::parseDataReceiptPacket(CoreTransportPacket* packet)
+{
+  // разбираем пакет с квитанцией о получении данных мастером
+  DBGLN(F("LoRa: Receipt received, parse..."));
+
+  CoreDataReceiptPacket* receipt = (CoreDataReceiptPacket*) packet->packetData;
+
+  // проверяем, нам ли это квитанция?
+  if(receipt->toDeviceID != Core.DeviceID)
+  {
+    DBGLN(F("LoRa: Receipt not for me, ignore."));
+    return;
+  }
+
+  // квитанция пришла нам, следовательно, мы выставляем флаг успешного получения квитанции, чтобы работать дальше
+  slaveReceiptReceived = true;
+  
+  DBGLN(F("LoRa: Receipt accepted."));
+  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool LoraDispatcherClass::parsePacket(byte* bPacket, int packetSize)
@@ -685,51 +983,23 @@ bool LoraDispatcherClass::parsePacket(byte* bPacket, int packetSize)
                 // пакет с датчиками мы обрабатываем только в режиме мастера, т.к. только мастер собирает данные от слейвов
                 if(!LoRaSettings.isMasterMode)
                   return true;
-                
-                                       
-                DBGLN(F("LoRa: Sensor data packet detected, parse..."));
 
-                CoreSensorDataPacket* sensorData = (CoreSensorDataPacket*) packet->packetData;
-                String sensorName;
-                
-                char* namePtr = sensorData->sensorName;
-                while(*namePtr)
-                {
-                  sensorName += *namePtr++;
-                }
-
-                CoreUserDataSensor* newSensor = (CoreUserDataSensor*) Core.Sensors()->get(sensorName);
-                
-                if(!newSensor)
-                {
-                  newSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
-                 // добавляем в список датчиков
-                  Core.Sensors()->add(newSensor);
-                }
-
-                if(newSensor)
-                {
-                  newSensor->setName(sensorName); // даём датчику имя
-
-                  // назначаем данные
-                  if(sensorData->hasData == 1) // только если они есть                           
-                    newSensor->setData(sensorData->data,sensorData->dataLen);
-                  else // говорим, что датчик поломатый, и с него не стало данных
-                    newSensor->setData(NULL,0);
-
-                  // назначаем тип данных
-                  newSensor->setUserDataType((CoreDataType)sensorData->dataType);
-
-            
-                  // также помещаем его показания в хранилище
-                  Core.pushToStorage(newSensor);
-                  
-                  DBGLN(F("LoRa: Userdata sensor added!"));                          
-                  
-                } // if(newSensor)
+                parseSensorDataPacket(packet);
                 
               }
-              break; // CoreSensorData
+              return true; // CoreSensorData
+              
+              case CoreDataReceipt:
+              {
+                // пришла квитанция о получении данных мастером
+                
+                if(LoRaSettings.isMasterMode) // в режиме мастера мы игнорируем этот пакет
+                  return true;
+
+                 parseDataReceiptPacket(packet);
+              }
+              return true; // CoreDataReceipt
+
 
               //TODO: Тут другие типы пакетов !!!
 

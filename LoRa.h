@@ -110,6 +110,19 @@ typedef struct
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern LoRaSettingsStruct LoRaSettings;
 //--------------------------------------------------------------------------------------------------------------------------------------
+#define CORE_LORA_DATA_SHIFT 2 // на сколько миллисекунд сдвигать попытку отправки пакета данных, если слейвом не получена квитанция от мастера
+#define CORE_LORA_SEND_DURATION 30000 // частота отсылки данных с датчиков (цикл будет повторяться через это значение)
+#define CORE_LORA_RETRANSMIT_COUNT 5 // сколько попыток перепосыла пакета с данными предпринимать слейву
+#define CORE_LORA_RECEIPT_TIMEOUT 100 // таймаут на получение квитанции от мастера
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  lssSendData, // отсылаем данные
+  lssWaitReceipt, // ждём квитанции
+  lssSleep, // ожидаем между циклами отправки
+  
+} LoRaSlaveState;
+//--------------------------------------------------------------------------------------------------------------------------------------
 class LoraDispatcherClass
 {
   public:
@@ -129,6 +142,22 @@ class LoraDispatcherClass
 
     bool parsePacket(byte* packet, int packetSize);
     bool checkHeaders(byte* packet);
+
+    // MASTER UTILS
+    void parseSensorDataPacket(CoreTransportPacket* packet);
+    void sendDataReceipt(CoreTransportPacket* packet, const String& sensorName); // отсылаем квитанцию о получении данных вызвавшей стороне
+    
+
+    // SLAVE UTILS
+    unsigned long getDefaultSendWaitTime();
+    unsigned long sendWaitTime; // сколько ждём до очередной итерации работы в режиме слейва
+    unsigned long slaveTimer; // таймер для расчёта времени на всякие операции слейва
+    LoRaSlaveState slaveState; // состояние конечного автомата слейва
+    byte slaveSensorNumber; // номер текущего датчика для отсыла данных
+    bool slaveReceiptReceived; // флаг, что мы получили квитанцию
+    byte slaveFailTransmits; // кол-во неуспешных попыток отсыла пакетов
+    void parseDataReceiptPacket(CoreTransportPacket* packet);
+    void sendSensorDataPacket();
 
   
 };
