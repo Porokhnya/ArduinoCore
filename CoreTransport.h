@@ -353,7 +353,7 @@ class CoreESPTransport : public CoreTransport
 
       CoreTransportClient* clients[ESP_MAX_CLIENTS];
 
-      HardwareSerial* lastSerial;
+ //     HardwareSerial* lastSerial;
       
       ESPClientsQueue clientsQueue; // очередь действий с клиентами
 

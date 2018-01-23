@@ -112,12 +112,14 @@ void CoreRS485::begin()
 {  
   if(RS485Settings.SerialNumber == 0 || RS485Settings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
     return;
-  
+
+  /*
   if(workStream) // надо закончить работу на старом порту
     workStream->end();
-
+*/
   workStream = getMyStream(RS485Settings.SerialNumber);
-  workStream->end();
+  
+//  workStream->end();
   
   if(RS485Settings.UARTSpeed > 0)
   {
@@ -1017,7 +1019,7 @@ CoreESPTransport::CoreESPTransport() : CoreTransport()
   for(int i=0;i<ESP_MAX_CLIENTS;i++)
     clients[i] = NULL;
 
-    lastSerial = NULL;
+ //   lastSerial = NULL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::update()
@@ -1066,16 +1068,17 @@ void CoreESPTransport::begin()
     #error "Unknown target board!"
   #endif    
 
+/*
   if(lastSerial) // надо закончить работу на старом порту
     lastSerial->end();
 
   lastSerial = hs;
-
+*/
   workStream = hs;
   unsigned long uspeed = ESPTransportSettings.UARTSpeed;
   uspeed *= 9600;
 
-  hs->end();
+//  hs->end();
   hs->begin(uspeed);
 
   while(clientsQueue.size())
