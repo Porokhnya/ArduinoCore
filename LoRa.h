@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include "CoreConfig.h"
+#include "Core.h"
 
 #ifdef CORE_LORA_TRANSPORT_ENABLED
 
@@ -17,6 +18,7 @@
 #define PA_OUTPUT_RFO_PIN      0
 #define PA_OUTPUT_PA_BOOST_PIN 1
 
+//--------------------------------------------------------------------------------------------------------------------------------------
 class LoRaClass : public Stream {
 public:
   LoRaClass();
@@ -90,9 +92,9 @@ private:
   int _implicitHeaderMode;
   void (*_onReceive)(int);
 };
-
+//--------------------------------------------------------------------------------------------------------------------------------------
 extern LoRaClass LoRa;
-
+//--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
   uint8_t frequency;
@@ -102,10 +104,37 @@ typedef struct
   uint8_t txPower;
   uint8_t bandwidth;
   bool useCrc;
+  bool isMasterMode;
   
 } LoRaSettingsStruct;
-
+//--------------------------------------------------------------------------------------------------------------------------------------
 extern LoRaSettingsStruct LoRaSettings;
+//--------------------------------------------------------------------------------------------------------------------------------------
+class LoraDispatcherClass
+{
+  public:
+
+    LoraDispatcherClass();
+  
+    void begin();
+    void update();
+    void clear();
+
+
+   private:
+
+    static void coreLoraReceive(int packetSize);
+    void updateMasterMode();
+    void updateSlaveMode();
+
+    bool parsePacket(byte* packet, int packetSize);
+    bool checkHeaders(byte* packet);
+
+  
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern LoraDispatcherClass LoraDispatcher;
+//--------------------------------------------------------------------------------------------------------------------------------------
 
 #endif // CORE_LORA_TRANSPORT_ENABLED
 

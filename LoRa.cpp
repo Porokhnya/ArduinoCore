@@ -2,11 +2,11 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 #include "LoRa.h"
-
+//--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_LORA_TRANSPORT_ENABLED
-
+//--------------------------------------------------------------------------------------------------------------------------------------
 LoRaSettingsStruct LoRaSettings;
-
+//--------------------------------------------------------------------------------------------------------------------------------------
 // registers
 #define REG_FIFO                 0x00
 #define REG_OP_MODE              0x01
@@ -530,5 +530,255 @@ void LoRaClass::onDio0Rise()
 //--------------------------------------------------------------------------------------------------------------------------------------
 LoRaClass LoRa;
 //--------------------------------------------------------------------------------------------------------------------------------------
+// LoraDispatcherClass
+//--------------------------------------------------------------------------------------------------------------------------------------
+LoraDispatcherClass LoraDispatcher;
+//--------------------------------------------------------------------------------------------------------------------------------------
+LoraDispatcherClass::LoraDispatcherClass()
+{
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void LoraDispatcherClass::begin()
+{
+    int8_t reset = LoRaSettings.reset == 0xFF ? -1 : LoRaSettings.reset;
 
+    LoRa.setPins(LoRaSettings.ss, reset, LoRaSettings.dio);
+
+    long frequency = 915E6;
+    switch(LoRaSettings.frequency)
+    {
+      case 1:
+        frequency = 433E6;
+      break;
+
+      case 2:
+        frequency = 866E6;
+      break;
+
+      case 3:
+        frequency = 915E6;
+      break;
+    }
+    
+    LoRa.begin(frequency);
+
+    LoRa.setTxPower(LoRaSettings.txPower);
+
+    long signalBandwidth = 125E3;
+    
+    switch(LoRaSettings.bandwidth)
+    {
+      case 1:
+        signalBandwidth = 7.8E3;
+      break;
+      
+      case 2:
+        signalBandwidth = 10.4E3;
+      break;
+      
+      case 3:
+        signalBandwidth = 15.6E3;
+      break;
+      
+      case 4:
+        signalBandwidth = 20.8E3;
+      break;
+      
+      case 5:
+        signalBandwidth = 31.25E3;
+      break;
+      
+      case 6:
+        signalBandwidth = 41.7E3;
+      break;
+      
+      case 7:
+        signalBandwidth = 62.5E3;
+      break;
+      
+      case 8:
+        signalBandwidth = 125E3;
+      break;
+      
+      case 9:
+        signalBandwidth = 250E3;
+      break;
+    }
+
+    
+    LoRa.setSignalBandwidth(signalBandwidth);
+
+    if(LoRaSettings.useCrc)
+      LoRa.enableCrc();
+    else
+      LoRa.disableCrc();
+  
+    LoRa.onReceive(coreLoraReceive);
+    LoRa.receive(); // переключаемся на приём
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void LoraDispatcherClass::clear()
+{
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void LoraDispatcherClass::updateMasterMode()
+{
+  //TODO: тут работа в режиме мастера !!!
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void LoraDispatcherClass::updateSlaveMode()
+{
+  //TODO: Тут работа в режиме слейва !!!
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void LoraDispatcherClass::update()
+{
+  if(LoRaSettings.isMasterMode)
+  {
+    updateMasterMode();
+  }
+  else
+  {
+    updateSlaveMode();
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool LoraDispatcherClass::checkHeaders(byte* packet)
+{
+  return (packet[0] ==  CORE_HEADER1 && packet[1] ==  CORE_HEADER2 && packet[2] ==  CORE_HEADER3);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool LoraDispatcherClass::parsePacket(byte* bPacket, int packetSize)
+{
+  if(packetSize != sizeof(CoreTransportPacket))
+    return false;
+
+   // длина данных совпадает, проверяем заголовок
+   if(!checkHeaders(bPacket))
+    return false;
+
+   CoreTransportPacket* packet = (CoreTransportPacket*) bPacket;
+
+    DBGLN(F("LoRa: packet header OK!"));
+    // пакет точно наш, проверяем CRC
+    byte crc = CoreClass::crc8(bPacket,packetSize-1);
+    if(crc == packet->crc)
+    {
+       // контрольная сумма совпадает, продолжаем
+       DBGLN(F("LoRa: CRC OK"));
+
+       if(packet->clusterID == Core.ClusterID)
+       {
+          DBGLN(F("LoRa: Our cluster, continue..."));
+
+          if(packet->deviceID != Core.DeviceID)
+          {
+            DBGLN(F("LoRa: Remote device detected, continue..."));
+
+            switch(packet->packetType)
+            {
+              case CoreSensorData: // пакет с датчиками
+              { 
+                // пакет с датчиками мы обрабатываем только в режиме мастера, т.к. только мастер собирает данные от слейвов
+                if(!LoRaSettings.isMasterMode)
+                  return true;
+                
+                                       
+                DBGLN(F("LoRa: Sensor data packet detected, parse..."));
+
+                CoreSensorDataPacket* sensorData = (CoreSensorDataPacket*) packet->packetData;
+                String sensorName;
+                
+                char* namePtr = sensorData->sensorName;
+                while(*namePtr)
+                {
+                  sensorName += *namePtr++;
+                }
+
+                CoreUserDataSensor* newSensor = (CoreUserDataSensor*) Core.Sensors()->get(sensorName);
+                
+                if(!newSensor)
+                {
+                  newSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
+                 // добавляем в список датчиков
+                  Core.Sensors()->add(newSensor);
+                }
+
+                if(newSensor)
+                {
+                  newSensor->setName(sensorName); // даём датчику имя
+
+                  // назначаем данные
+                  if(sensorData->hasData == 1) // только если они есть                           
+                    newSensor->setData(sensorData->data,sensorData->dataLen);
+                  else // говорим, что датчик поломатый, и с него не стало данных
+                    newSensor->setData(NULL,0);
+
+                  // назначаем тип данных
+                  newSensor->setUserDataType((CoreDataType)sensorData->dataType);
+
+            
+                  // также помещаем его показания в хранилище
+                  Core.pushToStorage(newSensor);
+                  
+                  DBGLN(F("LoRa: Userdata sensor added!"));                          
+                  
+                } // if(newSensor)
+                
+              }
+              break; // CoreSensorData
+
+              //TODO: Тут другие типы пакетов !!!
+
+              
+            } // switch
+          }
+          else
+          {
+            DBGLN(F("LoRa: Same device ID, ignore!"));
+          }
+       }
+       else
+       {
+          DBGLN(F("LoRa: Unknown cluster!"));
+       }
+       
+    }
+    else
+    {
+      DBGLN(F("LoRa: CRC Fail!"));
+    }
+
+  return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void LoraDispatcherClass::coreLoraReceive(int packetSize)
+{
+
+  // тут пришёл пакет от LoRa, и в зависимости от режима работы (мастер/слейв) - мы должны делать какие-либо действия
+  
+  if(packetSize > 0)
+  {
+    byte* bPacket  = new byte[packetSize];
+    byte cntr = 0;
+    while(LoRa.available())
+    {
+      bPacket[cntr] = LoRa.read();
+      cntr++;
+    }
+
+    if(!LoraDispatcher.parsePacket(bPacket,packetSize))
+    {
+      // не распарсили пакет, отправляем в событие
+      ON_LORA_RECEIVE(bPacket,packetSize);
+    }
+
+    delete [] bPacket;
+    
+  } // if
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_LORA_TRANSPORT_ENABLED

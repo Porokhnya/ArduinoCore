@@ -207,10 +207,6 @@ class CoreClass
    void memInit();
    void initSensors();
 
-   #ifdef CORE_LORA_TRANSPORT_ENABLED
-    static void coreLoraReceive(int packetSize);
-   #endif
-
     bool configLoaded;
 
    CoreUnhandledCommandsHandler pUnhandled;

@@ -671,9 +671,13 @@ bool CoreConfigIterator::readRecord()
         loraB = read();
         if(!writeOut(loraB))
           LoRaSettings.useCrc = loraB;
+
+        loraB = read();
+        if(!writeOut(loraB))
+          LoRaSettings.isMasterMode = loraB;
           
       #else
-        for(byte j=0;j<7;j++) // пропускаем 7 байт (настройки LoRa)
+        for(byte j=0;j<8;j++) // пропускаем 8 байт (настройки LoRa)
           writeOut(read());
       #endif
     }
@@ -815,6 +819,11 @@ void CoreClass::clear()
   #ifdef CORE_RS485_TRANSPORT_ENABLED
     RS485.clear();
   #endif
+
+  #ifdef CORE_LORA_TRANSPORT_ENABLED
+    LoraDispatcher.clear();    
+  #endif // CORE_LORA_TRANSPORT_ENABLED  
+  
   
   // очищаем сигналы
   while(signals.size())
@@ -1701,216 +1710,12 @@ void CoreClass::begin()
 
   #ifdef CORE_LORA_TRANSPORT_ENABLED
 
-    int8_t reset = LoRaSettings.reset == 0xFF ? -1 : LoRaSettings.reset;
-
-    LoRa.setPins(LoRaSettings.ss, reset, LoRaSettings.dio);
-
-    long frequency = 915E6;
-    switch(LoRaSettings.frequency)
-    {
-      case 1:
-        frequency = 433E6;
-      break;
-
-      case 2:
-        frequency = 866E6;
-      break;
-
-      case 3:
-        frequency = 915E6;
-      break;
-    }
-    
-    LoRa.begin(frequency);
-
-    LoRa.setTxPower(LoRaSettings.txPower);
-
-    long signalBandwidth = 125E3;
-    
-    switch(LoRaSettings.bandwidth)
-    {
-      case 1:
-        signalBandwidth = 7.8E3;
-      break;
-      
-      case 2:
-        signalBandwidth = 10.4E3;
-      break;
-      
-      case 3:
-        signalBandwidth = 15.6E3;
-      break;
-      
-      case 4:
-        signalBandwidth = 20.8E3;
-      break;
-      
-      case 5:
-        signalBandwidth = 31.25E3;
-      break;
-      
-      case 6:
-        signalBandwidth = 41.7E3;
-      break;
-      
-      case 7:
-        signalBandwidth = 62.5E3;
-      break;
-      
-      case 8:
-        signalBandwidth = 125E3;
-      break;
-      
-      case 9:
-        signalBandwidth = 250E3;
-      break;
-    }
-
-    
-    LoRa.setSignalBandwidth(signalBandwidth);
-
-    if(LoRaSettings.useCrc)
-      LoRa.enableCrc();
-    else
-      LoRa.disableCrc();
-  
-    LoRa.onReceive(coreLoraReceive);
-    LoRa.receive(); // переключаемся на приём
+  LoraDispatcher.begin();
     
   #endif // CORE_LORA_TRANSPORT_ENABLED
 
   ON_CORE_BEGIN();
 }
-//--------------------------------------------------------------------------------------------------------------------------------------
-#ifdef CORE_LORA_TRANSPORT_ENABLED
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreClass::coreLoraReceive(int packetSize)
-{
-  if(packetSize > 0)
-  {
-    byte* bPacket  = new byte[packetSize];
-    byte cntr = 0;
-    while(LoRa.available())
-    {
-      bPacket[cntr] = LoRa.read();
-      cntr++;
-    }
-
-    // тут смотрим - может, этот пакет - известный нам
-    if(packetSize == sizeof(CoreTransportPacket))
-    {
-        // длина данных совпадает, проверяем заголовок
-        CoreTransportPacket* packet = (CoreTransportPacket*) bPacket;
-
-        if(packet->header1 == CORE_HEADER1 && packet->header2 == CORE_HEADER2 && packet->header3 == CORE_HEADER3)
-        {
-            DBGLN(F("LoRa: packet header OK!"));
-            // пакет точно наш, проверяем CRC
-            byte crc = CoreClass::crc8(bPacket,packetSize-1);
-            if(crc == packet->crc)
-            {
-               // контрольная сумма совпадает, продолжаем
-               DBGLN(F("LoRa: CRC OK"));
-
-               if(packet->clusterID == Core.ClusterID)
-               {
-                  DBGLN(F("LoRa: Our cluster, continue..."));
-
-                  if(packet->deviceID != Core.DeviceID)
-                  {
-                    DBGLN(F("LoRa: Remote device detected, continue..."));
-
-                    switch(packet->packetType)
-                    {
-                      case CoreSensorData: // пакет с датчиками
-                      {                        
-                        DBGLN(F("LoRa: Sensor data packet detected, parse..."));
-
-                        CoreSensorDataPacket* sensorData = (CoreSensorDataPacket*) packet->packetData;
-                        String sensorName;
-                        
-                        char* namePtr = sensorData->sensorName;
-                        while(*namePtr)
-                        {
-                          sensorName += *namePtr++;
-                        }
-
-                        CoreUserDataSensor* newSensor = (CoreUserDataSensor*) Core.Sensors()->get(sensorName);
-                        
-                        if(!newSensor)
-                        {
-                          newSensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
-                         // добавляем в список датчиков
-                          Core.Sensors()->add(newSensor);
-                        }
-
-                        if(newSensor)
-                        {
-                          newSensor->setName(sensorName); // даём датчику имя
-
-                          // назначаем данные
-                          if(sensorData->hasData == 1) // только если они есть                           
-                            newSensor->setData(sensorData->data,sensorData->dataLen);
-                          else // говорим, что датчик поломатый, и с него не стало данных
-                            newSensor->setData(NULL,0);
-
-                          // назначаем тип данных
-                          newSensor->setUserDataType((CoreDataType)sensorData->dataType);
-
-                    
-                          // также помещаем его показания в хранилище
-                          Core.pushToStorage(newSensor);
-                          
-                          DBGLN(F("LoRa: Userdata sensor added!"));                          
-                          
-                        } // if(newSensor)
-                        
-                      }
-                      break; // CoreSensorData
-
-                      default:
-                        // пакет не обработали, вызываем событие
-                        ON_LORA_RECEIVE(bPacket,packetSize);
-                      break;
-                      
-                    } // switch
-                  }
-                  else
-                  {
-                    DBGLN(F("LoRa: Same device ID, ignore!"));
-                  }
-               }
-               else
-               {
-                  DBGLN(F("LoRa: Unknown cluster!"));
-               }
-               
-            }
-            else
-            {
-              DBGLN(F("LoRa: CRC Fail!"));
-            }
-        } // if headers ok
-        else
-        {
-          DBGLN(F("LoRa: unknown packet, pass it to event..."));
-          // не наш пакет, вызываем событие, что принят пакет от LoRa
-          ON_LORA_RECEIVE(bPacket,packetSize);
-        }
-        
-    }
-    else
-    {
-      // не наш пакет, вызываем событие, что принят пакет от LoRa
-      ON_LORA_RECEIVE(bPacket,packetSize);
-    }
-
-    delete [] bPacket;
-    
-  } // if
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-#endif // CORE_LORA_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::update()
 {
@@ -1923,6 +1728,10 @@ void CoreClass::update()
   #ifdef CORE_ESP_TRANSPORT_ENABLED
     ESP.update();
   #endif
+
+  #ifdef CORE_LORA_TRANSPORT_ENABLED
+    LoraDispatcher.update();    
+  #endif // CORE_LORA_TRANSPORT_ENABLED  
   
   updateSignals(); // обновляем сигналы
   
