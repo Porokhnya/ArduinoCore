@@ -8,7 +8,7 @@
 class CoreTransportClient;
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern "C" {
-  void ON_LORA_RECEIVE(byte* packet, int packetSize);
+  void ON_LORA_RECEIVE(uint8_t* packet, int packetSize);
   void ON_CLIENT_CONNECT(CoreTransportClient& client);
   void ON_CLIENT_DATA_RECEIVED(CoreTransportClient& client);
   void ON_CLIENT_WRITE_DONE(CoreTransportClient& client, bool isWriteSucceeded);
@@ -28,24 +28,24 @@ enum
 typedef struct
 {
   // заголовок пакета
-  byte header1;
-  byte header2;
-  byte header3;
+  uint8_t header1;
+  uint8_t header2;
+  uint8_t header3;
 
   // идентификатор кластера
-  byte clusterID;
+  uint8_t clusterID;
 
   // идентификатор устройства, пославшего пакет
-  byte deviceID;
+  uint8_t deviceID;
 
   // тип пакета
-  byte packetType;
+  uint8_t packetType;
 
-  byte packetData[23]; // данные пакета, в зависимости от типа пакета
+  uint8_t packetData[23]; // данные пакета, в зависимости от типа пакета
   
 
   // контрольная сумма
-  byte crc; 
+  uint8_t crc; 
   
 } CoreTransportPacket;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -53,10 +53,10 @@ typedef struct
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
-  byte toDeviceID; // какому устройству предназначен запрос
-  byte dataCount; // сколько у устройства записей с данными
+  uint8_t toDeviceID; // какому устройству предназначен запрос
+  uint8_t dataCount; // сколько у устройства записей с данными
 
-  byte reserved[21]; // резерв
+  uint8_t reserved[21]; // резерв
   
 } CoreDataRequestPacket;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -68,16 +68,16 @@ typedef struct
   char sensorName[10]; 
 
   // признак наличия данных
-  byte hasData;
+  uint8_t hasData;
 
   // тип данных (температура, влажность, прочее)
-  byte dataType;
+  uint8_t dataType;
     
   // длина данных
-  byte dataLen;
+  uint8_t dataLen;
 
   // данные, максимум 10 байт
-  byte data[10];
+  uint8_t data[10];
   
 } CoreSensorDataPacket;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -85,10 +85,10 @@ typedef struct
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
-  byte toDeviceID; // какому устройству предназначен пакет
+  uint8_t toDeviceID; // какому устройству предназначен пакет
   char sensorName[10];  // имя датчика, данные с которого получены, максимум 9 символов, заканчивается '\0'
   
-  byte reserved[12]; // резерв
+  uint8_t reserved[12]; // резерв
   
 } CoreDataReceiptPacket;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -293,7 +293,7 @@ typedef struct
   bool ConnectToRouter: 1; // коннектиться ли к роутеру ?
   bool UseRebootPin : 1; // использовать ли пин пересброса питания при зависании ESP ?
   
-  byte pad : 6;
+  uint8_t pad : 6;
   
 } ESPTransportSettingsFlags;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -307,15 +307,15 @@ struct ESPTransportSettingsClass
   String RouterID; // SSID роутера
   String RouterPassword; // пароль роутера
   
-  byte UARTSpeed; // скорость работы с ESP (1 - 9600, 2 - 19200, 4 - 38400, 6 - 57600, 12 - 115200)
-  byte SerialNumber; // номер Serial, который используется для работы с ESP (1 - Serial1, 2 - Serial2, 3 - Serial 3)
+  uint8_t UARTSpeed; // скорость работы с ESP (1 - 9600, 2 - 19200, 4 - 38400, 6 - 57600, 12 - 115200)
+  uint8_t SerialNumber; // номер Serial, который используется для работы с ESP (1 - Serial1, 2 - Serial2, 3 - Serial 3)
   
-  byte RebootPin; // номер пина для пересброса питания ESP
-  byte PowerOnLevel; // уровень для включения питания (1 - HIGH, 0 - LOW)
+  uint8_t RebootPin; // номер пина для пересброса питания ESP
+  uint8_t PowerOnLevel; // уровень для включения питания (1 - HIGH, 0 - LOW)
   
-  byte HangTimeout; // кол-во секунд, по истечении которых модем считается зависшим (не пришёл ответ на команду)
-  byte HangPowerOffTime; // сколько секунд держать питание выключенным при перезагрузке ESP, если он завис
-  byte WaitInitTIme; // сколько секунд ждать загрузки модема при инициализации/переинициализации
+  uint8_t HangTimeout; // кол-во секунд, по истечении которых модем считается зависшим (не пришёл ответ на команду)
+  uint8_t HangPowerOffTime; // сколько секунд держать питание выключенным при перезагрузке ESP, если он завис
+  uint8_t WaitInitTIme; // сколько секунд ждать загрузки модема при инициализации/переинициализации
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern ESPTransportSettingsClass ESPTransportSettings;
@@ -390,9 +390,9 @@ extern CoreESPTransport ESP;
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
-  byte UARTSpeed; // скорость работы с RS-485 (1 - 9600, 2 - 19200, 4 - 38400, 6 - 57600, 12 - 115200)
-  byte SerialNumber; // номер Serial, который используется для работы с RS-485 (1 - Serial1, 2 - Serial2, 3 - Serial 3)
-  byte DEPin; // пин управления приёмом/передачей по RS-485
+  uint8_t UARTSpeed; // скорость работы с RS-485 (1 - 9600, 2 - 19200, 4 - 38400, 6 - 57600, 12 - 115200)
+  uint8_t SerialNumber; // номер Serial, который используется для работы с RS-485 (1 - Serial1, 2 - Serial2, 3 - Serial 3)
+  uint8_t DEPin; // пин управления приёмом/передачей по RS-485
   bool isMasterMode; // мы в режиме мастера или слейва?
   
 } CoreRS485Settings;
@@ -400,8 +400,8 @@ typedef struct
 #ifndef CORE_RS485_DISABLE_CORE_LOGIC
 typedef struct
 {
-  byte clientNumber;
-  byte readingAttempts;
+  uint8_t clientNumber;
+  uint8_t readingAttempts;
   
 } CoreRS485ExcludeRecord;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -422,12 +422,12 @@ class CoreRS485
     // возвращает UART, используемый для RS-485
     HardwareSerial* getSerial() {return workStream; }
 
-    void sendData(byte* data, byte dataSize); // отправляет данные в шину: переключается на передачу, посылает данные, после отсыла - переключается на приём
+    void sendData(uint8_t* data, uint8_t dataSize); // отправляет данные в шину: переключается на передачу, посылает данные, после отсыла - переключается на приём
     void switchToReceive(); // переключается на приём
     void switchToSend(); // переключается на передачу
     void waitTransmitComplete(); //ждёт окончания передачи
     
-//    void addKnownPacketHeader(byte* header, byte headerSize, byte packetDataLen, byte packetID); // добавляем пакет в известные пакеты на шине
+//    void addKnownPacketHeader(uint8_t* header, uint8_t headerSize, uint8_t packetDataLen, uint8_t packetID); // добавляем пакет в известные пакеты на шине
 
 
 private:
@@ -435,15 +435,15 @@ private:
 #ifndef CORE_RS485_DISABLE_CORE_LOGIC
 
   CoreRS485ExcludedList excludedList;
-  bool inExcludedList(byte clientNumber);
-  void addToExcludedList(byte clientNumber);
-  byte getOfflineModulesCount();
+  bool inExcludedList(uint8_t clientNumber);
+  void addToExcludedList(uint8_t clientNumber);
+  uint8_t getOfflineModulesCount();
   void updateSlaveMode();
   void updateMasterMode();
 
   CoreTransportPacket rs485Packet;
-  byte* rsPacketPtr;
-  byte rs485WritePtr;
+  uint8_t* rsPacketPtr;
+  uint8_t rs485WritePtr;
 
   bool gotRS485Packet();
   void processIncomingRS485Packets();
@@ -451,11 +451,11 @@ private:
 #endif // CORE_RS485_DISABLE_CORE_LOGIC
 
   HardwareSerial* workStream;
-  HardwareSerial* getMyStream(byte SerialNumber);
+  HardwareSerial* getMyStream(uint8_t SerialNumber);
 
- // byte* dataBuffer;
-//  byte dataBufferLen;
-//  byte writeIterator;
+ // uint8_t* dataBuffer;
+//  uint8_t dataBufferLen;
+//  uint8_t writeIterator;
 //  RS485IncomingHeader* currentHeader;
 
 //  RS485State machineState;

@@ -134,27 +134,32 @@ class LoraDispatcherClass
    private:
 
     static void coreLoraReceive(int packetSize);
-    void updateMasterMode();
-    void updateSlaveMode();
 
-    bool parsePacket(byte* packet, int packetSize);
-    bool checkHeaders(byte* packet);
-
-    // MASTER UTILS
-    void parseSensorDataPacket(CoreTransportPacket* packet);
-    void sendDataReceipt(CoreTransportPacket* packet, const String& sensorName); // отсылаем квитанцию о получении данных вызвавшей стороне
+    #ifndef CORE_LORA_DISABLE_CORE_LOGIC
     
+      void updateMasterMode();
+      void updateSlaveMode();
+  
+      bool parsePacket(uint8_t* packet, int packetSize);
+      bool checkHeaders(uint8_t* packet);
+  
+      // MASTER UTILS
+      void parseSensorDataPacket(CoreTransportPacket* packet);
+      void sendDataReceipt(CoreTransportPacket* packet, const String& sensorName); // отсылаем квитанцию о получении данных вызвавшей стороне
+      
+  
+      // SLAVE UTILS
+      unsigned long getDefaultSendWaitTime();
+      unsigned long sendWaitTime; // сколько ждём до очередной итерации работы в режиме слейва
+      unsigned long slaveTimer; // таймер для расчёта времени на всякие операции слейва
+      LoRaSlaveState slaveState; // состояние конечного автомата слейва
+      uint8_t slaveSensorNumber; // номер текущего датчика для отсыла данных
+      bool slaveReceiptReceived; // флаг, что мы получили квитанцию
+      uint8_t slaveFailTransmits; // кол-во неуспешных попыток отсыла пакетов
+      void parseDataReceiptPacket(CoreTransportPacket* packet);
+      void sendSensorDataPacket();
 
-    // SLAVE UTILS
-    unsigned long getDefaultSendWaitTime();
-    unsigned long sendWaitTime; // сколько ждём до очередной итерации работы в режиме слейва
-    unsigned long slaveTimer; // таймер для расчёта времени на всякие операции слейва
-    LoRaSlaveState slaveState; // состояние конечного автомата слейва
-    byte slaveSensorNumber; // номер текущего датчика для отсыла данных
-    bool slaveReceiptReceived; // флаг, что мы получили квитанцию
-    byte slaveFailTransmits; // кол-во неуспешных попыток отсыла пакетов
-    void parseDataReceiptPacket(CoreTransportPacket* packet);
-    void sendSensorDataPacket();
+    #endif
 
   
 };

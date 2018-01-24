@@ -45,7 +45,7 @@ typedef enum
 typedef struct _TemperatureData
 {
   int8_t Value;
-  byte Fract;
+  uint8_t Fract;
 
   static _TemperatureData ConvertToFahrenheit(const _TemperatureData& from);
 
@@ -366,7 +366,7 @@ typedef struct
   bool inited : 1;
   bool inConversion : 1;
   bool isFirstTimeConversion : 1;
-  byte pad : 5;
+  uint8_t pad : 5;
   
 } CoreDS18B20LineManagerFlags;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -468,7 +468,7 @@ class CoreSensorDS18B20 : public CoreSensor
   CoreDS18B20LineManager* myManager; // менеджер, который обслуживает нашу линию
   uint8_t myIndex; // индекс датчика на линии
   uint8_t* myAddress;
-  byte badReadingAttempts;
+  uint8_t badReadingAttempts;
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------

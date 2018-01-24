@@ -277,7 +277,7 @@ bool CoreSensorBH1750::read(uint8_t* buffer)
   curLuminosity = curLuminosity/1.2; // конвертируем в люксы
 
   // теперь выдаём в буфер. Считаем, что он достаточного размера
-  byte* readPtr = (byte*)&curLuminosity;
+  uint8_t* readPtr = (uint8_t*)&curLuminosity;
   for(size_t i=0;i<sizeof(curLuminosity);i++)
   {
     *buffer++ = *readPtr++;
@@ -317,8 +317,8 @@ bool CoreSensorSi7021::read(uint8_t* buffer)
   float temperature = sensor.readTemperature();
   float humidity = sensor.readHumidity();
 
-  byte humError = (byte) humidity;
-  byte tempError = (byte) temperature;
+  uint8_t humError = (uint8_t) humidity;
+  uint8_t tempError = (uint8_t) temperature;
   bool hasData = true;
 
   if(humError == HTU21D_ERROR || tempError == HTU21D_ERROR)
@@ -339,6 +339,15 @@ bool CoreSensorSi7021::read(uint8_t* buffer)
     {
       buffer[0] = tValue; // значение температуры - целая часть
       buffer[1] = tFract; // значение температуры - дробная часть, в сотых долях
+
+       if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
+       {
+        TemperatureData fahren = {tValue, tFract}; 
+        fahren = TemperatureData::ConvertToFahrenheit(fahren);
+        buffer[0] = fahren.Value;
+        buffer[1] = fahren.Fract;
+       }
+
     }
 
       if(hasData)
@@ -458,8 +467,14 @@ void CoreUserDataSensor::setData(uint8_t* dt,uint8_t sz)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreUserDataSensor::begin(uint8_t* configData)
 {
+  delete [] data;
+  data = NULL;
   dataSize = *configData;
-  data = new byte[dataSize];
+  if(dataSize)
+  {
+    data = new uint8_t[dataSize];
+    memset(data,0,dataSize);
+  }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreUserDataSensor::read(uint8_t* buffer)
@@ -657,6 +672,14 @@ bool CoreSensorDHT::read(uint8_t* buffer)
     return false;
   }
 
+ if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
+ {
+  TemperatureData fahren = {temperatureValue, temperatureFract}; 
+  fahren = TemperatureData::ConvertToFahrenheit(fahren);
+  temperatureValue = fahren.Value;
+  temperatureFract = fahren.Fract;
+ }  
+
   buffer[0] = temperatureValue;
   buffer[1] = temperatureFract;
 
@@ -734,7 +757,7 @@ bool CoreSensorDS3231::read(uint8_t* buffer)
     
            *buffer++ = dayOfMonth;
            *buffer++ = month;
-           byte* p = (byte*)&year;
+           uint8_t* p = (uint8_t*)&year;
            *buffer++ = *p++;
            *buffer++ = *p;
            *buffer++ = hour;
@@ -763,7 +786,7 @@ bool CoreSensorDS3231::read(uint8_t* buffer)
     
             union int16_byte {
                int i;
-               byte b[2];
+               uint8_t b[2];
            } rtcTemp;
                
             rtcTemp.b[1] = wire->read();
@@ -771,8 +794,16 @@ bool CoreSensorDS3231::read(uint8_t* buffer)
         
             long tempC100 = (rtcTemp.i >> 6) * 25;
         
-            *buffer++ = tempC100/100;
-            *buffer++ = abs(tempC100 % 100);
+            buffer[0] = tempC100/100;
+            buffer[1] = abs(tempC100 % 100);
+
+             if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
+             {
+              TemperatureData fahren = {(int8_t)buffer[0], buffer[1]}; 
+              fahren = TemperatureData::ConvertToFahrenheit(fahren);
+              buffer[0] = fahren.Value;
+              buffer[1] = fahren.Fract;
+             }    
 
             return true;
             
@@ -981,7 +1012,7 @@ uint8_t CoreDS18B20LineManager::catchSensor(CoreSensorDS18B20* sensor)
    // то нам достаточно просто высчитать смещение чтения в зависимости от индекса датчика
    readAddress += sensorIndex*8;
 
-   byte address[8] = {0};
+   uint8_t address[8] = {0};
    for(int i=0;i<8;i++)
    {
     address[i] = Core.memRead(readAddress);
@@ -1030,7 +1061,7 @@ uint8_t* CoreDS18B20LineManager::addAddress(const uint8_t* address, size_t senso
   {
     // нет соответствия - индекс датчика/индекс адреса, добавляем
   
-    byte* newAddress = new byte[8];
+    uint8_t* newAddress = new uint8_t[8];
     memcpy(newAddress,address,8);
     addresses.push_back(newAddress);    
   
@@ -1148,7 +1179,7 @@ bool CoreDS18B20LineManager::readTemperature(int8_t& tempValue, uint8_t& tempFra
   ow.select(address);
   ow.write(0xBE);
 
-  byte data[9] = {0};
+  uint8_t data[9] = {0};
 
   for(uint8_t i=0;i<9;i++)
     data[i] = ow.read();
@@ -1190,6 +1221,14 @@ bool CoreDS18B20LineManager::readTemperature(int8_t& tempValue, uint8_t& tempFra
   {
     return false;
   }
+
+ if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
+ {
+  TemperatureData fahren = {tempValue, tempFract}; 
+  fahren = TemperatureData::ConvertToFahrenheit(fahren);
+  tempValue = fahren.Value;
+  tempFract = fahren.Fract;
+ }    
 
   return true;
 }

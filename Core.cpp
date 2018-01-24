@@ -25,7 +25,7 @@ CoreConfigIterator::CoreConfigIterator()
   address = NULL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool CoreConfigIterator::writeOut(byte b)
+bool CoreConfigIterator::writeOut(uint8_t b)
 {
   if(outStream)
   {
@@ -50,7 +50,7 @@ bool CoreConfigIterator::first(const void* addr, uint16_t sz, Stream* out, bool 
 #ifdef _CORE_DEBUG
   if(!outStream)
   {
-    DBGLN(F("Start iterate config..."));
+   // DBGLN(F("Start iterate config..."));
   }
 #endif  
 
@@ -99,7 +99,7 @@ bool CoreConfigIterator::first(const void* addr, uint16_t sz, Stream* out, bool 
   #ifdef _CORE_DEBUG
   if(!outStream)
   {
-    DBGLN(F("Header OK."));
+   // DBGLN(F("Header OK."));
   }
   #endif
 
@@ -117,11 +117,11 @@ bool CoreConfigIterator::next()
   return readRecord();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-byte CoreConfigIterator::read()
+uint8_t CoreConfigIterator::read()
 {
    if(readed < dataSize)
    {
-     byte b = doRead(address, readed);
+     uint8_t b = doRead(address, readed);
      readed++; // запоминаем, сколько байт прочитали
      return b;
    }
@@ -132,7 +132,7 @@ byte CoreConfigIterator::read()
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreConfigIterator::readRecord()
 {
-  byte recordType = read();
+  uint8_t recordType = read();
 
   if(!(recordType > DummyFirstRecord && recordType < DummyLastRecord))
   {
@@ -140,7 +140,7 @@ bool CoreConfigIterator::readRecord()
     #ifdef _CORE_DEBUG
     if(!outStream)
     {
-      DBGLN(F("End of config."));
+     // DBGLN(F("End of config."));
     }
     #endif
 
@@ -175,35 +175,35 @@ bool CoreConfigIterator::readRecord()
       } while(ch != '\0');
       
         // тут читаем тип датчика
-        byte b = read();
+        uint8_t b = read();
         writeOut(b);
       
         #ifdef _CORE_DEBUG
         if(!outStream)
         {
-          DBG(F("Type of sensor: "));
-          DBGLN(b);
+         // DBG(F("Type of sensor: "));
+        //  DBGLN(b);
         }
         #endif
       
         CoreSensorType type = (CoreSensorType) b;
       
         // читаем длину данных, сохранённых датчиком
-        byte dataLen = read();
+        uint8_t dataLen = read();
 
         writeOut(dataLen);
 
         #ifdef _CORE_DEBUG
           if(!outStream)
           {      
-                DBG(F("Stored data len: "));
-                DBGLN(dataLen);
+             //   DBG(F("Stored data len: "));
+            //    DBGLN(dataLen);
           }
         #endif
                 
         // есть информация по датчику, читаем её
-        byte* record = new byte[dataLen];
-        for(byte i=0;i<dataLen;i++)
+        uint8_t* record = new uint8_t[dataLen];
+        for(uint8_t i=0;i<dataLen;i++)
         {
           record[i] = read();
           writeOut(record[i]);
@@ -220,24 +220,24 @@ bool CoreConfigIterator::readRecord()
 
     case FractDelimiterRecord: // разделитель целой и дробной частей
     {
-      byte b = read();
+      uint8_t b = read();
       if(!writeOut(b))
       {
         Core.FractDelimiter = b;
-        DBG(F("FractDelimiter: "));
-        DBGLN(Core.FractDelimiter);
+      //  DBG(F("FractDelimiter: "));
+       // DBGLN(Core.FractDelimiter);
       }
     }
     return true; // FractDelimiterRecord
 
     case DeviceIDRecord:
     {
-      byte b = read();
+      uint8_t b = read();
       if(!writeOut(b))
       {
         Core.DeviceID = b;
-        DBG(F("DeviceID: "));
-        DBGLN(Core.DeviceID);
+       // DBG(F("DeviceID: "));
+       // DBGLN(Core.DeviceID);
       }
       
     }
@@ -245,12 +245,12 @@ bool CoreConfigIterator::readRecord()
 
     case ClusterIDRecord:
     {
-      byte b = read();
+      uint8_t b = read();
       if(!writeOut(b))
       {
         Core.ClusterID = b;
-        DBG(F("ClusterID: "));
-        DBGLN(Core.ClusterID);
+       // DBG(F("ClusterID: "));
+       // DBGLN(Core.ClusterID);
       }
       
     }
@@ -258,25 +258,25 @@ bool CoreConfigIterator::readRecord()
 
     case TemperatureUnitRecord: // вид измеряемой температуры
     {
-      byte b = read();
+      uint8_t b = read();
       if(!writeOut(b))
       {
         Core.TemperatureUnit = b;
-        DBG(F("TemperatureUnit: "));
-        DBGLN(Core.TemperatureUnit);
+      //  DBG(F("TemperatureUnit: "));
+      //  DBGLN(Core.TemperatureUnit);
       }
     }
     return true; // TemperatureUnitRecord
 
     case SensorsUpdateIntervalRecord: // интервал опроса датчиков
     {
-      byte b = read();
+      uint8_t b = read();
       if(!writeOut(b))
       {
         Core.SensorsUpdateInterval = b;
         Core.SensorsUpdateInterval *= 1000; // переводим в миллисекунды
-        DBG(F("SensorsUpdateInterval: "));
-        DBGLN(Core.SensorsUpdateInterval);      
+      //  DBG(F("SensorsUpdateInterval: "));
+      //  DBGLN(Core.SensorsUpdateInterval);      
       }
     }
     return true; // SensorsUpdateIntervalRecord
@@ -287,7 +287,7 @@ bool CoreConfigIterator::readRecord()
       #ifdef _CORE_DEBUG
         if(!outStream)
         {      
-          DBGLN(F("ESP SETTINGS FOUND !!!"));
+      //    DBGLN(F("ESP SETTINGS FOUND !!!"));
         }
       #endif  
       
@@ -316,8 +316,8 @@ bool CoreConfigIterator::readRecord()
         #ifdef _CORE_DEBUG
           if(!outStream)
           {
-                DBG(F("AP Name: "));
-                DBGLN(ESPTransportSettings.APName);
+            //    DBG(F("AP Name: "));
+            //    DBGLN(ESPTransportSettings.APName);
           }
         #endif  
         
@@ -355,8 +355,8 @@ bool CoreConfigIterator::readRecord()
         #ifdef _CORE_DEBUG
           if(!outStream)
           {
-                DBG(F("AP Password: "));
-                DBGLN(ESPTransportSettings.APPassword);
+           //     DBG(F("AP Password: "));
+            //    DBGLN(ESPTransportSettings.APPassword);
           }
         #endif  
         
@@ -373,7 +373,7 @@ bool CoreConfigIterator::readRecord()
 
       // флаг - коннектиться ли к роутеру
       #ifdef CORE_ESP_TRANSPORT_ENABLED
-        byte b = read();
+        uint8_t b = read();
         if(!writeOut(b))
           ESPTransportSettings.Flags.ConnectToRouter = b;
       #else
@@ -404,8 +404,8 @@ bool CoreConfigIterator::readRecord()
         #ifdef _CORE_DEBUG
           if(!outStream)
           {
-                DBG(F("Router SSID: "));
-                DBGLN(ESPTransportSettings.RouterID);
+            //    DBG(F("Router SSID: "));
+           //     DBGLN(ESPTransportSettings.RouterID);
           }
         #endif  
         
@@ -441,8 +441,8 @@ bool CoreConfigIterator::readRecord()
           #ifdef _CORE_DEBUG
             if(!outStream)
             {
-                  DBG(F("Router Password: "));
-                  DBGLN(ESPTransportSettings.RouterPassword);
+             //     DBG(F("Router Password: "));
+            //      DBGLN(ESPTransportSettings.RouterPassword);
             }
           #endif  
         
@@ -557,13 +557,13 @@ bool CoreConfigIterator::readRecord()
       #ifdef _CORE_DEBUG
         if(!outStream)
         {      
-            DBGLN(F("RS485 SETTINGS FOUND!!!"));
+         //   DBGLN(F("RS485 SETTINGS FOUND!!!"));
         }
       #endif
       
       #ifdef CORE_RS485_TRANSPORT_ENABLED
 
-        byte b = read();
+        uint8_t b = read();
         if(!writeOut(b))
           RS485Settings.UARTSpeed = b;
 
@@ -594,19 +594,19 @@ bool CoreConfigIterator::readRecord()
     {
       #ifdef CORE_RS485_TRANSPORT_ENABLED
       
-         byte headerLen = read();
+         uint8_t headerLen = read();
          writeOut(headerLen);
          
-         byte* header = new byte[headerLen];
+         uint8_t* header = new uint8_t[headerLen];
          
-          for(byte k=0;k<headerLen;k++)
+          for(uint8_t k=0;k<headerLen;k++)
           {
             header[k] = read();
             writeOut(header[k]);
           }
           
-          byte packetLen = read();
-          byte packetID = read();
+          uint8_t packetLen = read();
+          uint8_t packetID = read();
 
           writeOut(packetLen);
           writeOut(packetID);
@@ -617,10 +617,10 @@ bool CoreConfigIterator::readRecord()
           delete [] header;
       #else
       
-        byte headerLen = read();
+        uint8_t headerLen = read();
         writeOut(headerLen);
         
-        for(byte k=0;k<headerLen;k++)
+        for(uint8_t k=0;k<headerLen;k++)
         {
           writeOut(read());
         }
@@ -639,12 +639,12 @@ bool CoreConfigIterator::readRecord()
       #ifdef _CORE_DEBUG
         if(!outStream)
         {      
-            DBGLN(F("LoRa SETTINGS FOUND!!!"));
+         //   DBGLN(F("LoRa SETTINGS FOUND!!!"));
         }
       #endif
       
       #ifdef CORE_LORA_TRANSPORT_ENABLED
-        byte loraB = read();
+        uint8_t loraB = read();
         if(!writeOut(loraB))
           LoRaSettings.frequency = loraB;
 
@@ -688,7 +688,7 @@ bool CoreConfigIterator::readRecord()
         }
           
       #else
-        for(byte j=0;j<10;j++) // пропускаем 10 байт (настройки LoRa)
+        for(uint8_t j=0;j<10;j++) // пропускаем 10 байт (настройки LoRa)
           writeOut(read());
       #endif
     }
@@ -700,7 +700,7 @@ bool CoreConfigIterator::readRecord()
   return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreConfigIterator::applySensorRecord(const String& sensorName, CoreSensorType type,byte* record)
+void CoreConfigIterator::applySensorRecord(const String& sensorName, CoreSensorType type,uint8_t* record)
 {
   // тут применяем настройки из записи
   CoreSensor* s = CoreSensorsFactory::createSensor(type);
@@ -720,7 +720,7 @@ CoreEEPROMConfigIterator::CoreEEPROMConfigIterator() : CoreConfigIterator()
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-byte CoreEEPROMConfigIterator::doRead(const void* startAddress, uint16_t addressOffset)
+uint8_t CoreEEPROMConfigIterator::doRead(const void* startAddress, uint16_t addressOffset)
 {
   uint16_t addr = *((uint16_t*)&startAddress);
   addr += addressOffset;
@@ -749,17 +749,19 @@ CoreClass::CoreClass()
   SensorsUpdateInterval = CORE_SENSORS_UPDATE_INTERVAL;
   DeviceID = 0;
   ClusterID = 0;
+  wantRestart = false;
+  configSaveAddress = CORE_STORE_ADDRESS;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-byte CoreClass::crc8(const byte *addr, byte len)
+uint8_t CoreClass::crc8(const uint8_t *addr, uint8_t len)
 {
-  byte crc = 0;
+  uint8_t crc = 0;
   while (len--) 
     {
-    byte inbyte = *addr++;
-    for (byte i = 8; i; i--)
+    uint8_t inbyte = *addr++;
+    for (uint8_t i = 8; i; i--)
       {
-      byte mix = (crc ^ inbyte) & 0x01;
+      uint8_t mix = (crc ^ inbyte) & 0x01;
       crc >>= 1;
       if (mix) 
         crc ^= 0x8C;
@@ -769,12 +771,12 @@ byte CoreClass::crc8(const byte *addr, byte len)
   return crc;  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreClass::saveConfig(const byte* address, uint16_t sz, bool isInFlashSource)
+void CoreClass::saveConfig(const uint8_t* address, uint16_t sz, bool isInFlashSource)
 {
    uint16_t writeAddress = CORE_STORE_ADDRESS;
    for(uint16_t i=0;i<sz;i++)
    {
-      byte b = isInFlashSource ?  pgm_read_byte_near((address + i)) : *(address + i);
+      uint8_t b = isInFlashSource ?  pgm_read_byte_near((address + i)) : *(address + i);
       memWrite(writeAddress, b);
       writeAddress++;
    }
@@ -858,6 +860,67 @@ void CoreClass::initSensors()
     }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::setCONFIGSTART()
+{
+  configSaveAddress = CORE_STORE_ADDRESS;
+  return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::setCONFIGPART(const char* param)
+{
+  
+  while(*param)
+  {
+    uint8_t b = hexStringToByte(param);
+    param += 2;
+
+    memWrite(configSaveAddress, b);
+    configSaveAddress++;
+  }
+
+  return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint8_t CoreClass::hexStringToByte(const char* buff)
+{
+  uint8_t tens = makeNum(*buff++);
+  uint8_t ones = makeNum(*buff);
+
+   if(ones == 'X') 
+    return  0;
+    
+  return  (tens * 16) + ones;   
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint8_t CoreClass::makeNum(char ch) 
+{
+  if((ch >= '0') && (ch <= '9'))
+    return ((uint8_t) ch) - '0';
+  
+  switch(ch) 
+  {
+    case 'A':
+    case 'a': return 10;
+    
+    case 'B':
+    case 'b': return 11;
+    
+    case 'C':
+    case 'c': return 12;
+    
+    case 'D':
+    case 'd': return 13;
+
+    case 'E':
+    case 'e': return 14;
+    
+    case 'F':
+    case 'f': return 15;
+    
+    default: return 16;
+    }
+}
+//--------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::setDATETIME(const char* param)
 {
   #ifdef CORE_DS3231_ENABLED
@@ -942,32 +1005,6 @@ bool CoreClass::setDATETIME(const char* param)
 
     second = atoi(workBuff);
 
-  /*
-    // вычисляем день недели
-    int dow;
-    byte mArr[12] = {6,2,2,5,0,3,5,1,4,6,2,4};
-    dow = (year % 100);
-    dow = dow*1.25;
-    dow += day;
-    dow += mArr[month-1];
-    
-    if (((year % 4)==0) && (month<3))
-     dow -= 1;
-     
-    while (dow>7)
-     dow -= 7;              
-      
-
-    // получили список DS3231 в системе
-    CoreSensorsList rtcSensors = list.getByType(DS3231);
-    for(size_t i=0;i<rtcSensors.size();i++)
-    {
-      // теперь каждому девайсу устанавливаем время
-      CoreSensorDS3231* sensor = (CoreSensorDS3231*) rtcSensors[i];
-      sensor->setTime(second, minute, hour, dow, day, month, year);
-    }
-    */
-
     setCurrentDateTime(day, month, year,hour,minute,second);
     
   return true;
@@ -980,7 +1017,7 @@ void CoreClass::setCurrentDateTime(uint8_t day, uint8_t month, uint16_t year, ui
 {
    // вычисляем день недели
     int dow;
-    byte mArr[12] = {6,2,2,5,0,3,5,1,4,6,2,4};
+    uint8_t mArr[12] = {6,2,2,5,0,3,5,1,4,6,2,4};
     dow = (year % 100);
     dow = dow*1.25;
     dow += day;
@@ -1100,7 +1137,7 @@ bool CoreClass::getSTORAGE(const char* commandPassed, Stream* pStream)
     {
       pStream->print(byteToHexString(dt.dataSize));
       // выводим данные датчика
-      for(byte k=0;k<dt.dataSize;k++)
+      for(uint8_t k=0;k<dt.dataSize;k++)
       {
         pStream->print(byteToHexString(dt.data[k]));
       }
@@ -1326,7 +1363,10 @@ const char TRANSPORT_COMMAND[] PROGMEM = "TRANSPORT"; // получить инф
 const char FREERAM_COMMAND[] PROGMEM = "FREERAM"; // получить информацию о свободной памяти
 const char CPU_COMMAND[] PROGMEM = "CPU"; // получить информацию о МК
 const char CONFIG_COMMAND[] PROGMEM = "CONFIG"; // получить конфиг
+const char CONFIGSTART_COMMAND[] PROGMEM = "CONFIG_START"; // начать сохранение конфига
+const char CONFIGPART_COMMAND[] PROGMEM = "CONFIG_PART"; // записать часть конфига
 const char STORAGE_COMMAND[] PROGMEM = "STORAGE"; // получить показания со всех датчиков хранилища
+const char RESTART_COMMAND[] PROGMEM = "RESTART"; // перезапустить ядро
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::processCommand(const String& command,Stream* pStream)
 {
@@ -1340,8 +1380,36 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
       if(cParser.parse(command,true))
       {
         const char* commandName = cParser.getArg(0);
+
+        if(!strcmp_P(commandName, RESTART_COMMAND))
+        {
+            // запросили начать запись конфига
+            commandHandled = printBackSETResult(setRESTART(),commandName,pStream);
+        } // RESTART_COMMAND
+        else
+        if(!strcmp_P(commandName, CONFIGSTART_COMMAND))
+        {
+            // запросили начать запись конфига
+            commandHandled = printBackSETResult(setCONFIGSTART(),commandName,pStream);
+        } // CONFIGSTART_COMMAND
+        else
+        if(!strcmp_P(commandName, CONFIGPART_COMMAND))
+        {
+            // запросили записать часть конфига
+          if(cParser.argsCount() > 1)
+          {
+            const char* paramPtr = cParser.getArg(1);
+            commandHandled = printBackSETResult(setCONFIGPART(paramPtr),commandName,pStream);
+          }
+          else
+          {
+            // недостаточно параметров
+            commandHandled = printBackSETResult(false,commandName,pStream);
+          }
+        } // CONFIGPART_COMMAND
         
         #ifdef CORE_DS3231_ENABLED
+        else
         if(!strcmp_P(commandName, DATETIME_COMMAND)) // DATETIME
         {
           if(cParser.argsCount() > 1)
@@ -1422,6 +1490,12 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
     
     if(!commandHandled && pUnhandled)
       pUnhandled(command, pStream);  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::setRESTART()
+{
+  wantRestart = true;
+  return true;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::handleCommands()
@@ -1541,7 +1615,7 @@ void CoreClass::readFromSensor(CoreSensor* sensor,uint16_t storeIndex)
 
   if(sz)
   {
-    byte* dt = new byte[sz];
+    uint8_t* dt = new uint8_t[sz];
     
     //DBGLN(F("Read..."));
     
@@ -1726,10 +1800,25 @@ void CoreClass::begin()
   #endif // CORE_LORA_TRANSPORT_ENABLED
 
   ON_CORE_BEGIN();
+
+  printVersion(Serial);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::update()
 {
+  if(wantRestart) // запросили перезапуск ядра
+  {
+    wantRestart = false;
+
+    // если конфиг загружен - перезапускаемся
+    if(loadConfig())
+    {
+      lastMillis = 0;
+      begin();
+    }
+      
+    return;
+  }
 
   #ifdef CORE_RS485_TRANSPORT_ENABLED
     // обновляем транспорт RS-485
@@ -1777,7 +1866,7 @@ void CoreClass::update()
   }
  #endif // CORE_DS3231_ENABLED
  
-  if(curMillis - lastMillis > SensorsUpdateInterval)
+  if(!lastMillis || curMillis - lastMillis > SensorsUpdateInterval)
   {
     
     lastMillis = curMillis;
@@ -1918,12 +2007,8 @@ CoreStoredData::operator TemperatureData() const
     return result;
   }
 
-
    result.Value = data[0];
    result.Fract = data[1];
-
-   if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
-    return TemperatureData::ConvertToFahrenheit(result);
 
    return result;
   
@@ -2056,7 +2141,7 @@ CoreDataList CoreDataStoreClass::getByType(CoreDataType type)
    return result;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-size_t CoreDataStoreClass::save(CoreSensor* sensor, byte* data, byte dataSize)
+size_t CoreDataStoreClass::save(CoreSensor* sensor, uint8_t* data, uint8_t dataSize)
 {
   CoreStoredData dt;
   dt.sensor = sensor;
@@ -2166,7 +2251,7 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
       case UserData: // пользовательские данные
       {          
           result = "";
-          for(byte i=0;i<dataStored.dataSize;i++)
+          for(uint8_t i=0;i<dataStored.dataSize;i++)
           {
             result += Core.byteToHexString(dataStored.data[i]);
             result += ' ';

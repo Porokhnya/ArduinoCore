@@ -620,12 +620,20 @@ void LoraDispatcherClass::begin()
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-unsigned long LoraDispatcherClass::getDefaultSendWaitTime()
+void LoraDispatcherClass::update()
 {
-  unsigned long swt = CORE_LORA_TIME_SHIFT;
-  swt *= Core.DeviceID;
+  #ifndef CORE_LORA_DISABLE_CORE_LOGIC
   
-  return swt;
+    if(LoRaSettings.isMasterMode)
+    {
+      updateMasterMode();
+    }
+    else
+    {
+      updateSlaveMode();
+    }
+    
+  #endif
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void LoraDispatcherClass::reset()
@@ -635,6 +643,8 @@ void LoraDispatcherClass::reset()
   LoRaSettings.sendDuration = CORE_LORA_SEND_DURATION;
   LoRaSettings.sendDuration *= 1000;
 
+#ifndef CORE_LORA_DISABLE_CORE_LOGIC
+
   sendWaitTime = getDefaultSendWaitTime();
 
   slaveState = lssSendData; // отсылаем данные
@@ -643,6 +653,18 @@ void LoraDispatcherClass::reset()
   slaveSensorNumber = 0;
   slaveReceiptReceived = false;
   slaveFailTransmits = 0;
+  
+#endif  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifndef CORE_LORA_DISABLE_CORE_LOGIC
+//--------------------------------------------------------------------------------------------------------------------------------------
+unsigned long LoraDispatcherClass::getDefaultSendWaitTime()
+{
+  unsigned long swt = CORE_LORA_TIME_SHIFT;
+  swt *= Core.DeviceID;
+  
+  return swt;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void LoraDispatcherClass::updateMasterMode()
@@ -773,19 +795,7 @@ void LoraDispatcherClass::updateSlaveMode()
    
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void LoraDispatcherClass::update()
-{
-  if(LoRaSettings.isMasterMode)
-  {
-    updateMasterMode();
-  }
-  else
-  {
-    updateSlaveMode();
-  }
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-bool LoraDispatcherClass::checkHeaders(byte* packet)
+bool LoraDispatcherClass::checkHeaders(uint8_t* packet)
 {
   return (packet[0] ==  CORE_HEADER1 && packet[1] ==  CORE_HEADER2 && packet[2] ==  CORE_HEADER3);
 }
@@ -816,7 +826,7 @@ void LoraDispatcherClass::sendSensorDataPacket()
       // есть такой датчик
       String sensorName = storedData.sensor->getName();
       strcpy(sdp->sensorName, sensorName.c_str());
-      sdp->dataType = (byte) CoreSensor::getDataType(storedData.sensor->getType());
+      sdp->dataType = (uint8_t) CoreSensor::getDataType(storedData.sensor->getType());
 
       if(storedData.hasData())
       {
@@ -833,11 +843,11 @@ void LoraDispatcherClass::sendSensorDataPacket()
   else
     sdp->hasData = 0xFF; // датчик не найден нахрен
 
-  packet.crc = Core.crc8((byte*)&packet,sizeof(CoreTransportPacket)- 1);
+  packet.crc = Core.crc8((uint8_t*)&packet,sizeof(CoreTransportPacket)- 1);
 
   // пакет сформирован, отсылаем
   LoRa.beginPacket(); 
-  LoRa.write((byte*)&packet,sizeof(CoreTransportPacket)); 
+  LoRa.write((uint8_t*)&packet,sizeof(CoreTransportPacket)); 
   LoRa.endPacket();
 
   LoRa.receive();  // переключаемся на приём   
@@ -905,7 +915,7 @@ void LoraDispatcherClass::parseSensorDataPacket(CoreTransportPacket* packet)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void LoraDispatcherClass::sendDataReceipt(CoreTransportPacket* packet, const String& sensorName)
 {
-  byte destDeviceID = packet->deviceID;
+  uint8_t destDeviceID = packet->deviceID;
   packet->deviceID = Core.DeviceID; // говорим, что пакет от нас
 
   DBG(F("LoRa: Send receipt to device #"));
@@ -919,11 +929,11 @@ void LoraDispatcherClass::sendDataReceipt(CoreTransportPacket* packet, const Str
 
   packet->packetType = CoreDataReceipt;
 
-  packet->crc = Core.crc8((byte*)packet,sizeof(CoreTransportPacket)- 1);
+  packet->crc = Core.crc8((uint8_t*)packet,sizeof(CoreTransportPacket)- 1);
 
   // пакет сформирован, отсылаем
   LoRa.beginPacket();
-  LoRa.write((byte*)packet,sizeof(CoreTransportPacket));
+  LoRa.write((uint8_t*)packet,sizeof(CoreTransportPacket));
   LoRa.endPacket();
 
   LoRa.receive();  // переключаемся на приём 
@@ -953,7 +963,7 @@ void LoraDispatcherClass::parseDataReceiptPacket(CoreTransportPacket* packet)
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool LoraDispatcherClass::parsePacket(byte* bPacket, int packetSize)
+bool LoraDispatcherClass::parsePacket(uint8_t* bPacket, int packetSize)
 {
   if(packetSize != sizeof(CoreTransportPacket))
     return false;
@@ -966,7 +976,7 @@ bool LoraDispatcherClass::parsePacket(byte* bPacket, int packetSize)
 
     DBGLN(F("LoRa: packet header OK!"));
     // пакет точно наш, проверяем CRC
-    byte crc = CoreClass::crc8(bPacket,packetSize-1);
+    uint8_t crc = CoreClass::crc8(bPacket,packetSize-1);
     if(crc == packet->crc)
     {
        // контрольная сумма совпадает, продолжаем
@@ -1029,30 +1039,38 @@ bool LoraDispatcherClass::parsePacket(byte* bPacket, int packetSize)
   return true;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_LORA_DISABLE_CORE_LOGIC
+//--------------------------------------------------------------------------------------------------------------------------------------
 void LoraDispatcherClass::coreLoraReceive(int packetSize)
 {
+ 
 
   // тут пришёл пакет от LoRa, и в зависимости от режима работы (мастер/слейв) - мы должны делать какие-либо действия
   
   if(packetSize > 0)
   {
-    byte* bPacket  = new byte[packetSize];
-    byte cntr = 0;
+    uint8_t* bPacket  = new uint8_t[packetSize];
+    uint8_t cntr = 0;
     while(LoRa.available())
     {
       bPacket[cntr] = LoRa.read();
       cntr++;
     }
-
+    #ifndef CORE_LORA_DISABLE_CORE_LOGIC
     if(!LoraDispatcher.parsePacket(bPacket,packetSize))
     {
       // не распарсили пакет, отправляем в событие
       ON_LORA_RECEIVE(bPacket,packetSize);
     }
-
+  #else
+    // логика ядра выключена, просто вызываем событие
+    ON_LORA_RECEIVE(bPacket,packetSize);
+  #endif
     delete [] bPacket;
     
   } // if
+
+
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_LORA_TRANSPORT_ENABLED

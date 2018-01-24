@@ -1,0 +1,47 @@
+// ДОБАВЛЕНИЕ ПОЛЬЗОВАТЕЛЬСКОГО ДАТЧИКА ИЗ КОДА
+
+CoreUserDataSensor* mySensor = NULL;
+
+void setup()
+{
+
+	// тут инициализация ядра, датчики добавлять после вызова Core.begin();
+
+    mySensor = (CoreUserDataSensor*) Core.Sensors()->get(F("USERDATA"));
+    if(!mySensor)
+    {
+      mySensor = (CoreUserDataSensor*) CoreSensorsFactory::createSensor(UserDataSensor);
+      mySensor->setName(F("USERDATA")); // даём датчику имя
+	  
+      // назначаем буфер для данных
+      byte data[2] = {0,0};
+      mySensor->setData(data,2);
+
+      // говорим, что это - температура, например
+      mySensor->setUserDataType(Temperature);
+
+      // и добавляем в список датчиков
+      Core.Sensors()->add(mySensor);
+
+      // также помещаем его показания в хранилище
+      Core.pushToStorage(mySensor);
+
+  
+    }
+
+}
+
+void loop()
+{
+      // дальнейшее обновление показаний в датчике производится вручную, при необходимости:
+      if(mySensor)
+      {
+        // обновляем наш второй, динамически добавленный датчик
+        static byte sensorData[2] = {0,0};
+        sensorData[0]++;
+        sensorData[1]--;
+        mySensor->setData(sensorData,2);
+        Core.pushToStorage(mySensor);
+      }       
+	  
+}

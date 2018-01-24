@@ -67,20 +67,20 @@ class CoreConfigIterator
     uint16_t dataSize; // размер данных, до которого можно итерировать
     const void* address; // текущий адрес чтения
 
-    virtual byte doRead(const void* startAddress, uint16_t addressOffset) = 0; // потомки в этом методе читают и возвращают байт, передаётся начальный адрес и смещение, по которому надо прочитать
+    virtual uint8_t doRead(const void* startAddress, uint16_t addressOffset) = 0; // потомки в этом методе читают и возвращают байт, передаётся начальный адрес и смещение, по которому надо прочитать
     
 
   private:
 
     uint16_t readed;
-    byte read();
+    uint8_t read();
     bool readRecord();
-    void applySensorRecord(const String& sensorName, CoreSensorType type,byte* record);
+    void applySensorRecord(const String& sensorName, CoreSensorType type,uint8_t* record);
     
     Stream* outStream;
     bool asHexString;
 
-    bool writeOut(byte b);
+    bool writeOut(uint8_t b);
    
   
 };
@@ -91,7 +91,7 @@ class CoreEEPROMConfigIterator : public CoreConfigIterator
     CoreEEPROMConfigIterator();
 
   protected:
-    virtual byte doRead(const void* startAddress, uint16_t addressOffset);
+    virtual uint8_t doRead(const void* startAddress, uint16_t addressOffset);
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<CoreSensor*> CoreSensorsList;
@@ -153,17 +153,18 @@ class CoreClass
 		CoreClass();
 
     char FractDelimiter; // разделитель целой и дробной частей
-    byte TemperatureUnit; // вид измерения температуры (в цельсиях или фаренгейтах)
+    uint8_t TemperatureUnit; // вид измерения температуры (в цельсиях или фаренгейтах)
     unsigned long SensorsUpdateInterval; // интервал обновления показаний с датчиков
-    byte DeviceID; // уникальный адрес устройства
-    byte ClusterID; // уникальный адрес кластера
+    uint8_t DeviceID; // уникальный адрес устройства
+    uint8_t ClusterID; // уникальный адрес кластера
 
-    static byte crc8(const byte *addr, byte len);
+    static uint8_t crc8(const uint8_t *addr, uint8_t len);
 
     // устанавливает дату/время для всех DS3231
     void setCurrentDateTime(uint8_t dayOfMonth, uint8_t month, uint16_t year, uint8_t hour, uint8_t minute, uint8_t second);
 
-    const char* byteToHexString(byte i); // конвертирует байт в его строковое представление в шестнадцатеричном виде
+    const char* byteToHexString(uint8_t i); // конвертирует байт в его строковое представление в шестнадцатеричном виде
+    static uint8_t hexStringToByte(const char* buff); // конвертирует строковое представление байта в шестнадцатеричном виде в байт
 
     void pushToStorage(CoreSensor* sensor); // обновляет показания с датчика в хранилище
 
@@ -200,9 +201,11 @@ class CoreClass
    bool loadConfig(); 
 
    // сохраняет настройки конфига из массива в памяти в EEPROM
-   void saveConfig(const byte* address, uint16_t sz, bool isInFlashSource);
+   void saveConfig(const uint8_t* address, uint16_t sz, bool isInFlashSource);
 
    private:
+
+   static uint8_t makeNum(char ch);
 
    void memInit();
    void initSensors();
@@ -240,6 +243,17 @@ class CoreClass
    // Вернуть в поток конфиг, закодированный в HEX
    bool getCONFIG(const char* commandPassed, Stream* pStream);
 
+   // текущий адрес записи конфига
+   uint16_t configSaveAddress; 
+   // Начать запись конфига
+   bool setCONFIGSTART();
+   // Записать часть конфига - куски по 50 байт
+   bool setCONFIGPART(const char* param);
+
+   // перезапустить ядро
+   bool wantRestart;
+   bool setRESTART();
+
    // вернуть в поток показания всех датчиков хранилища, закодированные в HEX
    bool getSTORAGE(const char* commandPassed, Stream* pStream);
 
@@ -252,8 +266,8 @@ extern CoreClass Core;
 //--------------------------------------------------------------------------------------------------------------------------------------
 struct CoreStoredData
 {
-  byte* data; // сырые данные
-  byte dataSize; // размер сырых данных
+  uint8_t* data; // сырые данные
+  uint8_t dataSize; // размер сырых данных
   CoreSensor* sensor; // датчик, с которого получены данные
 
   operator LuminosityData() const; // возвращает данные как освещённость
@@ -274,7 +288,7 @@ class CoreDataStoreClass
   public:
     CoreDataStoreClass();
 
-    size_t save(CoreSensor* sensor, byte* data, byte dataSize);
+    size_t save(CoreSensor* sensor, uint8_t* data, uint8_t dataSize);
 
     CoreStoredData get(size_t idx) {return list[idx];}; // возвращает данные по индексу
     CoreStoredData get(const String& sensorMnemonicName); // возвращает данные для датчика по его мнемоническому имени
@@ -307,7 +321,7 @@ class CoreTextFormatProvider : public CoreDataFormatProvider // выводим �
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern CoreDataStoreClass CoreDataStore; // хранилище данных с датчиков
 //--------------------------------------------------------------------------------------------------------------------------------------
-#define CORE_HEADER1 0x50
+#define CORE_HEADER1 0x51
 #define CORE_HEADER2 0xED
 #define CORE_HEADER3 0x9F
 //--------------------------------------------------------------------------------------------------------------------------------------

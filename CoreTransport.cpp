@@ -2,13 +2,13 @@
 #include "Core.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern "C" {
-static void __nolora(byte* b, int dummy){}
+static void __nolora(uint8_t* b, int dummy){}
 static void __noclientconnect(CoreTransportClient& client) {}
 static void __noclientdatareceived(CoreTransportClient& client) {}
 static void __noclientwritedone(CoreTransportClient& client, bool isWriteSucceeded) {}
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void ON_LORA_RECEIVE(byte*, int) __attribute__ ((weak, alias("__nolora")));
+void ON_LORA_RECEIVE(uint8_t*, int) __attribute__ ((weak, alias("__nolora")));
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_CLIENT_CONNECT(CoreTransportClient& client) __attribute__ ((weak, alias("__noclientconnect")));
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -65,7 +65,7 @@ CoreRS485::CoreRS485()
 
 #ifndef CORE_RS485_DISABLE_CORE_LOGIC
 
-  rsPacketPtr = (byte*)&rs485Packet;
+  rsPacketPtr = (uint8_t*)&rs485Packet;
   rs485WritePtr = 0;
   
 #endif // CORE_RS485_DISABLE_CORE_LOGIC
@@ -79,7 +79,7 @@ CoreRS485::CoreRS485()
 */  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-HardwareSerial* CoreRS485::getMyStream(byte SerialNumber)
+HardwareSerial* CoreRS485::getMyStream(uint8_t SerialNumber)
 {
 #if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1280__) || (defined (__arm__) && defined (__SAM3X8E__))  
   switch(SerialNumber)
@@ -170,7 +170,7 @@ void CoreRS485::processRS485Packet()
   if(!(rs485Packet.header1 == CORE_HEADER1 && rs485Packet.header2 == CORE_HEADER2 && rs485Packet.header3 == CORE_HEADER3))
   {
      // заголовок неправильный, ищем возможное начало пакета
-     byte readPtr = 0;
+     uint8_t readPtr = 0;
      bool startPacketFound = false;
      while(readPtr < sizeof(CoreTransportPacket))
      {
@@ -196,8 +196,8 @@ void CoreRS485::processRS485Packet()
      } // if
 
      // начало пакета найдено, копируем всё, что после него, перемещая в начало буфера
-     byte writePtr = 0;
-     byte bytesWritten = 0;
+     uint8_t writePtr = 0;
+     uint8_t bytesWritten = 0;
      while(readPtr < sizeof(CoreTransportPacket) )
      {
       rsPacketPtr[writePtr++] = rsPacketPtr[readPtr++];
@@ -215,28 +215,32 @@ void CoreRS485::processRS485Packet()
     // заголовок правильный 
        
         // отвечаем на пакет
-         byte crc = Core.crc8((byte*)&rs485Packet,sizeof(CoreTransportPacket)- 1);
+         uint8_t crc = Core.crc8((uint8_t*)&rs485Packet,sizeof(CoreTransportPacket)- 1);
       
          if(crc != rs485Packet.crc)
          {
           String str = F("BAD CRC!");
-          sendData((byte*)str.c_str(),str.length());
+          sendData((uint8_t*)str.c_str(),str.length());
           rs485WritePtr = 0;
           return;
          }
       
         if(!(rs485Packet.header1 == CORE_HEADER1 && rs485Packet.header2 == CORE_HEADER2 && rs485Packet.header3 == CORE_HEADER3))
         {
+          /*
           String str = F("BAD HEADERS!");
-          sendData((byte*)str.c_str(),str.length());
+          sendData((uint8_t*)str.c_str(),str.length());
+          */
           rs485WritePtr = 0;
           return;
         }
       
         if(rs485Packet.clusterID != Core.ClusterID)
         {
+          /*
           String str = F("BAD CLUSTER!");
-          sendData((byte*)str.c_str(),str.length());
+          sendData((uint8_t*)str.c_str(),str.length());
+          */
           rs485WritePtr = 0;
           return;
         }
@@ -244,8 +248,10 @@ void CoreRS485::processRS485Packet()
       
         if(!(rs485Packet.packetType == CoreDataRequest || rs485Packet.packetType == CoreSensorData))
         {
+          /*
           String str = F("BAD PACKET TYPE!");
-          sendData((byte*)str.c_str(),str.length());
+          sendData((uint8_t*)str.c_str(),str.length());
+          */
           rs485WritePtr = 0;
           return;
         }
@@ -260,8 +266,10 @@ void CoreRS485::processRS485Packet()
             
             if(drp->toDeviceID != Core.DeviceID) // пакет не нам
             {
+              /*
               String str = F("NOT FOT MY DEVICE!");
-              sendData((byte*)str.c_str(),str.length());
+              sendData((uint8_t*)str.c_str(),str.length());
+              */
               rs485WritePtr = 0;
               return;
             }
@@ -273,10 +281,10 @@ void CoreRS485::processRS485Packet()
             rs485Packet.deviceID = Core.DeviceID;
       
             // пересчитываем CRC
-            rs485Packet.crc = Core.crc8((byte*)&rs485Packet,sizeof(CoreTransportPacket)- 1);
+            rs485Packet.crc = Core.crc8((uint8_t*)&rs485Packet,sizeof(CoreTransportPacket)- 1);
       
             // пишем в поток
-            sendData((byte*)&rs485Packet,sizeof(CoreTransportPacket));
+            sendData((uint8_t*)&rs485Packet,sizeof(CoreTransportPacket));
             
           }
           break; // CoreDataRequest
@@ -284,13 +292,15 @@ void CoreRS485::processRS485Packet()
           case CoreSensorData:
           {
              // попросили отдать данные с датчика, в первом байте данных пакета - лежит номер датчика, в нулевом байте - номер устройства на шине
-             byte requestID = rs485Packet.packetData[0];
-             byte sensorNumber = rs485Packet.packetData[1];
+             uint8_t requestID = rs485Packet.packetData[0];
+             uint8_t sensorNumber = rs485Packet.packetData[1];
       
              if(requestID != Core.DeviceID) // пакет не нам
              {
+              /*
               String str = F("NOT FOT MY DEVICE!");
-              sendData((byte*)str.c_str(),str.length());
+              sendData((uint8_t*)str.c_str(),str.length());
+              */
               rs485WritePtr = 0;
               return;
              }
@@ -307,7 +317,7 @@ void CoreRS485::processRS485Packet()
               {
                 String sensorName = storedData.sensor->getName();
                 strcpy(sdp->sensorName, sensorName.c_str());
-                sdp->dataType = (byte) CoreSensor::getDataType(storedData.sensor->getType());
+                sdp->dataType = (uint8_t) CoreSensor::getDataType(storedData.sensor->getType());
                   
                 if(storedData.hasData())
                 {
@@ -326,8 +336,8 @@ void CoreRS485::processRS485Packet()
               }
       
               // отсылаем данные взад
-              rs485Packet.crc = Core.crc8((byte*)&rs485Packet,sizeof(CoreTransportPacket)- 1);
-              sendData((byte*)&rs485Packet,sizeof(CoreTransportPacket));
+              rs485Packet.crc = Core.crc8((uint8_t*)&rs485Packet,sizeof(CoreTransportPacket)- 1);
+              sendData((uint8_t*)&rs485Packet,sizeof(CoreTransportPacket));
           }
           break; // CoreSensorData
           
@@ -346,7 +356,7 @@ void CoreRS485::processIncomingRS485Packets() // обрабатываем вхо
     
   while(workStream->available())
   {
-    rsPacketPtr[rs485WritePtr++] = (byte) workStream->read();
+    rsPacketPtr[rs485WritePtr++] = (uint8_t) workStream->read();
    
     if(gotRS485Packet())
     {
@@ -380,8 +390,8 @@ void CoreRS485::updateMasterMode()
 
    // когда мало клиентов - минимальное время опроса между ними надо увеличивать, т.к. незачем дёргать два несчастных клиента несколько раз в секунду.
    // для этого мы смотрим - если живых клиентов мало, то мы пересчитываем интервал обновления.
-   byte offlineClients = getOfflineModulesCount();
-   byte aliveClients = CORE_RS485_MAX_ADDRESS - offlineClients + 1;
+   uint8_t offlineClients = getOfflineModulesCount();
+   uint8_t aliveClients = CORE_RS485_MAX_ADDRESS - offlineClients + 1;
 
    // мы должны опросить aliveClients за CORE_RS485_ROUNDTRIP секунд
    unsigned long roundtrip = CORE_RS485_ROUNDTRIP;
@@ -437,11 +447,11 @@ void CoreRS485::updateMasterMode()
      memcpy(packet.packetData,&drp,sizeof(CoreDataRequestPacket));
 
      // считаем CRC
-     packet.crc = Core.crc8((byte*) &packet, sizeof(CoreTransportPacket)-1);
+     packet.crc = Core.crc8((uint8_t*) &packet, sizeof(CoreTransportPacket)-1);
 
 
      // теперь пишем в шину запрос
-     sendData((byte*)&packet,sizeof(CoreTransportPacket));
+     sendData((uint8_t*)&packet,sizeof(CoreTransportPacket));
 
 
      
@@ -454,9 +464,9 @@ void CoreRS485::updateMasterMode()
 */
      // обнуляем пакет
      memset(&packet,0,sizeof(CoreTransportPacket));
-     byte bytesReaded = 0;
+     uint8_t bytesReaded = 0;
      bool received = false;
-     byte* writePtr = (byte*)&packet;
+     uint8_t* writePtr = (uint8_t*)&packet;
      
      // принимаем данные
      
@@ -481,7 +491,7 @@ void CoreRS485::updateMasterMode()
         if(workStream->available())
         {
           startReadingTime = micros(); // сбрасываем таймаут
-          byte bIncoming = (byte) workStream->read();
+          uint8_t bIncoming = (uint8_t) workStream->read();
           *writePtr++ = bIncoming;
           bytesReaded++;
         } // if available
@@ -501,7 +511,7 @@ void CoreRS485::updateMasterMode()
      if(received)
      {
         // получили полный пакет, проверяем CRC
-        byte crc = Core.crc8((byte*)&packet,sizeof(CoreTransportPacket)-1);
+        uint8_t crc = Core.crc8((uint8_t*)&packet,sizeof(CoreTransportPacket)-1);
 
         if(crc == packet.crc)
         {
@@ -523,10 +533,10 @@ void CoreRS485::updateMasterMode()
             #endif  
 
             // получаем кол-во показаний
-            byte dataCount = requestPacket->dataCount;
+            uint8_t dataCount = requestPacket->dataCount;
 
             // теперь для каждого из показаний посылаем запрос на чтение этих показаний, чтобы добавить их в систему
-            for(byte kk=0;kk < dataCount; kk++)
+            for(uint8_t kk=0;kk < dataCount; kk++)
             {
               // формируем пакет запроса показаний, и отправляем его на шину
               packet.packetType = CoreSensorData; // запрашиваем показания с датчиков
@@ -534,13 +544,13 @@ void CoreRS485::updateMasterMode()
               packet.packetData[1] = kk; // говорим, с какого датчика запрашиваем
 
               // считаем CRC
-              packet.crc = Core.crc8((byte*)&packet,sizeof(CoreTransportPacket)-1);
+              packet.crc = Core.crc8((uint8_t*)&packet,sizeof(CoreTransportPacket)-1);
 
               // отсылаем данные
-              sendData((byte*)&packet,sizeof(CoreTransportPacket));
+              sendData((uint8_t*)&packet,sizeof(CoreTransportPacket));
               startReadingTime = micros();
               bytesReaded = 0;
-              writePtr = (byte*)&packet;
+              writePtr = (uint8_t*)&packet;
 
               // читаем из шины ответ
                 while(1)
@@ -561,7 +571,7 @@ void CoreRS485::updateMasterMode()
                   if(workStream->available())
                   {
                     startReadingTime = micros(); // сбрасываем таймаут
-                    *writePtr++ = (byte) workStream->read();
+                    *writePtr++ = (uint8_t) workStream->read();
                     bytesReaded++;
                   } // if available
           
@@ -571,7 +581,7 @@ void CoreRS485::updateMasterMode()
                       Serial.println(F("RS485: Data packet received from client!"));
                     #endif
 
-                    byte crc = Core.crc8((byte*)&packet,sizeof(CoreTransportPacket)-1);
+                    uint8_t crc = Core.crc8((uint8_t*)&packet,sizeof(CoreTransportPacket)-1);
           
                       // тут разбираем, что там пришло
                       if(packet.header1 == CORE_HEADER1 && 
@@ -682,7 +692,7 @@ void CoreRS485::updateMasterMode()
             Serial.print(F("RS485: client UNCOMPLETED DATA - "));
               // выводим ответ клиента
               char* ch = (char*)&packet;
-              for(byte zz=0;zz<bytesReaded;zz++)
+              for(uint8_t zz=0;zz<bytesReaded;zz++)
                 Serial.print((char)*ch++);
 
              Serial.println();
@@ -706,9 +716,9 @@ void CoreRS485::updateMasterMode()
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-byte CoreRS485::getOfflineModulesCount()
+uint8_t CoreRS485::getOfflineModulesCount()
 {
-  byte result = 0;
+  uint8_t result = 0;
 
  for(size_t i=0;i<excludedList.size();i++)
   {
@@ -720,7 +730,7 @@ byte CoreRS485::getOfflineModulesCount()
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool CoreRS485::inExcludedList(byte clientNumber)
+bool CoreRS485::inExcludedList(uint8_t clientNumber)
 {
   for(size_t i=0;i<excludedList.size();i++)
   {
@@ -731,7 +741,7 @@ bool CoreRS485::inExcludedList(byte clientNumber)
   return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreRS485::addToExcludedList(byte clientNumber)
+void CoreRS485::addToExcludedList(uint8_t clientNumber)
 {
   for(size_t i=0;i<excludedList.size();i++)
   {
@@ -803,15 +813,18 @@ void CoreRS485::reset()
 
   #ifndef CORE_RS485_DISABLE_CORE_LOGIC
   
-    rsPacketPtr = (byte*)&rs485Packet;
+    rsPacketPtr = (uint8_t*)&rs485Packet;
     rs485WritePtr = 0;
+
+    while(excludedList.size())
+      excludedList.pop();
     
   #endif // CORE_RS485_DISABLE_CORE_LOGIC
     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 /*
-void CoreRS485::addKnownPacketHeader(byte* header, byte headerSize, byte packetDataLen, byte packetID)
+void CoreRS485::addKnownPacketHeader(uint8_t* header, uint8_t headerSize, uint8_t packetDataLen, uint8_t packetID)
 {
   RS485IncomingHeader knownHeader;
   
@@ -828,7 +841,7 @@ void CoreRS485::addKnownPacketHeader(byte* header, byte headerSize, byte packetD
   {
     delete [] dataBuffer;
     dataBufferLen = headerSize + packetDataLen;
-    dataBuffer = new byte[dataBufferLen];
+    dataBuffer = new uint8_t[dataBufferLen];
   }
   
 }
@@ -876,7 +889,7 @@ void CoreRS485::waitTransmitComplete()
   #endif  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreRS485::sendData(byte* data, byte dataSize)
+void CoreRS485::sendData(uint8_t* data, uint8_t dataSize)
 {
   if(!workStream)
     return;
