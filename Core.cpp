@@ -682,7 +682,10 @@ bool CoreConfigIterator::readRecord()
 
         loraB = read();
         if(!writeOut(loraB))
+        {
           LoRaSettings.sendDuration = loraB;
+          LoRaSettings.sendDuration *= 1000;
+        }
           
       #else
         for(byte j=0;j<10;j++) // пропускаем 10 байт (настройки LoRa)

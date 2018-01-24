@@ -633,6 +633,7 @@ void LoraDispatcherClass::reset()
 
   LoRaSettings.retransmitCount = CORE_LORA_RETRANSMIT_COUNT;
   LoRaSettings.sendDuration = CORE_LORA_SEND_DURATION;
+  LoRaSettings.sendDuration *= 1000;
 
   sendWaitTime = getDefaultSendWaitTime();
 
