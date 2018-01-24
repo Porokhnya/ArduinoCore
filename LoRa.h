@@ -105,6 +105,8 @@ typedef struct
   uint8_t bandwidth;
   bool useCrc;
   bool isMasterMode;
+  uint8_t retransmitCount;
+  unsigned long sendDuration;
   
 } LoRaSettingsStruct;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -126,7 +128,7 @@ class LoraDispatcherClass
   
     void begin();
     void update();
-    void clear();
+    void reset();
 
 
    private:

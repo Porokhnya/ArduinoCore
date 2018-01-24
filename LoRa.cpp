@@ -628,8 +628,11 @@ unsigned long LoraDispatcherClass::getDefaultSendWaitTime()
   return swt;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void LoraDispatcherClass::clear()
+void LoraDispatcherClass::reset()
 {
+
+  LoRaSettings.retransmitCount = CORE_LORA_RETRANSMIT_COUNT;
+  LoRaSettings.sendDuration = CORE_LORA_SEND_DURATION;
 
   sendWaitTime = getDefaultSendWaitTime();
 
@@ -726,7 +729,7 @@ void LoraDispatcherClass::updateSlaveMode()
               // таймаут, проверяем, как у нас дела с попытками перепосылки
               slaveFailTransmits++;
               
-              if(slaveFailTransmits < CORE_LORA_RETRANSMIT_COUNT)
+              if(slaveFailTransmits < LoRaSettings.retransmitCount)
               {
               
                 DBGLN(F("LoRa: No receipt received, try to retransmit..."));
@@ -754,7 +757,7 @@ void LoraDispatcherClass::updateSlaveMode()
       case lssSleep:
       {
         // тут спим определённое время
-        if(now - slaveTimer > CORE_LORA_SEND_DURATION)
+        if(now - slaveTimer > LoRaSettings.sendDuration)
         {
           DBGLN(F("LoRa: Sleep done, switch to send mode..."));
           slaveState = lssSendData;

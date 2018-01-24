@@ -675,9 +675,17 @@ bool CoreConfigIterator::readRecord()
         loraB = read();
         if(!writeOut(loraB))
           LoRaSettings.isMasterMode = loraB;
+
+        loraB = read();
+        if(!writeOut(loraB))
+          LoRaSettings.retransmitCount = loraB;
+
+        loraB = read();
+        if(!writeOut(loraB))
+          LoRaSettings.sendDuration = loraB;
           
       #else
-        for(byte j=0;j<8;j++) // пропускаем 8 байт (настройки LoRa)
+        for(byte j=0;j<10;j++) // пропускаем 10 байт (настройки LoRa)
           writeOut(read());
       #endif
     }
@@ -774,7 +782,7 @@ void CoreClass::saveConfig(const byte* address, uint16_t sz, bool isInFlashSourc
 bool CoreClass::loadConfig()
 {
   configLoaded = false;
-  clear();
+  reset();
   
   CoreEEPROMConfigIterator iter;
   uint16_t sz = 0;
@@ -809,7 +817,7 @@ bool CoreClass::loadConfig()
    return true;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreClass::clear()
+void CoreClass::reset()
 {
 
   #ifdef CORE_DS18B20_ENABLED // надо попросить диспетчера DS18B20 очистить всех менеджеров линий
@@ -817,11 +825,11 @@ void CoreClass::clear()
   #endif  
 
   #ifdef CORE_RS485_TRANSPORT_ENABLED
-    RS485.clear();
+    RS485.reset();
   #endif
 
   #ifdef CORE_LORA_TRANSPORT_ENABLED
-    LoraDispatcher.clear();    
+    LoraDispatcher.reset();    
   #endif // CORE_LORA_TRANSPORT_ENABLED  
   
   
