@@ -751,12 +751,13 @@ void CoreRS485::addToExcludedList(uint8_t clientNumber)
       if(excludedList[i].readingAttempts >= CORE_RS485_MAX_BAD_READINGS)
       {
         excludedList[i].readingAttempts = CORE_RS485_MAX_BAD_READINGS;
-
+/*
         #ifdef _CORE_DEBUG
           Serial.print(F("RS485: Client #"));
           Serial.print(clientNumber);
           Serial.println(F(" excluded from query!"));
         #endif
+*/        
       }
 
         return;

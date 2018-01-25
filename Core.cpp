@@ -1330,6 +1330,15 @@ bool CoreClass::getTRANSPORT(const char* commandPassed, Stream* pStream)
     pStream->print(F("LORA")); 
   #endif
 
+  #ifdef CORE_SD_SUPPORT_ENABLED
+    if(written)
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+      
+    written++;
+    pStream->print(F("SD")); 
+  #endif
+  
+
 
   pStream->println();
 
