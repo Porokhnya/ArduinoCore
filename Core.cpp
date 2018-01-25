@@ -15,7 +15,266 @@ static void __nocorebegin(){}
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_CORE_BEGIN() __attribute__ ((weak, alias("__nocorebegin")));
 //--------------------------------------------------------------------------------------------------------------------------------------
-#include "CoreTransport.h"
+#ifdef CORE_SD_SUPPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+  #ifdef CORE_SD_USE_SDFAT
+    SdFat SD;
+  #endif
+//--------------------------------------------------------------------------------------------------------------------------------------
+SDSettingsStruct SDSettings;
+//--------------------------------------------------------------------------------------------------------------------------------------
+// FileUtils
+//--------------------------------------------------------------------------------------------------------------------------------------
+void FileUtils::printFile(const String& fileName, Stream* outStream)
+{
+  #ifdef CORE_SD_USE_SDFAT
+
+    SdFile f;
+    if(!f.open(fileName.c_str(),O_READ))
+    return;
+
+    if(f.isDir())
+    {
+      f.close();
+      return;
+    }
+    
+  #else
+  
+    File f = SD.open(fileName.c_str(),FILE_READ);
+    if(!f)
+    return;
+
+    if(f.isDirectory())
+    {
+      f.close();
+      return;
+    }
+  
+  #endif
+
+    while(1)
+    {
+      int iCh = f.read();
+      if(iCh == -1)
+        break;
+
+        outStream->write((byte) iCh);
+    }
+
+    f.close();
+  
+
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool FileUtils::readLine(
+  #ifdef CORE_SD_USE_SDFAT
+  SdFile
+  #else
+  File
+  #endif
+&f, String& result)
+{
+  result = "";
+
+  #ifdef CORE_SD_USE_SDFAT
+  if(!f.isOpen())
+  #else
+    if(!f)
+  #endif
+    return false;
+    
+    while(1)
+    {
+      int iCh = f.read();
+      
+      if(iCh == -1)
+        return false;
+
+      char ch = (char) iCh;
+
+      if(ch == '\r')
+        continue;
+
+      if(ch == '\n')
+        return true;
+
+      result += ch;
+    }
+    return false;  
+}
+//--------------------------------------------------------------------------------------------------------------------------------
+String FileUtils::getFileName(
+  #ifdef CORE_SD_USE_SDFAT
+  SdFile
+  #else
+  File
+  #endif
+  &f)
+{
+  #ifdef CORE_SD_USE_SDFAT
+      char nameBuff[50] = {0};
+      f.getName(nameBuff,50);
+      return nameBuff;
+  #else
+    return f.name();
+  #endif      
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void FileUtils::printFilesNames(const String& dirName, bool recursive, Stream* outStream)
+{
+  #ifdef CORE_SD_USE_SDFAT
+  
+  const char* dirP = dirName.c_str();
+  
+
+  SdFile root;
+  if(!root.open(dirP,O_READ))
+    return;
+
+  root.rewind();
+
+  SdFile entry;
+  while(entry.openNext(&root,O_READ))
+  {
+    if(entry.isDir())
+    {
+      String currentDirName =  FileUtils::getFileName(entry);
+      outStream->print(currentDirName);
+      outStream->println(F("\t<DIR>"));
+      
+      if(recursive)
+      {
+        String subPath = dirName + "/";
+        subPath += currentDirName;
+        FileUtils::printFilesNames(subPath,recursive, outStream);      
+      }
+    }
+    else
+    {      
+      outStream->println(FileUtils::getFileName(entry));
+    }
+    entry.close();
+  } // while
+
+
+  root.close();
+  #else
+
+    const char* dirP = dirName.c_str();
+
+    File root = SD.open(dirP);
+    if(!root)
+      return;
+
+    root.rewindDirectory();
+    while(true)
+    {
+      File entry = root.openNextFile();
+      if(!entry)
+        break;
+
+        if(entry.isDirectory())
+        {
+          String currentDirName =  FileUtils::getFileName(entry);
+          outStream->print(currentDirName);
+          outStream->println(F("\t<DIR>"));
+          
+          if(recursive)
+          {
+            String subPath = dirName + "/";
+            subPath += currentDirName;
+            FileUtils::printFilesNames(subPath,recursive, outStream);      
+          }
+        }
+        else
+        {
+          outStream->println(FileUtils::getFileName(entry));
+        }
+
+        entry.close();
+    }
+    root.close();
+
+  #endif
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+int FileUtils::countFiles(const String& dirName, bool recursive)
+{
+#ifdef CORE_SD_USE_SDFAT  
+  int result = 0;
+  const char* dirP = dirName.c_str();
+  
+  SdFile root;
+  if(!root.open(dirP,O_READ))
+    return result;
+
+  root.rewind();
+
+  SdFile entry;
+  while(entry.openNext(&root,O_READ))
+  {
+    if(entry.isDir())
+    {
+      if(recursive)
+      {
+        String subPath = dirName + "/";
+        subPath += FileUtils::getFileName(entry);
+        result += FileUtils::countFiles(subPath,recursive);      
+      }
+    }
+    else
+    {      
+      result++;
+    }
+    entry.close();
+  } // while
+
+
+  root.close();
+  return result;
+
+  #else
+
+    int result = 0;
+    const char* dirP = dirName.c_str();
+
+      File root = SD.open(dirP);
+      if(!root)
+        return result;
+
+    root.rewindDirectory();
+    while(true)
+    {
+      File entry = root.openNextFile();
+      if(!entry)
+        break;
+
+        if(entry.isDirectory())
+        {
+          if(recursive)
+          {
+            String subPath = dirName + "/";
+            subPath += FileUtils::getFileName(entry);
+            result += FileUtils::countFiles(subPath,recursive);          
+          }
+        }
+        else
+        {
+          result++;
+        }
+
+        entry.close();
+    }
+    root.close();
+    return result;
+        
+
+  #endif
+
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_SD_SUPPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 // CoreConfigIterator
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -1367,6 +1626,10 @@ const char CONFIGSTART_COMMAND[] PROGMEM = "CONFIG_START"; // начать со�
 const char CONFIGPART_COMMAND[] PROGMEM = "CONFIG_PART"; // записать часть конфига
 const char STORAGE_COMMAND[] PROGMEM = "STORAGE"; // получить показания со всех датчиков хранилища
 const char RESTART_COMMAND[] PROGMEM = "RESTART"; // перезапустить ядро
+#ifdef CORE_SD_SUPPORT_ENABLED
+const char LS_COMMAND[] PROGMEM = "LS"; // отдать список файлов
+const char FILE_COMMAND[] PROGMEM = "FILE"; // отдать содержимое файла
+#endif
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::processCommand(const String& command,Stream* pStream)
 {
@@ -1406,8 +1669,7 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
             // недостаточно параметров
             commandHandled = printBackSETResult(false,commandName,pStream);
           }
-        } // CONFIGPART_COMMAND
-        
+        } // CONFIGPART_COMMAND        
         #ifdef CORE_DS3231_ENABLED
         else
         if(!strcmp_P(commandName, DATETIME_COMMAND)) // DATETIME
@@ -1480,7 +1742,20 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
         {
           commandHandled = getSTORAGE(commandName,pStream);
         } // STORAGE_COMMAND
-        
+        #ifdef CORE_SD_SUPPORT_ENABLED
+        else
+        if(!strcmp_P(commandName, LS_COMMAND)) // LS
+        {
+            // запросили получить список файлов в папке, GET=LS|FolderName
+            commandHandled = getLS(commandName,cParser,pStream);                    
+        } // LS        
+        else
+        if(!strcmp_P(commandName, FILE_COMMAND)) // FILE
+        {
+            // запросили получить список файлов в папке, GET=FILE|FilePath
+            commandHandled = getFILE(commandName,cParser,pStream);                    
+        } // LS        
+        #endif // CORE_SD_SUPPORT_ENABLED                
         
         //TODO: тут разбор команды !!!
         
@@ -1491,6 +1766,60 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
     if(!commandHandled && pUnhandled)
       pUnhandled(command, pStream);  
 }
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_SD_SUPPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::getFILE(const char* commandPassed, const CommandParser& parser, Stream* pStream)
+{
+  String endOfFile = CORE_END_OF_DATA;
+  if(parser.argsCount() > 1)
+  {
+    String fileName;
+
+    for(size_t i=1;i<parser.argsCount();i++)
+    {
+      if(fileName.length())
+        fileName += F("/");
+
+      fileName += parser.getArg(i);
+    }
+    
+    FileUtils::printFile(fileName,pStream);
+    pStream->println(endOfFile);
+  }
+  else
+  {
+    pStream->println(endOfFile);
+  }
+  return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::getLS(const char* commandPassed, const CommandParser& parser, Stream* pStream)
+{
+  String folderName = F("/");
+  
+  if(parser.argsCount() > 1)
+  {
+    folderName = "";
+    for(size_t i=1;i<parser.argsCount();i++)
+    {
+      if(folderName.length())
+        folderName += F("/");
+
+      folderName += parser.getArg(i);
+    }    
+  }
+
+//  int countFiles = FileUtils::countFiles(folderName,false);
+//  pStream->println(countFiles);
+
+  FileUtils::printFilesNames(folderName,false,pStream);
+  pStream->println(CORE_END_OF_DATA);
+  
+  return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_SD_SUPPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::setRESTART()
 {
@@ -1783,6 +2112,38 @@ void CoreClass::begin()
 {
   if(!configLoaded)
     return;
+
+  #ifdef CORE_SD_SUPPORT_ENABLED
+  
+    SDSettings.CSPin = CORE_SD_CS_PIN;
+
+    
+    #ifdef CORE_SD_USE_SDFAT
+    
+      DBGLN(F("Init SD using SdFat..."));
+      
+      if(SD.begin(SDSettings.CSPin, CORE_SD_SDFAT_SPEED))
+      {
+        DBGLN(F("SD inited."));
+      }
+      else
+      {
+         DBGLN(F("SD init error!"));
+      }
+    #else
+    
+      DBGLN(F("Init SD..."));
+      
+      if(SD.begin(SDSettings.CSPin))
+      {
+         DBGLN(F("SD inited."));
+      }
+      else
+      {
+         DBGLN(F("SD init error!"));
+      }
+    #endif
+  #endif // CORE_SD_SUPPORT_ENABLED
     
   #ifdef CORE_RS485_TRANSPORT_ENABLED
     // обновляем транспорт RS-485

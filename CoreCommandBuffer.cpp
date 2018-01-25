@@ -55,7 +55,7 @@ void CommandParser::clear()
     arguments.pop();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-const char* CommandParser::getArg(size_t idx)
+const char* CommandParser::getArg(size_t idx) const
 {
   if(arguments.size() && idx < arguments.size())
     return arguments[idx];

@@ -2,12 +2,60 @@
 #define _CORE_H
 //--------------------------------------------------------------------------------------------------------------------------------------
 #include <Arduino.h>
+#include "CoreConfig.h"
 #include "CoreCommandBuffer.h"
 #include "CoreArray.h"
 #include "CoreSensor.h"
 #include "CoreTransport.h"
 #include "CorePinStateAction.h"
 #include "LoRa.h"
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_SD_SUPPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+  #ifdef CORE_SD_USE_SDFAT
+    #include <SdFat.h>
+    extern SdFat SD;
+  #else
+    #include <SD.h>
+  #endif
+//--------------------------------------------------------------------------------------------------------------------------------------
+// структура настроек SD
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  uint8_t CSPin;
+  
+} SDSettingsStruct;
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern SDSettingsStruct SDSettings;
+//--------------------------------------------------------------------------------------------------------------------------------------
+// класс-хелпер для работы с файлами на SD
+//--------------------------------------------------------------------------------------------------------------------------------------
+class FileUtils
+{
+  public:
+  
+  static int countFiles(const String& dirName, bool recursive);
+  static void printFilesNames(const String& dirName, bool recursive, Stream* outStream);
+  static void printFile(const String& fileName, Stream* outStream);
+  
+  static String getFileName(
+    #ifdef CORE_SD_USE_SDFAT
+    SdFile
+    #else
+    File
+    #endif
+    &f);
+  static bool readLine(
+    #ifdef CORE_SD_USE_SDFAT
+    SdFile 
+    #else
+    File
+    #endif
+    &f, String& result);
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_SD_SUPPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern "C" {
   void ON_CORE_BEGIN();
@@ -249,6 +297,12 @@ class CoreClass
    bool setCONFIGSTART();
    // Записать часть конфига - куски по 50 байт
    bool setCONFIGPART(const char* param);
+
+   // команды для SD
+   #ifdef CORE_SD_SUPPORT_ENABLED
+    bool getLS(const char* commandPassed, const CommandParser& parser, Stream* pStream);
+    bool getFILE(const char* commandPassed, const CommandParser& parser, Stream* pStream);
+   #endif
 
    // перезапустить ядро
    bool wantRestart;

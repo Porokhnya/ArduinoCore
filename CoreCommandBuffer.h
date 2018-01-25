@@ -35,8 +35,8 @@ class CommandParser
 
     void clear();
     bool parse(const String& command, bool isSetCommand);
-    const char* getArg(size_t idx);
-    size_t argsCount() {return arguments.size();}
+    const char* getArg(size_t idx) const;
+    size_t argsCount() const {return arguments.size();}
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif
