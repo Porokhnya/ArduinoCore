@@ -110,10 +110,10 @@ typedef enum
 //--------------------------------------------------------------------------------------------------------------------------------------
 struct IClientEventsSubscriber
 {
-  virtual void OnClientConnect(CoreTransportClient* client, int errorCode) = 0; // событие "Клиент соединён"
-  virtual void OnClientDisconnect(CoreTransportClient* client, int errorCode) = 0; // событие "Клиент отсоединён"
-  virtual void OnClientDataWritten(CoreTransportClient* client, int errorCode) = 0; // событие "Данные из клиента записаны в поток"
-  virtual void OnClientDataAvailable(CoreTransportClient* client) = 0; // событие "Для клиента поступили данные"
+  virtual void OnClientConnect(CoreTransportClient& client, int errorCode) = 0; // событие "Клиент соединён"
+  virtual void OnClientDisconnect(CoreTransportClient& client, int errorCode) = 0; // событие "Клиент отсоединён"
+  virtual void OnClientDataWritten(CoreTransportClient& client, int errorCode) = 0; // событие "Данные из клиента записаны в поток"
+  virtual void OnClientDataAvailable(CoreTransportClient& client) = 0; // событие "Для клиента поступили данные"
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 // класс асинхронного транспорта, предназначен для предоставления интерфейса неблокирующей работы с AT-прошивками железок,
@@ -156,6 +156,7 @@ protected:
 
   friend class CoreTransportClient;
 
+  // подписка/отписка клиентов на события
   void subscribeClient(CoreTransportClient& client, IClientEventsSubscriber* subscriber);
   void unsubscribeClient(CoreTransportClient& client, IClientEventsSubscriber* subscriber);
 
@@ -196,6 +197,16 @@ class CoreTransportClient
   operator bool()
   {
     return  (clientID != 0xFF); 
+  }
+
+  bool operator==(const CoreTransportClient& rhs)
+  {
+    return (rhs.clientID == clientID);
+  }
+
+  bool operator!=(const CoreTransportClient& rhs)
+  {
+    return !(operator==(rhs));
   }
 
   void connect(const char* ip, uint16_t port);

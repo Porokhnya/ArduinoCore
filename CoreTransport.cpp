@@ -206,19 +206,19 @@ void CoreTransportClient::raiseEvent(ClientEventType et, int errorCode)
     switch(et)
     {
       case etConnected:
-        sub->OnClientConnect(this,errorCode);
+        sub->OnClientConnect(*this,errorCode);
       break;
 
       case etDisconnected:
-        sub->OnClientDisconnect(this,errorCode);
+        sub->OnClientDisconnect(*this,errorCode);
       break;
 
       case etDataWritten:
-        sub->OnClientDataWritten(this, errorCode);
+        sub->OnClientDataWritten(*this, errorCode);
       break;
 
       case etDataAvailable:
-        sub->OnClientDataAvailable(this);
+        sub->OnClientDataAvailable(*this);
       break;
       
     } // switch
