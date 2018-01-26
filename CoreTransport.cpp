@@ -312,7 +312,7 @@ CoreRS485::CoreRS485()
 //--------------------------------------------------------------------------------------------------------------------------------------
 HardwareSerial* CoreRS485::getMyStream(uint8_t SerialNumber)
 {
-#if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1280__) || (defined (__arm__) && defined (__SAM3X8E__))  
+#if (TARGET_BOARD == MEGA_BOARD) || (TARGET_BOARD == DUE_BOARD)
   switch(SerialNumber)
   {
     case 0:
@@ -331,7 +331,7 @@ HardwareSerial* CoreRS485::getMyStream(uint8_t SerialNumber)
   }
 #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)
   return &Serial;
-#elif defined(ESP8266)
+#elif TARGET_BOARD == ESP_BOARD
   #error "NOT IMPLEMENTED!!!"
 #else
   #error "Unknown target board!"
@@ -1079,7 +1079,7 @@ void CoreRS485::waitTransmitComplete()
   if(!workStream)
     return;
     
-  #if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1280__)
+  #if TARGET_BOARD == MEGA_BOARD
 
     if(workStream == &Serial)
       while(!(UCSR0A & _BV(TXC0) ));
@@ -1093,7 +1093,7 @@ void CoreRS485::waitTransmitComplete()
     if(workStream == &Serial3)
       while(!(UCSR3A & _BV(TXC3) ));
 
-  #elif defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible
+  #elif TARGET_BOARD == DUE_BOARD
 
     if(workStream == &Serial)
       while((UART->UART_SR & UART_SR_TXRDY) != UART_SR_TXRDY);
@@ -1109,7 +1109,7 @@ void CoreRS485::waitTransmitComplete()
 
   #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)      
     while(!(UCSR0A & _BV(TXC0) ));
-  #elif defined(ESP8266)
+  #elif TARGET_BOARD == ESP_BOARD
     #error "NOT IMPLEMENTED !!!"      
   #else
     #error "Unknown target board!"
@@ -1160,7 +1160,7 @@ void CoreESPTransport::begin()
 
   HardwareSerial* hs = NULL;
 
-  #if defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1280__) || (defined (__arm__) && defined (__SAM3X8E__))
+  #if (TARGET_BOARD == MEGA_BOARD) || (TARGET_BOARD == DUE_BOARD)
   
   switch(ESPTransportSettings.SerialNumber)
   {
@@ -1183,7 +1183,7 @@ void CoreESPTransport::begin()
   } // switch
   #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)
     hs = &Serial;
-  #elif defined(ESP8266)
+  #elif TARGET_BOARD == ESP_BOARD
     #error "NOT IMPLEMENTED!!!"
   #else
     #error "Unknown target board!"

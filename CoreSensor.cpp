@@ -6,7 +6,7 @@
 //--------------------------------------------------------------------------------------------------------------------------------------
 TwoWire* getWireInterface(uint8_t i2cIndex)
 {
-  #if defined (__arm__) && defined (__SAM3X8E__)
+  #if TARGET_BOARD == DUE_BOARD
     if(i2cIndex == 1)
       return &Wire1;
   #endif
@@ -518,11 +518,11 @@ bool CoreSensorDHT::read(uint8_t* buffer)
   const uint32_t mstcc = ( F_CPU / 40000 ); // сторож таймаута - 100us
 
   uint8_t bit = digitalPinToBitMask(pin);
-  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__) 
+  #if TARGET_BOARD == MEGA_BOARD
   uint8_t 
-  #elif defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible
+  #elif TARGET_BOARD == DUE_BOARD
   Pio*
-  #elif defined(ESP8266)
+  #elif TARGET_BOARD == ESP_BOARD
     #error "NOT IMPLEMENTED!!!" 
   #else
     #error "Unknown target board!"
@@ -530,11 +530,11 @@ bool CoreSensorDHT::read(uint8_t* buffer)
   port = digitalPinToPort(pin);
   
   volatile 
-  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega328P__)
+  #if TARGET_BOARD == MEGA_BOARD
   uint8_t*
-  #elif defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible
+  #elif TARGET_BOARD == DUE_BOARD
   RoReg*
-  #elif defined(ESP8266)
+  #elif TARGET_BOARD == ESP_BOARD
     #error "NOT IMPLEMENTED!!!" 
   #else
     #error "Unknown target board!"

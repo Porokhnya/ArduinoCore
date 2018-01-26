@@ -1472,11 +1472,11 @@ bool CoreClass::getCPU(const char* commandPassed, Stream* pStream)
       pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
   }
 
-  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega328P__)
+  #if TARGET_BOARD == MEGA_BOARD
     pStream->println(F("MEGA"));    
-  #elif defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible  
+  #elif TARGET_BOARD == DUE_BOARD
     pStream->println(F("DUE"));
-  #elif defined(ESP8266)    
+  #elif TARGET_BOARD == ESP_BOARD
     pStream->println(F("ESP"));
   #else
     pStream->println(F("NOP"));
@@ -1854,7 +1854,7 @@ void CoreClass::handleCommands()
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-#if defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible
+#if TARGET_BOARD == DUE_BOARD // Arduino Due compatible
     #include <malloc.h>
     #include <stdlib.h>
     #include <stdio.h>
@@ -1862,13 +1862,13 @@ void CoreClass::handleCommands()
 //--------------------------------------------------------------------------------------------------------------------------------------
 int CoreClass::getFreeMemory()
 {
-  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega328P__) || defined(__AVR_ATmega328__)
+  #if TARGET_BOARD == MEGA_BOARD
   
     extern int __heap_start, *__brkval;
     int v;
     return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval);
     
-  #elif defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible
+  #elif TARGET_BOARD == DUE_BOARD
 
     struct mallinfo mi = mallinfo();
     char* heapend = _sbrk(0);
@@ -1876,7 +1876,7 @@ int CoreClass::getFreeMemory()
 
     return (stack_ptr - heapend + mi.fordblks);
 
-  #elif defined(ESP8266)
+  #elif TARGET_BOARD == ESP_BOARD
     #error "NOT IMPLEMENTED!!!"    
   #else    
     #error "Unknown target board!"
@@ -1974,11 +1974,10 @@ void CoreClass::readFromSensor(CoreSensor* sensor,uint16_t storeIndex)
 int CoreClass::getPinMode(int p)
 {
 
-  #if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__) || ( defined (__arm__) && defined (__SAM3X8E__) )
+  #if (TARGET_BOARD == MEGA_BOARD) || (TARGET_BOARD == DUE_BOARD)
      const int max_pin = 69;
-  #elif defined(ESP8266)
+  #elif TARGET_BOARD == ESP_BOARD
     #error "NOT IMPLEMENTED!!!"  
-
   #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)       
      const int max_pin = 19;
   #else
@@ -1988,7 +1987,7 @@ int CoreClass::getPinMode(int p)
    if (p > max_pin) 
        return -1;
 
-#if defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible
+#if TARGET_BOARD == DUE_BOARD
 Pio*
 #else
 uint8_t 
@@ -1999,13 +1998,13 @@ uint8_t portBit  = digitalPinToBitMask(p);
 
 
    volatile 
-#if defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible
+#if TARGET_BOARD == DUE_BOARD
   WoReg*
 #else   
    uint8_t*
 #endif   
    mode = 
-#if defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible
+#if TARGET_BOARD == DUE_BOARD
   (&(port->PIO_PER));
 #else   
    portModeRegister(port);
@@ -2020,7 +2019,7 @@ int CoreClass::getPinState(int pin)
   if(mode == -1)
     return mode;
 
-#if defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible
+#if TARGET_BOARD == DUE_BOARD
 Pio*
 #else
 uint8_t 
@@ -2031,7 +2030,7 @@ uint8_t
   if(mode == INPUT)
   {
     volatile 
-#if defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible
+#if TARGET_BOARD == DUE_BOARD
     RoReg*
 #else    
     uint8_t* 
@@ -2042,7 +2041,7 @@ uint8_t
   else
   {
     volatile 
-#if defined (__arm__) && defined (__SAM3X8E__) // Arduino Due compatible
+#if TARGET_BOARD == DUE_BOARD
     RoReg*
 #else    
     uint8_t* 

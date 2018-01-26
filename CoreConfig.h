@@ -97,4 +97,18 @@
 #define CORE_COMMAND_PARAM_DELIMITER "|" // разделитель параметров
 #define CORE_END_OF_DATA F("[END]")
 //--------------------------------------------------------------------------------------------------------------------------------------
+#define DUE_BOARD 1
+#define MEGA_BOARD 2
+#define ESP_BOARD 3
+//--------------------------------------------------------------------------------------------------------------------------------------
+#if defined (__arm__) && defined (__SAM3X8E__)
+  #define TARGET_BOARD DUE_BOARD
+#elif  defined(__AVR_ATmega2560__) 
+  #define TARGET_BOARD MEGA_BOARD
+#elif defined(ESP8266)  
+  #define TARGET_BOARD ESP_BOARD
+#else
+  #error "Unknown target board!"
+#endif  
+//--------------------------------------------------------------------------------------------------------------------------------------
 #endif

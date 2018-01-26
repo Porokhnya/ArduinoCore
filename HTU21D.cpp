@@ -21,7 +21,7 @@
 /***************************************************************************************************/
 
 #include "HTU21D.h"
-
+#include "CoreConfig.h"
 
 /**************************************************************************/
 /*
@@ -46,7 +46,7 @@ HTU21D::HTU21D(HTU21D_Resolution sensorResolution)
     4 - other error
 */
 /**************************************************************************/
-#if defined(ESP8266)
+#if TARGET_BOARD == ESP_BOARD
 bool HTU21D::begin(uint8_t sda, uint8_t scl)
 {
   delay(250);                             //to compesate glitch if more than one library call Wire.begin() one after another
@@ -58,7 +58,7 @@ bool HTU21D::begin(uint8_t _i2cIndex)
   i2cIndex = _i2cIndex;
 
   TwoWire* wire = &Wire;
-  #if defined (__arm__) && defined (__SAM3X8E__)
+  #if TARGET_BOARD == DUE_BOARD
     if(i2cIndex == 1)
       wire = &Wire1;      
   #endif  
@@ -110,7 +110,7 @@ void HTU21D::setResolution(HTU21D_Resolution sensorResolution)
 void HTU21D::softReset(void)
 {
   TwoWire* wire = &Wire;
-  #if defined (__arm__) && defined (__SAM3X8E__)
+  #if TARGET_BOARD == DUE_BOARD
     if(i2cIndex == 1)
       wire = &Wire1;
   #endif  
@@ -210,7 +210,7 @@ float HTU21D::readHumidity(HTU21D_humdOperationMode sensorOperationMode)
   float    humidity    = 0;
 
   TwoWire* wire = &Wire;
-  #if defined (__arm__) && defined (__SAM3X8E__)
+  #if TARGET_BOARD == DUE_BOARD
     if(i2cIndex == 1)
       wire = &Wire1;
   #endif  
@@ -316,7 +316,7 @@ float HTU21D::readTemperature(HTU21D_tempOperationMode sensorOperationMode)
   float    temperature    = 0;
 
   TwoWire* wire = &Wire;
-  #if defined (__arm__) && defined (__SAM3X8E__)
+  #if TARGET_BOARD == DUE_BOARD
     if(i2cIndex == 1)
       wire = &Wire1;
   #endif  
@@ -442,7 +442,7 @@ uint16_t HTU21D::readDeviceID(void)
   uint8_t  checksum = 0;
 
   TwoWire* wire = &Wire;
-  #if defined (__arm__) && defined (__SAM3X8E__)
+  #if TARGET_BOARD == DUE_BOARD
     if(i2cIndex == 1)
       wire = &Wire1;
   #endif  
@@ -509,7 +509,7 @@ uint8_t HTU21D::readFirmwareVersion(void)
   uint8_t firmwareVersion = 0;
 
   TwoWire* wire = &Wire;
-  #if defined (__arm__) && defined (__SAM3X8E__)
+  #if TARGET_BOARD == DUE_BOARD
     if(i2cIndex == 1)
       wire = &Wire1;
   #endif  
@@ -558,7 +558,7 @@ uint8_t HTU21D::readFirmwareVersion(void)
 void HTU21D::write8(uint8_t reg, uint8_t value)
 {
   TwoWire* wire = &Wire;
-  #if defined (__arm__) && defined (__SAM3X8E__)
+  #if TARGET_BOARD == DUE_BOARD
     if(i2cIndex == 1)
       wire = &Wire1;
   #endif  
@@ -585,7 +585,7 @@ uint8_t HTU21D::read8(uint8_t reg)
   uint8_t value = 0;
 
   TwoWire* wire = &Wire;
-  #if defined (__arm__) && defined (__SAM3X8E__)
+  #if TARGET_BOARD == DUE_BOARD
     if(i2cIndex == 1)
       wire = &Wire1;
   #endif  
