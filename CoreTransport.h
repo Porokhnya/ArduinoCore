@@ -9,9 +9,6 @@ class CoreTransportClient;
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern "C" {
   void ON_LORA_RECEIVE(uint8_t* packet, int packetSize);
-  void ON_CLIENT_CONNECT(CoreTransportClient& client);
-  void ON_CLIENT_DATA_RECEIVED(CoreTransportClient& client);
-  void ON_CLIENT_WRITE_DONE(CoreTransportClient& client, bool isWriteSucceeded);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 // типы пакетов, гоняющихся по транспортам
@@ -92,13 +89,19 @@ typedef struct
   
 } CoreDataReceiptPacket;
 //--------------------------------------------------------------------------------------------------------------------------------------
+// Коды ошибок транспорта
+//--------------------------------------------------------------------------------------------------------------------------------------
+#define CT_ERROR_NONE             0 // нет ошибки
+#define CT_ERROR_CANT_CONNECT     1 // не удалось установить соединение
+#define CT_ERROR_CANT_WRITE       2 // ошибка записи данных из клиента в поток
+//--------------------------------------------------------------------------------------------------------------------------------------
 // класс асинхронного транспорта, предназначен для предоставления интерфейса неблокирующей работы с AT-прошивками железок,
 // типа SIM800 или ESP.
 // производные классы могут держать свой пул клиентов, при этом должны заботиться о том,
 // чтобы при запросе клиента на соединение этому клиенту назначался ID свободного слота в пуле
 // клиентов. Класс транспорта по запросу открывает соединение, пишет туда данные асинхронно,
 // также принимает данные от железки и рассовывает эти данные по клиентам.
-// информирование внешнего мира осуществляется при помощи событий структуры CoreTransportEvents.
+// информирование внешнего мира осуществляется при помощи подписки на события клиента через интерфейс IClientEventsSubscriber.
 // запись в транспорт осуществляется через класс CoreTransportClient и его методы connect и write.
 // методы connect и write класса CoreTransportClient являются неблокирующими, поэтому запись вызовом
 // write следует осуществлять только, если клиент соединён, т.е. вызов connected() возвращает true.
@@ -110,27 +113,57 @@ class CoreTransport
     CoreTransport();
     virtual ~CoreTransport();
 
-    virtual void update() = 0; // обновляем состояние транспорта
-    virtual void begin() = 0; // начинаем работу
+    // обновляем состояние транспорта
+    virtual void update() = 0; 
 
-    virtual CoreTransportClient* getFreeClient() = 0; // возвращает свободного клиента (не законнекченного и не занятого делами)
+    // начинаем работу
+    virtual void begin() = 0; 
+
+    // проверяет, готов ли транспорт к работе (например, проведена ли первичная инициализация)
+    virtual bool ready() = 0; 
+
+    // возвращает свободного клиента (не законнекченного и не занятого делами)
+    virtual CoreTransportClient* getFreeClient() = 0; 
 
 protected:
 
-  void setClientID(CoreTransportClient& client, uint8_t id);
-  void setClientConnected(CoreTransportClient& client, bool connected);
-  void setClientBuffer(CoreTransportClient& client,const uint8_t* buff, size_t sz);
-  void setClientBusy(CoreTransportClient& client,bool busy);
-  
-
-  Stream* workStream; // поток, с которым мы работаем (читаем/пишем в/из него)
-
   friend class CoreTransportClient;
+
+  void setClientID(CoreTransportClient& client, uint8_t id);
+  void setClientData(CoreTransportClient& client,const uint8_t* data, size_t sz);
+  void setClientBusy(CoreTransportClient& client,bool busy);
+  void setClientConnected(CoreTransportClient& client, bool connected, int errorCode);
+  
+  void notifyClientDataWritten(CoreTransportClient& client, int errorCode);
+    
   virtual void beginWrite(CoreTransportClient& client) = 0; // начинаем писать в транспорт с клиента
   virtual void beginConnect(CoreTransportClient& client, const char* ip, uint16_t port) = 0; // начинаем коннектиться к адресу
   virtual void beginDisconnect(CoreTransportClient& client) = 0; // начинаем отсоединение от адреса
   
 };
+//--------------------------------------------------------------------------------------------------------------------------------------
+// типы событий
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  etConnected,      // соединено
+  etDisconnected,   // отсоединено
+  etDataWritten,    // данные записаны
+  etDataAvailable   // доступны входящие данные
+  
+} ClientEventType;
+//--------------------------------------------------------------------------------------------------------------------------------------
+// класс подписчика на события клиента - каждый, использующий клиента, может подписаться и отписаться на его события.
+//--------------------------------------------------------------------------------------------------------------------------------------
+struct IClientEventsSubscriber
+{
+  virtual void OnClientConnect(CoreTransportClient* client, int errorCode) = 0; // событие "Клиент соединён"
+  virtual void OnClientDisconnect(CoreTransportClient* client, int errorCode) = 0; // событие "Клиент отсоединён"
+  virtual void OnClientDataWritten(CoreTransportClient* client, int errorCode) = 0; // событие "Данные из клиента записаны в поток"
+  virtual void OnClientDataAvailable(CoreTransportClient* client) = 0; // событие "Для клиента поступили данные"
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<IClientEventsSubscriber*> ClientSubscribers;
 //--------------------------------------------------------------------------------------------------------------------------------------
 // класс клиента транспорта. Держит буфер (для приёма или передачи), обеспечивает пересылку запроса на неблокирующую запись в транспорт,
 // а также запроса на неблокирующее соединение с IP в транспорт.
@@ -139,118 +172,54 @@ class CoreTransportClient
 {
   public:
 
-  static CoreTransportClient* Create(CoreTransport* transport)
-  {
-    CoreTransportClient* instance = new CoreTransportClient();
-    instance->parent = transport;
-    return instance;    
-  }
+  static CoreTransportClient* Create(CoreTransport* transport);
+  void Destroy();
 
-  CoreTransport* getTransport() // возвращает транспорт
-  {
-    return parent;
-  }
+  CoreTransport* getTransport(); // возвращает транспорт
 
-  void Destroy()
-  {
-    delete this;
-  }
+  void subscribe(IClientEventsSubscriber* subscriber); // подписка на события клиента
+  void unsubscribe(IClientEventsSubscriber* subscriber); // отписка от событий клиента
+
   
-   bool connected() 
-   {
-    return isConnected;
-   }
-     
-   uint8_t getID()
-   {
-    return clientID;
-   }
+   bool connected();     
+   uint8_t getID();
 
   operator bool()
   {
     return  (clientID != 0xFF); 
   }
 
+  void connect(const char* ip, uint16_t port);
+  void disconnect();
+  void write(const uint8_t* buff, size_t sz);
 
-  void write(const uint8_t* buff, size_t sz)
-  {
-    if(!sz || !buff || !connected() || clientID == 0xFF)
-      return;
+  bool busy(); // проверяет, занят ли клиент чем-либо  
 
-    setBuffer(buff,sz);
+  const uint8_t* getData();
+  size_t getDataSize();
 
-    parent->beginWrite(*this);
-      
-  }
-
-  void connect(const char* ip, uint16_t port)
-  {
-    if(connected()) // уже присоединены, нельзя коннектится до отсоединения!!!
-      return;
-          
-    parent->beginConnect(*this,ip,port);
-  }
-
-  bool busy() // проверяет, занят ли клиент чем-либо
-  {
-    return isBusy;
-  }
-  
-
-  void disconnect()
-  {
-    if(!connected())
-      return;
-
-    parent->beginDisconnect(*this);
-  }
-
-
-  void clear()
-  {
-    if(buffer)
-      delete [] buffer; 
-
-    bufferSize = 0;
-    buffer = NULL;
-  }
-
-  const uint8_t* getBuffer()
-  {
-    return buffer;
-  }
-
-  size_t getBufferSize()
-  {
-    return bufferSize;
-  }
 
  protected:
 
     friend class CoreTransport;
 
-    void setBusy(bool flag)
-    {
-      isBusy = flag;
-    }
+    // транспорт, когда надо - выставляет флаг занятоски клиента каким-то делом
+    void setBusy(bool flag);
 
-    void setConnected(bool flag)
-    {
-     isConnected = flag; 
-    }
-    
-    void setID(uint8_t id)
-    {
-      clientID = id;
-    }
- 
-  void setBuffer(const uint8_t* buff, size_t sz)
-  {
-    clear();
-    bufferSize = sz;
-    buffer = new  uint8_t[bufferSize];
-    memcpy(buffer,buff,bufferSize);
-  }
+    // установка ID клиента транспортом
+    void setID(uint8_t id);
+
+    // транспорт может дёргать эту функцию, чтобы установить данные в клиент
+    void setData(const uint8_t* buff, size_t sz);
+
+    // транспорт дёргает эту функцию, чтобы клиент сообщил подписчикам статус соединения
+    void setConnected(bool flag, int errorCode);
+
+    // транспорт дёргает эту функцию, чтобы клиент сообщил подписчикам, что данные с него записаны в транспорт
+    void notifyDataWritten(int errorCode);
+
+    // транспорт дёргает эту функцию, чтобы клиент сообщил подписчикам, что в клиенте доступны данные
+    void notifyDataAvailable();
 
 
  private:
@@ -258,31 +227,24 @@ class CoreTransportClient
     CoreTransportClient(const CoreTransportClient& rhs);
     CoreTransportClient operator=(const CoreTransportClient& rhs);
         
-   ~CoreTransportClient() 
-   {
-     clear();
-   }
+   ~CoreTransportClient();
+    CoreTransportClient();
 
-    CoreTransportClient()
-    {
-      clientID = 0xFF;
-      isConnected = false;
-      isBusy = false;
-      buffer = NULL;
-      bufferSize = 0;
-      parent = NULL;
-    }
 
-   
-     
+    ClientSubscribers subscribers;
+    int getSubscriberIndex(IClientEventsSubscriber* subscriber);
 
-  uint8_t clientID;
-  bool isConnected;
-  bool isBusy;
-  CoreTransport* parent;
+    void raiseEvent(ClientEventType et, int errorCode);
+ 
+    void clearBuffer();
 
-  uint8_t* buffer;
-  size_t bufferSize;
+    uint8_t clientID;
+    bool isConnected;
+    bool isBusy;
+    CoreTransport* parent;
+  
+    uint8_t* dataBuffer;
+    size_t dataBufferSize;
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -353,6 +315,8 @@ class CoreESPTransport : public CoreTransport
     virtual void update(); // обновляем состояние транспорта
     virtual void begin(); // начинаем работу
 
+    virtual bool ready(); // проверяем на готовность к работе
+
     virtual CoreTransportClient* getFreeClient(); // возвращает свободного клиента (не законнекченного и не занятого делами)
 
   protected:
@@ -363,10 +327,11 @@ class CoreESPTransport : public CoreTransport
 
   private:
 
+      Stream* workStream; // поток, с которым мы работаем (читаем/пишем в/из него)
+
+      // пул клиентов
       CoreTransportClient* clients[ESP_MAX_CLIENTS];
 
- //     HardwareSerial* lastSerial;
-      
       ESPClientsQueue clientsQueue; // очередь действий с клиентами
 
       bool isInQueue(ESPClientsQueue& queue,CoreTransportClient* client); // тестирует - не в очереди ли уже клиент?

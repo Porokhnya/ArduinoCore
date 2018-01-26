@@ -3,18 +3,9 @@
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern "C" {
 static void __nolora(uint8_t* b, int dummy){}
-static void __noclientconnect(CoreTransportClient& client) {}
-static void __noclientdatareceived(CoreTransportClient& client) {}
-static void __noclientwritedone(CoreTransportClient& client, bool isWriteSucceeded) {}
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_LORA_RECEIVE(uint8_t*, int) __attribute__ ((weak, alias("__nolora")));
-//--------------------------------------------------------------------------------------------------------------------------------------
-void ON_CLIENT_CONNECT(CoreTransportClient& client) __attribute__ ((weak, alias("__noclientconnect")));
-//--------------------------------------------------------------------------------------------------------------------------------------
-void ON_CLIENT_DATA_RECEIVED(CoreTransportClient& client) __attribute__ ((weak, alias("__noclientdatareceived")));
-//--------------------------------------------------------------------------------------------------------------------------------------
-void ON_CLIENT_WRITE_DONE(CoreTransportClient& client, bool isWriteSucceeded) __attribute__ ((weak, alias("__noclientwritedone")));
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_RS485_TRANSPORT_ENABLED
 CoreRS485Settings RS485Settings;
@@ -25,6 +16,226 @@ CoreRS485 RS485;
 ESPTransportSettingsClass ESPTransportSettings;
 #endif // CORE_ESP_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
+// CoreTransportClient
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreTransportClient::CoreTransportClient()
+{
+  clientID = 0xFF;
+  isConnected = false;
+  isBusy = false;
+  dataBuffer = NULL;
+  dataBufferSize = 0;
+  parent = NULL;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreTransportClient::~CoreTransportClient()
+{
+  clearBuffer();
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::setData(const uint8_t* buff, size_t sz)
+{
+  clearBuffer();
+  dataBufferSize = sz;
+  
+  if(dataBufferSize)
+  {
+    dataBuffer = new  uint8_t[dataBufferSize];
+    memcpy(dataBuffer,buff,dataBufferSize);
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::setID(uint8_t id)
+{
+  clientID = id;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::setConnected(bool flag, int errorCode)
+{
+  isConnected = flag;
+
+  // постим подписчикам событие
+  if(isConnected)
+    raiseEvent(etConnected,errorCode);
+  else
+    raiseEvent(etDisconnected,errorCode);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::setBusy(bool flag)
+{
+  isBusy = flag;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+size_t CoreTransportClient::getDataSize()
+{
+  return dataBufferSize;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+const uint8_t* CoreTransportClient::getData()
+{
+  return dataBuffer;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::clearBuffer()
+{
+    if(dataBuffer)
+      delete [] dataBuffer; 
+
+    dataBufferSize = 0;
+    dataBuffer = NULL;
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::disconnect()
+{
+    if(!connected())
+      return;
+
+    parent->beginDisconnect(*this);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreTransportClient::busy()
+{
+ return isBusy; 
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::connect(const char* ip, uint16_t port)
+{
+    if(connected()) // уже присоединены, нельзя коннектится до отсоединения!!!
+      return;
+          
+    parent->beginConnect(*this,ip,port);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::write(const uint8_t* buff, size_t sz)
+{
+    if(!sz || !buff || !connected() || clientID == 0xFF)
+      return;
+
+    setData(buff,sz);
+
+    parent->beginWrite(*this);
+      
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreTransportClient* CoreTransportClient::Create(CoreTransport* transport)
+{
+    CoreTransportClient* instance = new CoreTransportClient();
+    instance->parent = transport;
+    return instance;    
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreTransport* CoreTransportClient::getTransport()
+{
+   return parent;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::Destroy()
+{
+  delete this;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreTransportClient::connected() 
+{
+  return isConnected;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint8_t CoreTransportClient::getID()
+{
+  return clientID;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::notifyDataWritten(int errorCode)
+{
+  // говорим, что данные записаны в поток
+  raiseEvent(etDataWritten, errorCode);
+
+  // и очищаем внутренний буфер с данными
+  clearBuffer(); 
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+int CoreTransportClient::getSubscriberIndex(IClientEventsSubscriber* subscriber)
+{
+  for(size_t i=0;i<subscribers.size();i++)
+  {
+    if(subscribers[i] == subscriber)
+      return i;
+  }
+
+  return -1;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::subscribe(IClientEventsSubscriber* subscriber)
+{
+  if(!subscriber)
+    return;
+    
+  int subIdx = getSubscriberIndex(subscriber);
+  if(subIdx != -1) // этот подписчик уже подписан
+    return;
+
+   subscribers.push_back(subscriber);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::unsubscribe(IClientEventsSubscriber* subscriber)
+{
+  int subIdx = getSubscriberIndex(subscriber);
+  
+  if(subIdx == -1) // подписчик не найден
+    return;
+
+  for(size_t i=subIdx+1; i<subscribers.size();i++)
+  {
+    subscribers[i-1] = subscribers[i];
+  }
+
+  subscribers.pop();
+    
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::raiseEvent(ClientEventType et, int errorCode)
+{
+  for(size_t i=0;i<subscribers.size();i++)
+  {
+    IClientEventsSubscriber* sub = subscribers[i];
+
+    switch(et)
+    {
+      case etConnected:
+        sub->OnClientConnect(this,errorCode);
+      break;
+
+      case etDisconnected:
+        sub->OnClientDisconnect(this,errorCode);
+      break;
+
+      case etDataWritten:
+        sub->OnClientDataWritten(this, errorCode);
+      break;
+
+      case etDataAvailable:
+        sub->OnClientDataAvailable(this);
+      break;
+      
+    } // switch
+  } // for
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransportClient::notifyDataAvailable()
+{
+  // сообщаем подписчикам, что у нас есть данные
+  raiseEvent(etDataAvailable,0);
+
+  // подписчики обработали данные, чистим буфер
+  clearBuffer();
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+// CoreTransport
+//--------------------------------------------------------------------------------------------------------------------------------------
 CoreTransport::CoreTransport()
 {
   
@@ -33,6 +244,11 @@ CoreTransport::CoreTransport()
 CoreTransport::~CoreTransport()
 {
   
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::notifyClientDataWritten(CoreTransportClient& client,int errorCode)
+{
+  client.notifyDataWritten(errorCode);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransport::setClientBusy(CoreTransportClient& client,bool busy)
@@ -45,14 +261,14 @@ void CoreTransport::setClientID(CoreTransportClient& client, uint8_t id)
     client.setID(id);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::setClientConnected(CoreTransportClient& client, bool connected)
+void CoreTransport::setClientConnected(CoreTransportClient& client, bool connected,int errorCode)
 {
-  client.setConnected(connected);
+  client.setConnected(connected,errorCode);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::setClientBuffer(CoreTransportClient& client,const uint8_t* buff, size_t sz)
+void CoreTransport::setClientData(CoreTransportClient& client,const uint8_t* buff, size_t sz)
 {
-  client.setBuffer(buff,sz);
+  client.setData(buff,sz);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_RS485_TRANSPORT_ENABLED
@@ -112,14 +328,9 @@ void CoreRS485::begin()
   if(RS485Settings.SerialNumber == 0 || RS485Settings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
     return;
 
-  
- // if(workStream) // надо закончить работу на старом порту
-//    workStream->end();
 
   workStream = getMyStream(RS485Settings.SerialNumber);
-  
- // workStream->end();
-  
+    
     unsigned long uspeed = RS485Settings.UARTSpeed;
     uspeed *= 9600;
     workStream->begin(uspeed);
@@ -915,7 +1126,6 @@ CoreESPTransport::CoreESPTransport() : CoreTransport()
   for(int i=0;i<ESP_MAX_CLIENTS;i++)
     clients[i] = NULL;
 
-//    lastSerial = NULL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::update()
@@ -965,16 +1175,11 @@ void CoreESPTransport::begin()
   #endif    
 
 
- // if(lastSerial) // надо закончить работу на старом порту
-  //  lastSerial->end();
-
-//  lastSerial = hs;
 
   workStream = hs;
   unsigned long uspeed = ESPTransportSettings.UARTSpeed;
   uspeed *= 9600;
 
- // hs->end();
   hs->begin(uspeed);
 
   while(clientsQueue.size())
@@ -1022,14 +1227,17 @@ void CoreESPTransport::removeFromQueue(ESPClientsQueue& queue,CoreTransportClien
     if(queue[i].client == client)
     {
       delete [] queue[i].ip;
+      
         for(size_t j=i+1;j<queue.size();j++)
         {
-          queue[i] = queue[j];
+          queue[j-1] = queue[j];
         }
+        
         queue.pop();
         break;
-    }
-  }
+    } // if
+    
+  } // for
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::initClients()
@@ -1133,6 +1341,13 @@ void CoreESPTransport::beginDisconnect(CoreTransportClient& client)
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с отсоединением клиента
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreESPTransport::ready()
+{
+  //TODO: тут возвращать реальный статус - готовы ли мы к работе с клиентами!!!
+  return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_ESP_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
 
 
