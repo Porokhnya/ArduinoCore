@@ -1094,12 +1094,16 @@ void CoreClass::reset()
 
   #ifdef CORE_LORA_TRANSPORT_ENABLED
     LoraDispatcher.reset();    
-  #endif // CORE_LORA_TRANSPORT_ENABLED  
+  #endif // CORE_LORA_TRANSPORT_ENABLED
+
+  #ifdef CORE_SIGNALS_ENABLED
+    Signals.reset();
+  #endif
   
   
   // очищаем сигналы
-  while(signals.size())
-    signals.pop(); 
+  while(sensorTimers.size())
+    sensorTimers.pop(); 
 
   // очищаем список датчиков
   list.clear();
@@ -1634,7 +1638,7 @@ bool CoreClass::printBackSETResult(bool isOK, const char* command, Stream* pStre
 const char DATETIME_COMMAND[] PROGMEM = "DATETIME"; // получить/установить дату/время на контроллер
 #endif
 const char SENSORS_COMMAND[] PROGMEM = "SENSORS"; // получить информацию о поддерживаемых датчиках
-const char FEATURES_COMMAND[] PROGMEM = "FEATURES"; // получить информацию о поддерживаемых транспортах
+const char FEATURES_COMMAND[] PROGMEM = "FEATURES"; // получить информацию о поддерживаемых возможностях
 const char FREERAM_COMMAND[] PROGMEM = "FREERAM"; // получить информацию о свободной памяти
 const char CPU_COMMAND[] PROGMEM = "CPU"; // получить информацию о МК
 const char CONFIG_COMMAND[] PROGMEM = "CONFIG"; // получить конфиг
@@ -1909,23 +1913,23 @@ void CoreClass::setup(CoreUnhandledCommandsHandler func)
  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreClass::signal(uint16_t signalDelay,CoreSensor* sensor,uint16_t storeIndex)
+void CoreClass::addTimer(uint16_t timerDelay,CoreSensor* sensor,uint16_t storeIndex)
 {
-  if(!signalDelay)
+  if(!timerDelay)
   {
-    //DBGLN(F("No signal needed..."));
+    //DBGLN(F("No timer needed..."));
     readFromSensor(sensor,storeIndex);
     return;
   }
 
   // тут добавляем в список сигналов
-  CoreSensorSignalStruct ss;
+  CoreSensorTimerStruct ss;
   ss.startTimer = millis();
-  ss.signalDelay = signalDelay;
+  ss.timerDelay = timerDelay;
   ss.sensor = sensor;
   ss.storeIndex = storeIndex;
   
-  signals.push_back(ss);
+  sensorTimers.push_back(ss);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::pushToStorage(CoreSensor* s)
@@ -2058,11 +2062,11 @@ uint8_t
   }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool CoreClass::waitingSignal(CoreSensor* sensor)
+bool CoreClass::isOnTimer(CoreSensor* sensor)
 {
-  for(size_t i = 0;i < signals.size(); i++)
+  for(size_t i = 0;i < sensorTimers.size(); i++)
   {
-    if(signals[i].sensor == sensor)
+    if(sensorTimers[i].sensor == sensor)
     {
       DBGLN(F("IN MEASURE..."));
       return true;
@@ -2072,26 +2076,26 @@ bool CoreClass::waitingSignal(CoreSensor* sensor)
   return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreClass::updateSignals()
+void CoreClass::updateTimers()
 {
   unsigned long curMillis = millis();
   
-  for(size_t i = 0;i < signals.size(); i++)
+  for(size_t i = 0;i < sensorTimers.size(); i++)
   {
-    if(curMillis - signals[i].startTimer > signals[i].signalDelay)
+    if(curMillis - sensorTimers[i].startTimer > sensorTimers[i].timerDelay)
     {
       // можно читать с датчика
-      //DBGLN(F("SIGNAL!"));
-      readFromSensor(signals[i].sensor,signals[i].storeIndex);
+      //DBGLN(F("TIMER!"));
+      readFromSensor(sensorTimers[i].sensor,sensorTimers[i].storeIndex);
 
       // теперь сдвигаем всё к голове
-      for(size_t k=i+1;k<signals.size();k++)
+      for(size_t k=i+1;k<sensorTimers.size();k++)
       {
-         signals[k-1] = signals[k];
+         sensorTimers[k-1] = sensorTimers[k];
       }
 
       // убираем одну позицию
-      signals.pop();
+      sensorTimers.pop();
 
     } // if
     else
@@ -2099,7 +2103,7 @@ void CoreClass::updateSignals()
       // время конвертации не закончилось, надо обновить датчик, вдруг он внутри себя что-то захочет сделать, во время конвертации,
       // например, если датчику требуется 10 семплов за 10 секунд - он при вызове startMeasure может взводить таймер, а в вызовах
       // update проверять, и каждую секунду делать семпл
-      signals[i].sensor->update();
+      sensorTimers[i].sensor->update();
     }
   } // for
 }
@@ -2135,11 +2139,11 @@ void CoreClass::begin()
     
     #ifdef CORE_SD_USE_SDFAT
     
-      DBGLN(F("Init SD using SdFat..."));
+     // DBGLN(F("Init SD using SdFat..."));
       
       if(SD.begin(SDSettings.CSPin, CORE_SD_SDFAT_SPEED))
       {
-        DBGLN(F("SD inited."));
+       // DBGLN(F("SD inited."));
       }
       else
       {
@@ -2147,11 +2151,11 @@ void CoreClass::begin()
       }
     #else
     
-      DBGLN(F("Init SD..."));
+     // DBGLN(F("Init SD..."));
       
       if(SD.begin(SDSettings.CSPin))
       {
-         DBGLN(F("SD inited."));
+      //   DBGLN(F("SD inited."));
       }
       else
       {
@@ -2209,7 +2213,11 @@ void CoreClass::update()
     LoraDispatcher.update();    
   #endif // CORE_LORA_TRANSPORT_ENABLED  
   
-  updateSignals(); // обновляем сигналы
+  updateTimers(); // обновляем таймеры
+
+  #ifdef CORE_SIGNALS_ENABLED
+    Signals.update();
+  #endif
   
   unsigned long curMillis = millis();
 
@@ -2259,13 +2267,13 @@ void CoreClass::update()
         // игнорируем часы реального времени - они обновляются отдельно
       #endif // CORE_DS3231_ENABLED        
 
-        if(!waitingSignal(sensor)) // если на датчик не взведён сигнал
+        if(!isOnTimer(sensor)) // если на датчик не взведён таймер
         {
           // запускаем конвертацию на датчике
           uint16_t readingInterval = sensor->startMeasure();
     
-          // теперь мы знаем, через какое время читать данные с датчика - можно взводить сигнал
-          signal(readingInterval,sensor,i);
+          // теперь мы знаем, через какое время читать данные с датчика - можно взводить таймер
+          addTimer(readingInterval,sensor,i);
         }
 
       #ifdef CORE_DS3231_ENABLED

@@ -9,6 +9,7 @@
 #include "CoreTransport.h"
 #include "CorePinStateAction.h"
 #include "LoRa.h"
+#include "Signals.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_SD_SUPPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -187,13 +188,13 @@ class CoreSensors
 typedef struct
 {
   unsigned long startTimer;
-  uint16_t signalDelay;
+  uint16_t timerDelay;
   CoreSensor* sensor;
   int storeIndex;
   
-} CoreSensorSignalStruct;
+} CoreSensorTimerStruct;
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef Vector<CoreSensorSignalStruct> CoreSensorSignals;
+typedef Vector<CoreSensorTimerStruct> CoreSensorTimers;
 //--------------------------------------------------------------------------------------------------------------------------------------
 class CoreClass
 {
@@ -264,10 +265,10 @@ class CoreClass
    unsigned long lastMillis;
 
    CoreSensors list;
-   CoreSensorSignals signals;
-   void signal(uint16_t signalDelay,CoreSensor* sensor,uint16_t storeIndex);
-   bool waitingSignal(CoreSensor* sensor);
-   void updateSignals();
+   CoreSensorTimers sensorTimers;
+   void addTimer(uint16_t timerDelay,CoreSensor* sensor,uint16_t storeIndex);
+   bool isOnTimer(CoreSensor* sensor);
+   void updateTimers();
    void readFromSensor(CoreSensor* sensor,uint16_t storeIndex);
 
    // обработчики команд GET и SET
