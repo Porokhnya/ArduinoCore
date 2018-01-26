@@ -251,6 +251,11 @@ void CoreTransport::notifyClientDataWritten(CoreTransportClient& client,int erro
   client.notifyDataWritten(errorCode);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::notifyClientDataAvailable(CoreTransportClient& client)
+{
+  client.notifyDataAvailable();
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransport::setClientBusy(CoreTransportClient& client,bool busy)
 {
   client.setBusy(busy);
@@ -261,9 +266,9 @@ void CoreTransport::setClientID(CoreTransportClient& client, uint8_t id)
     client.setID(id);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::setClientConnected(CoreTransportClient& client, bool connected,int errorCode)
+void CoreTransport::setClientConnected(CoreTransportClient& client, bool isConnected, int errorCode)
 {
-  client.setConnected(connected,errorCode);
+  client.setConnected(isConnected, errorCode);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransport::setClientData(CoreTransportClient& client,const uint8_t* buff, size_t sz)

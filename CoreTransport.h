@@ -132,9 +132,12 @@ protected:
   void setClientID(CoreTransportClient& client, uint8_t id);
   void setClientData(CoreTransportClient& client,const uint8_t* data, size_t sz);
   void setClientBusy(CoreTransportClient& client,bool busy);
-  void setClientConnected(CoreTransportClient& client, bool connected, int errorCode);
-  
+
+  // функции, косвенно вызывающие события на клиенте
+  void setClientConnected(CoreTransportClient& client, bool connected, int errorCode);  
   void notifyClientDataWritten(CoreTransportClient& client, int errorCode);
+  void notifyClientDataAvailable(CoreTransportClient& client);
+  
     
   virtual void beginWrite(CoreTransportClient& client) = 0; // начинаем писать в транспорт с клиента
   virtual void beginConnect(CoreTransportClient& client, const char* ip, uint16_t port) = 0; // начинаем коннектиться к адресу
@@ -213,7 +216,7 @@ class CoreTransportClient
     void setData(const uint8_t* buff, size_t sz);
 
     // транспорт дёргает эту функцию, чтобы клиент сообщил подписчикам статус соединения
-    void setConnected(bool flag, int errorCode);
+    void setConnected(bool isConnected, int errorCode);
 
     // транспорт дёргает эту функцию, чтобы клиент сообщил подписчикам, что данные с него записаны в транспорт
     void notifyDataWritten(int errorCode);
