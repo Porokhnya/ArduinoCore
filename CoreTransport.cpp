@@ -246,6 +246,16 @@ CoreTransport::~CoreTransport()
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::subscribeClient(CoreTransportClient& client, IClientEventsSubscriber* subscriber)
+{
+  client.subscribe(subscriber);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::unsubscribeClient(CoreTransportClient& client, IClientEventsSubscriber* subscriber)
+{
+  client.unsubscribe(subscriber);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransport::notifyClientDataWritten(CoreTransportClient& client,int errorCode)
 {
   client.notifyDataWritten(errorCode);
@@ -1255,6 +1265,22 @@ void CoreESPTransport::initClients()
     CoreTransportClient* client = CoreTransportClient::Create(this);
     setClientID(*client,i);
     clients[i] = client;
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::subscribe(IClientEventsSubscriber* subscriber)
+{
+  for(int i=0;i<ESP_MAX_CLIENTS;i++)
+  {
+    subscribeClient(*(clients[i]),subscriber);
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::unsubscribe(IClientEventsSubscriber* subscriber)
+{
+  for(int i=0;i<ESP_MAX_CLIENTS;i++)
+  {
+    unsubscribeClient(*(clients[i]),subscriber);
   }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------

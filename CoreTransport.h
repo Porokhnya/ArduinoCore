@@ -95,6 +95,27 @@ typedef struct
 #define CT_ERROR_CANT_CONNECT     1 // не удалось установить соединение
 #define CT_ERROR_CANT_WRITE       2 // ошибка записи данных из клиента в поток
 //--------------------------------------------------------------------------------------------------------------------------------------
+// типы событий
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  etConnected,      // соединено
+  etDisconnected,   // отсоединено
+  etDataWritten,    // данные записаны
+  etDataAvailable   // доступны входящие данные
+  
+} ClientEventType;
+//--------------------------------------------------------------------------------------------------------------------------------------
+// класс подписчика на события клиента - каждый, использующий клиента, может подписаться и отписаться на его события.
+//--------------------------------------------------------------------------------------------------------------------------------------
+struct IClientEventsSubscriber
+{
+  virtual void OnClientConnect(CoreTransportClient* client, int errorCode) = 0; // событие "Клиент соединён"
+  virtual void OnClientDisconnect(CoreTransportClient* client, int errorCode) = 0; // событие "Клиент отсоединён"
+  virtual void OnClientDataWritten(CoreTransportClient* client, int errorCode) = 0; // событие "Данные из клиента записаны в поток"
+  virtual void OnClientDataAvailable(CoreTransportClient* client) = 0; // событие "Для клиента поступили данные"
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
 // класс асинхронного транспорта, предназначен для предоставления интерфейса неблокирующей работы с AT-прошивками железок,
 // типа SIM800 или ESP.
 // производные классы могут держать свой пул клиентов, при этом должны заботиться о том,
@@ -123,11 +144,20 @@ class CoreTransport
     virtual bool ready() = 0; 
 
     // возвращает свободного клиента (не законнекченного и не занятого делами)
-    virtual CoreTransportClient* getFreeClient() = 0; 
+    virtual CoreTransportClient* getFreeClient() = 0;
+
+   // подписка на события клиентов
+   virtual void subscribe(IClientEventsSubscriber* subscriber) = 0;
+   
+   // отписка от событий клиентов
+   virtual void unsubscribe(IClientEventsSubscriber* subscriber) = 0;
 
 protected:
 
   friend class CoreTransportClient;
+
+  void subscribeClient(CoreTransportClient& client, IClientEventsSubscriber* subscriber);
+  void unsubscribeClient(CoreTransportClient& client, IClientEventsSubscriber* subscriber);
 
   void setClientID(CoreTransportClient& client, uint8_t id);
   void setClientData(CoreTransportClient& client,const uint8_t* data, size_t sz);
@@ -145,27 +175,6 @@ protected:
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
-// типы событий
-//--------------------------------------------------------------------------------------------------------------------------------------
-typedef enum
-{
-  etConnected,      // соединено
-  etDisconnected,   // отсоединено
-  etDataWritten,    // данные записаны
-  etDataAvailable   // доступны входящие данные
-  
-} ClientEventType;
-//--------------------------------------------------------------------------------------------------------------------------------------
-// класс подписчика на события клиента - каждый, использующий клиента, может подписаться и отписаться на его события.
-//--------------------------------------------------------------------------------------------------------------------------------------
-struct IClientEventsSubscriber
-{
-  virtual void OnClientConnect(CoreTransportClient* client, int errorCode) = 0; // событие "Клиент соединён"
-  virtual void OnClientDisconnect(CoreTransportClient* client, int errorCode) = 0; // событие "Клиент отсоединён"
-  virtual void OnClientDataWritten(CoreTransportClient* client, int errorCode) = 0; // событие "Данные из клиента записаны в поток"
-  virtual void OnClientDataAvailable(CoreTransportClient* client) = 0; // событие "Для клиента поступили данные"
-};
-//--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<IClientEventsSubscriber*> ClientSubscribers;
 //--------------------------------------------------------------------------------------------------------------------------------------
 // класс клиента транспорта. Держит буфер (для приёма или передачи), обеспечивает пересылку запроса на неблокирующую запись в транспорт,
@@ -179,9 +188,6 @@ class CoreTransportClient
   void Destroy();
 
   CoreTransport* getTransport(); // возвращает транспорт
-
-  void subscribe(IClientEventsSubscriber* subscriber); // подписка на события клиента
-  void unsubscribe(IClientEventsSubscriber* subscriber); // отписка от событий клиента
 
   
    bool connected();     
@@ -205,6 +211,9 @@ class CoreTransportClient
  protected:
 
     friend class CoreTransport;
+
+    void subscribe(IClientEventsSubscriber* subscriber); // подписка на события клиента
+    void unsubscribe(IClientEventsSubscriber* subscriber); // отписка от событий клиента
 
     // транспорт, когда надо - выставляет флаг занятоски клиента каким-то делом
     void setBusy(bool flag);
@@ -320,6 +329,12 @@ class CoreESPTransport : public CoreTransport
 
     virtual bool ready(); // проверяем на готовность к работе
 
+   // подписка на события клиентов
+   virtual void subscribe(IClientEventsSubscriber* subscriber);
+   
+   // отписка от событий клиентов
+   virtual void unsubscribe(IClientEventsSubscriber* subscriber);
+   
     virtual CoreTransportClient* getFreeClient(); // возвращает свободного клиента (не законнекченного и не занятого делами)
 
   protected:
