@@ -1299,7 +1299,7 @@ void CoreClass::setCurrentDateTime(uint8_t day, uint8_t month, uint16_t year, ui
     }     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool CoreClass::getTRANSPORT(const char* commandPassed, Stream* pStream)
+bool CoreClass::getFEATURES(const char* commandPassed, Stream* pStream)
 {
   if(commandPassed)
   {
@@ -1338,6 +1338,13 @@ bool CoreClass::getTRANSPORT(const char* commandPassed, Stream* pStream)
     pStream->print(F("SD")); 
   #endif
   
+  #ifdef CORE_SIGNALS_ENABLED
+    if(written)
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+      
+    written++;
+    pStream->print(F("SIG")); 
+  #endif
 
 
   pStream->println();
@@ -1627,7 +1634,7 @@ bool CoreClass::printBackSETResult(bool isOK, const char* command, Stream* pStre
 const char DATETIME_COMMAND[] PROGMEM = "DATETIME"; // получить/установить дату/время на контроллер
 #endif
 const char SENSORS_COMMAND[] PROGMEM = "SENSORS"; // получить информацию о поддерживаемых датчиках
-const char TRANSPORT_COMMAND[] PROGMEM = "TRANSPORT"; // получить информацию о поддерживаемых транспортах
+const char FEATURES_COMMAND[] PROGMEM = "FEATURES"; // получить информацию о поддерживаемых транспортах
 const char FREERAM_COMMAND[] PROGMEM = "FREERAM"; // получить информацию о свободной памяти
 const char CPU_COMMAND[] PROGMEM = "CPU"; // получить информацию о МК
 const char CONFIG_COMMAND[] PROGMEM = "CONFIG"; // получить конфиг
@@ -1727,10 +1734,10 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
                     
         } // SENSORS_COMMAND
         else
-        if(!strcmp_P(commandName, TRANSPORT_COMMAND))
+        if(!strcmp_P(commandName, FEATURES_COMMAND))
         {
-          commandHandled = getTRANSPORT(commandName,pStream);
-        } // TRANSPORT_COMMAND
+          commandHandled = getFEATURES(commandName,pStream);
+        } // FEATURES_COMMAND
         else
         if(!strcmp_P(commandName, FREERAM_COMMAND))
         {

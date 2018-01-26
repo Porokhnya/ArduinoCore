@@ -279,8 +279,8 @@ class CoreClass
   // Список поддерживаемых датчиков
    bool getSENSORS(const char* commandPassed, Stream* pStream);
 
-   // Список поддерживаемых транспортов
-   bool getTRANSPORT(const char* commandPassed, Stream* pStream);
+   // Список поддерживаемого функционала
+   bool getFEATURES(const char* commandPassed, Stream* pStream);
 
    // Кол-во свободной памяти
    bool getFREERAM(const char* commandPassed, Stream* pStream);
