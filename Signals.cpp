@@ -16,6 +16,7 @@ SignalOneAction::SignalOneAction()
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 SignalOneAction::~SignalOneAction()
 {
+  delete [] actionData;
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // SignalHandler
@@ -28,9 +29,9 @@ SignalHandler::SignalHandler(uint16_t memAddr)
 void SignalHandler::analyze()
 {
   uint16_t addr = memoryAddress;
+  //uint8_t recordLength = Core.memRead(addr); addr++;
 
-  uint8_t recordLength = Core.memRead(addr); addr++;
-
+/*
   uint8_t* record = new uint8_t[recordLength];
 
   // вычитываем запись
@@ -38,12 +39,12 @@ void SignalHandler::analyze()
   {
     record[i] =  Core.memRead(addr); addr++;
   } // for
-
+*/
   // начинаем анализировать
 
-  uint8_t recordIterator = 0;
-  bool hasTimeSettings = (record[recordIterator] != 0);
-  recordIterator++;
+//  uint8_t recordIterator = 0;
+  bool hasTimeSettings = Core.memRead(addr) == 1; addr++; //record[recordIterator] != 0;
+//  recordIterator++;
 
   DBG(F("SIG: hasTimeSettings=")); DBGLN(hasTimeSettings);
 
@@ -53,11 +54,11 @@ void SignalHandler::analyze()
     
     DateTimeData timeFrom, timeTo;
     
-    uint8_t daymask = record[recordIterator]; recordIterator++;
-    timeFrom.hour = record[recordIterator]; recordIterator++;
-    timeFrom.minute = record[recordIterator]; recordIterator++;
-    timeTo.hour = record[recordIterator]; recordIterator++;
-    timeTo.minute = record[recordIterator]; recordIterator++;
+    uint8_t daymask = Core.memRead(addr); addr++;
+    timeFrom.hour = Core.memRead(addr); addr++;
+    timeFrom.minute = Core.memRead(addr); addr++;
+    timeTo.hour = Core.memRead(addr); addr++;
+    timeTo.minute = Core.memRead(addr); addr++;
 
     // тут, не вычитывая всю запись - мы можем анализировать - можем ли мы работать с сигналом.
     // если есть часы реального времени - считаем, что с сигналом можно работать, если с часов есть показания
@@ -69,7 +70,7 @@ void SignalHandler::analyze()
     {
       DBGLN(F("SIG: No datetime!"));
       // нет показаний времени, не можем работать
-      delete [] record;
+    //  delete [] record;
       return;
     }
 
@@ -78,7 +79,7 @@ void SignalHandler::analyze()
     {
       DBGLN(F("SIG: No datetime data!"));
       // нет данных с часов - работать не можем
-      delete [] record;
+      //delete [] record;
       return;
     }
 
@@ -91,7 +92,7 @@ void SignalHandler::analyze()
     {
       DBGLN(F("SIG: Can't work today!"));
       // не можем работать в этот день недели, выходим
-      delete [] record;
+     // delete [] record;
       return;
     }
 
@@ -103,7 +104,7 @@ void SignalHandler::analyze()
         {
           DBGLN(F("SIG: Can't work at this time!"));
           // не можем работать в это время, выходим
-          delete [] record;
+        //  delete [] record;
           return;
         }
     }
@@ -114,25 +115,38 @@ void SignalHandler::analyze()
   } // hasTimeSettings
 
   // вычитываем оператор сравнения
-  SignalOperands operand = (SignalOperands) record[recordIterator]; recordIterator++;
+  SignalOperands operand = (SignalOperands) Core.memRead(addr); addr++;
 
   // затем идёт длина данных, с которыми сравниваем
-  uint8_t dataLength = record[recordIterator]; recordIterator++;
-  uint8_t* data = &(record[recordIterator]);
-  recordIterator += dataLength;
+  uint8_t dataLength = Core.memRead(addr); addr++;
+  uint8_t* data = NULL;
+
+  if(dataLength)
+  {
+    data = new uint8_t[dataLength];
+
+    for(uint8_t i=0;i<dataLength;i++)
+    {
+      data[i] = Core.memRead(addr); addr++;
+    }
+  } // if
 
   // потом идёт кол-во действий, которые надо совершить, если сигнал сработал
-  uint8_t actionsCount = record[recordIterator]; recordIterator++;
+  uint8_t actionsCount = Core.memRead(addr); addr++;
 
   // вычитываем все действия
   SignalActionsList actions;
 
   for(uint8_t i=0;i<actionsCount;i++)
   {
-    uint8_t actionType = record[recordIterator]; recordIterator++;
-    uint8_t actionDataLength = record[recordIterator]; recordIterator++;
-    uint8_t* actionData = &(record[recordIterator]);
-    recordIterator += actionDataLength;
+    uint8_t actionType = Core.memRead(addr); addr++;
+    uint8_t actionDataLength = Core.memRead(addr); addr++;
+    uint8_t* actionData = new uint8_t[actionDataLength];
+
+    for(uint8_t k=0;k<actionDataLength;k++)
+    {
+      actionData[k] = Core.memRead(addr); addr++;
+    }
 
     SignalOneAction* action = new SignalOneAction();
     action->action = actionType;
@@ -150,7 +164,7 @@ void SignalHandler::analyze()
   char ch;
   do
   {
-    ch = (char) record[recordIterator]; recordIterator++;
+    ch = (char) Core.memRead(addr); addr++;
     if(ch != '\0')
       sensorName += ch;
       
@@ -179,7 +193,7 @@ void SignalHandler::analyze()
     delete actions[i];
   }
 
-  delete [] record;
+  //delete [] record;
   
 
 }
@@ -483,7 +497,7 @@ bool SignalHandler::compare(const String& sensorName, SignalOperands operand, ui
   }
 
   // с датчика есть данные, можем их анализировать
-  // получаем тип данных, который хранит железка определённого вида
+// получаем тип данных, который хранит железка определённого вида
     CoreSensorType st = dataStored.sensor->getType();
     CoreDataType typeOfData = CoreSensor::getDataType(st);
 
@@ -666,8 +680,7 @@ void SignalsManager::reset()
   while(addresses.size())
     addresses.pop();
 
-  updateTimer = millis();
-    
+  updateTimer = millis();    
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void SignalsManager::begin()
