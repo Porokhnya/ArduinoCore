@@ -142,15 +142,12 @@ struct DateTimeData
 
   uint8_t dayOfWeek;
 
+  DateTimeData();
+
   static bool isLeapYear(uint16_t year);
   uint32_t unixtime(void) const;
   static DateTimeData fromUnixtime(uint32_t timeInput);
-  
-  uint16_t date2days(uint16_t _year, uint8_t _month, uint8_t _day) const;
-  long time2long(uint16_t days, uint8_t hours, uint8_t minutes, uint8_t seconds) const;
-
   DateTimeData addDays(long days);
-
 
   operator String(); // формируем дату/время в виде строки
   
@@ -162,8 +159,12 @@ struct DateTimeData
 
   bool operator ==(const DateTimeData& rhs);
   bool operator !=(const DateTimeData& rhs);
+
+  private:
   
-  
+    uint16_t date2days(uint16_t _year, uint8_t _month, uint8_t _day) const;
+    long time2long(uint16_t days, uint8_t hours, uint8_t minutes, uint8_t seconds) const;
+
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 class CoreSensor
