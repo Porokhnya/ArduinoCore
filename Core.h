@@ -91,8 +91,9 @@ typedef enum
   LoRaSettingsRecord = 8, // данные по настройкам LoRa
   DeviceIDRecord = 9, // данные по ID устройства
   ClusterIDRecord = 10, // данные о ID кластера, к которому принадлежит группа устройств
+  SignalRecord = 11, // запись о сигнале
 
-  DummyLastRecord = 11 // последняя запись, для проверки вхождения в диапазон
+  DummyLastRecord = 12 // последняя запись, для проверки вхождения в диапазон
   
 } CoreConfigRecordType;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -106,7 +107,7 @@ typedef enum
 class CoreConfigIterator
 {
   public:
-    bool first(const void* address, uint16_t dataSize, Stream* outStream=NULL, bool asHexString=true); // ищет первую запись в конфиге, если не находит - возвращает false
+    bool first(uint16_t address, uint16_t dataSize, Stream* outStream=NULL, bool asHexString=true); // ищет первую запись в конфиге, если не находит - возвращает false
     bool next(); // проходит по всем записям в конфиге
 
     CoreConfigIterator();
@@ -114,9 +115,9 @@ class CoreConfigIterator
   protected:
 
     uint16_t dataSize; // размер данных, до которого можно итерировать
-    const void* address; // текущий адрес чтения
+    uint16_t address; // текущий адрес чтения
 
-    virtual uint8_t doRead(const void* startAddress, uint16_t addressOffset) = 0; // потомки в этом методе читают и возвращают байт, передаётся начальный адрес и смещение, по которому надо прочитать
+    virtual uint8_t doRead(uint16_t startAddress, uint16_t addressOffset) = 0; // потомки в этом методе читают и возвращают байт, передаётся начальный адрес и смещение, по которому надо прочитать
     
 
   private:
@@ -140,7 +141,7 @@ class CoreEEPROMConfigIterator : public CoreConfigIterator
     CoreEEPROMConfigIterator();
 
   protected:
-    virtual uint8_t doRead(const void* startAddress, uint16_t addressOffset);
+    virtual uint8_t doRead(uint16_t startAddress, uint16_t addressOffset);
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<CoreSensor*> CoreSensorsList;

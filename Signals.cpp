@@ -26,7 +26,7 @@ SignalHandler::SignalHandler(uint16_t memAddr)
   memoryAddress = memAddr;
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void SignalHandler::analize()
+void SignalHandler::analyze()
 {
   uint16_t addr = memoryAddress;
 
@@ -669,19 +669,48 @@ Signal& SignalsManager::operator[](uint8_t signalNumber)
   return thisSignal;
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+void SignalsManager::addRecord(uint16_t memoryAddress)
+{
+  addresses.push_back(memoryAddress);
+}
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void SignalsManager::reset()
 {
   memset(signals,0,sizeof(signals));
+
+  // чистим список адресов
+  while(addresses.size())
+    addresses.pop();
+
+  updateTimer = millis();
+    
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void SignalsManager::begin()
 {
   //TODO: Тут настройка и пуск в работу!!!
+  updateTimer = millis();
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void SignalsManager::update()
 {
-  //TODO: Тут обновление сигналов!!!
+  // Тут обновление сигналов
+  unsigned long now = millis();
+  if(now - updateTimer > CORE_SIGNALS_UPDATE_INTERVAL)
+  {
+    // пора обновлять сигналы
+    DBGLN(F("SIG: Update signals..."));
+
+    for(size_t i=0;i<addresses.size();i++)
+    {
+      SignalHandler handler(addresses[i]);
+      handler.analyze();
+    }
+    
+    DBGLN(F("SIG: Signals updated."));
+
+    updateTimer = millis();
+  } // if
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_SIGNALS_ENABLED

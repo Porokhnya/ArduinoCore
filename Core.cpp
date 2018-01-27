@@ -281,7 +281,7 @@ int FileUtils::countFiles(const String& dirName, bool recursive)
 CoreConfigIterator::CoreConfigIterator()
 {
   dataSize = 0;
-  address = NULL;
+  address = 0;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreConfigIterator::writeOut(uint8_t b)
@@ -301,7 +301,7 @@ bool CoreConfigIterator::writeOut(uint8_t b)
   return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool CoreConfigIterator::first(const void* addr, uint16_t sz, Stream* out, bool asHex)
+bool CoreConfigIterator::first(uint16_t addr, uint16_t sz, Stream* out, bool asHex)
 {
   outStream = out; // запоминаем поток, в который нас попросили просто прочитать данные
   asHexString = asHex; // запоминаем формат, в котором нас попросили прочитать данные
@@ -514,6 +514,37 @@ bool CoreConfigIterator::readRecord()
       
     }
     return true; // ClusterIDRecord
+
+    case SignalRecord:
+    {
+      DBGLN(F("SignalRecord"));
+
+      uint8_t recordLength = read();
+      
+      if(writeOut(recordLength))
+      {
+        // нас попросили просто вывести всё в поток
+        for(int skipBytes=0;skipBytes<recordLength;skipBytes++)
+          writeOut(read());
+      }
+      else
+      {
+        // надо сохранить в список сигналов - поэтому мы пропускаем всю запись, но перед этим запоминаем текущий адрес памяти.
+        // но: т.к. мы прочитали длину записи (для того, чтобы её пропустить) - мы отнимаем единичку от текущего адреса чтения,
+        // чтобы получить адрес начала записи в памяти, т.е. адрес байта, содержащего длину записи.
+        uint16_t recordStartAddress = address + readed - 1;
+        
+        #ifdef CORE_SIGNALS_ENABLED
+          // скармливаем этот адрес менеджеру сигналов, и он будет знать, что по этому адресу лежит запись настроек одного сигнала
+          Signals.addRecord(recordStartAddress);
+        #endif
+
+        // а теперь просто пропускаем N байт, увеличивая кол-во "прочитанных" (т.к. читать тут - не надо, всё сделает менеджер сигналов)
+        readed += recordLength;
+      }
+      
+    }
+    return true; // SignalRecord
 
     case TemperatureUnitRecord: // вид измеряемой температуры
     {
@@ -979,9 +1010,9 @@ CoreEEPROMConfigIterator::CoreEEPROMConfigIterator() : CoreConfigIterator()
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-uint8_t CoreEEPROMConfigIterator::doRead(const void* startAddress, uint16_t addressOffset)
+uint8_t CoreEEPROMConfigIterator::doRead(uint16_t startAddress, uint16_t addressOffset)
 {
-  uint16_t addr = *((uint16_t*)&startAddress);
+  uint16_t addr = startAddress;//*((uint16_t*)&startAddress);
   addr += addressOffset;
   return Core.memRead(addr);
 }
@@ -1065,7 +1096,7 @@ bool CoreClass::loadConfig()
     sz = 4096*16-1;
   #endif   
   
-  if(iter.first((void*)CORE_STORE_ADDRESS,sz))
+  if(iter.first(CORE_STORE_ADDRESS,sz))
   {
     while(iter.next());
   }
@@ -1464,7 +1495,7 @@ bool CoreClass::getCONFIG(const char* commandPassed, Stream* pStream)
     sz = 4096*16-1;
   #endif   
   
-  if(iter.first((void*)CORE_STORE_ADDRESS,sz,pStream,true))
+  if(iter.first(CORE_STORE_ADDRESS,sz,pStream,true))
   {
     while(iter.next());
   }
