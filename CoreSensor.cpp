@@ -16,6 +16,279 @@ TwoWire* getWireInterface(uint8_t i2cIndex)
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif
 //--------------------------------------------------------------------------------------------------------------------------------------
+// DateTimeData
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DateTimeData::operator <(const DateTimeData& rhs)
+{
+  uint32_t this_ut = unixtime();
+  uint32_t rhs_ut = rhs.unixtime();
+
+  return (this_ut < rhs_ut);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DateTimeData::operator <=(const DateTimeData& rhs)
+{
+  uint32_t this_ut = unixtime();
+  uint32_t rhs_ut = rhs.unixtime();
+
+  return (this_ut <= rhs_ut);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DateTimeData::operator >(const DateTimeData& rhs)
+{
+  uint32_t this_ut = unixtime();
+  uint32_t rhs_ut = rhs.unixtime();
+
+  return (this_ut > rhs_ut);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DateTimeData::operator >=(const DateTimeData& rhs)
+{
+  uint32_t this_ut = unixtime();
+  uint32_t rhs_ut = rhs.unixtime();
+
+  return (this_ut >= rhs_ut);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DateTimeData::operator ==(const DateTimeData& rhs)
+{
+  uint32_t this_ut = unixtime();
+  uint32_t rhs_ut = rhs.unixtime();
+
+  return (this_ut == rhs_ut);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DateTimeData::operator !=(const DateTimeData& rhs)
+{
+  return !operator==(rhs);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+DateTimeData::operator String()
+{
+ String result;
+
+    if(day < 10)
+      result = '0';
+    result += day;
+    
+    result += '.';
+
+    if(month < 10)
+      result += '0';
+    result += month;
+    
+    result += '.';
+
+    result += year;
+    
+    result += ' ';
+
+    if(hour < 10)
+      result += '0';
+    result += hour;
+    
+    result += ':';
+
+    if(minute < 10)
+      result += '0';
+    result += minute;
+    
+    result += ':';
+
+    if(second < 10)
+      result += '0';
+    result += second;
+    
+    return result;  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+const uint8_t daysArray [] PROGMEM = { 31,28,31,30,31,30,31,31,30,31,30,31 };
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint32_t DateTimeData::unixtime(void) const
+{
+  uint32_t u;
+
+  u = time2long(date2days(this->year, this->month, this->day), this->hour, this->minute, this->second);
+  u += 946684800; // + 01.01.2000 00:00:00 unixtime
+
+  return u;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+DateTimeData DateTimeData::addDays(long days)
+{
+  uint32_t ut = unixtime();
+  long diff = days*86400;
+  ut += diff;  
+  return fromUnixtime(ut);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+DateTimeData DateTimeData::fromUnixtime(uint32_t time)
+{
+  DateTimeData result;
+
+  uint8_t year;
+  uint8_t month, monthLength;
+  unsigned long days;
+
+  result.second = time % 60;
+  time /= 60; // now it is minutes
+  result.minute = time % 60;
+  time /= 60; // now it is hours
+  result.hour = time % 24;
+  time /= 24; // now it is days
+  
+  year = 0;  
+  days = 0;
+  while((unsigned)(days += (isLeapYear(year) ? 366 : 365)) <= time) {
+    year++;
+  }
+  result.year = year + 1970; // year is offset from 1970 
+  
+  days -= isLeapYear(year) ? 366 : 365;
+  time  -= days; // now it is days in this year, starting at 0
+  
+  days=0;
+  month=0;
+  monthLength=0;
+  for (month=0; month<12; month++) 
+  {
+    if (month==1) 
+    { // february
+      if (isLeapYear(year)) 
+      {
+        monthLength=29;
+      } 
+      else 
+      {
+        monthLength=28;
+      }
+    } 
+    else 
+    {
+      monthLength = pgm_read_byte(daysArray + month);
+    }
+    
+    if (time >= monthLength) 
+    {
+      time -= monthLength;
+    } 
+    else 
+    {
+        break;
+    }
+  }
+  result.month = month + 1;  // jan is month 1  
+  result.day = time + 1;     // day of month  
+
+    int dow;
+    byte mArr[12] = {6,2,2,5,0,3,5,1,4,6,2,4};
+    dow = (result.year % 100);
+    dow = dow*1.25;
+    dow += result.day;
+    dow += mArr[result.month-1];
+    
+    if (isLeapYear(result.year) && (result.month<3))
+     dow -= 1;
+     
+    while (dow>7)
+     dow -= 7;
+
+   result.dayOfWeek = dow;
+
+  return result;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DateTimeData::isLeapYear(uint16_t year)
+{
+  return (year % 4 == 0);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint16_t DateTimeData::date2days(uint16_t _year, uint8_t _month, uint8_t _day) const
+{
+    _year = _year - 2000;
+
+    uint16_t days16 = _day;
+
+    for (uint8_t i = 1; i < _month; ++i)
+    {
+        days16 += pgm_read_byte(daysArray + i - 1);
+    }
+
+    if ((_month == 2) && isLeapYear(_year))
+    {
+        ++days16;
+    }
+
+    return days16 + 365 * _year + (_year + 3) / 4 - 1;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+long DateTimeData::time2long(uint16_t days, uint8_t hours, uint8_t minutes, uint8_t seconds) const
+{    
+    return ((days * 24L + hours) * 60 + minutes) * 60 + seconds;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+// TemperatureData
+//--------------------------------------------------------------------------------------------------------------------------------------
+int TemperatureData::raw() const
+{
+  int result = abs(Value)*100;
+  result += Fract;
+
+  if(Value < 0)
+    result = -result;
+
+    return result;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool TemperatureData::operator==(const TemperatureData& rhs)
+{
+  int this_val = raw();
+  int rhs_val = rhs.raw();
+
+   return (this_val == rhs_val);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool TemperatureData::operator!=(const TemperatureData& rhs)
+{
+  return !operator==(rhs);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool TemperatureData::operator<(const TemperatureData& rhs)
+{
+  int this_val = raw();
+  int rhs_val = rhs.raw();
+
+   return (this_val < rhs_val);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool TemperatureData::operator<=(const TemperatureData& rhs)
+{
+  int this_val = raw();
+  int rhs_val = rhs.raw();
+
+   return (this_val <= rhs_val);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool TemperatureData::operator>(const TemperatureData& rhs)
+{
+  int this_val = raw();
+  int rhs_val = rhs.raw();
+
+   return (this_val > rhs_val);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool TemperatureData::operator>=(const TemperatureData& rhs)
+{
+  int this_val = raw();
+  int rhs_val = rhs.raw();
+
+   return (this_val >= rhs_val);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 TemperatureData::operator String()
 {
     String result;

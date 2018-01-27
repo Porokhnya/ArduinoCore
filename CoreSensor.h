@@ -42,16 +42,29 @@ typedef enum
   
 } CoreDataType;
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef struct _TemperatureData
+struct TemperatureData
 {
   int8_t Value;
   uint8_t Fract;
 
-  static _TemperatureData ConvertToFahrenheit(const _TemperatureData& from);
+  static TemperatureData ConvertToFahrenheit(const TemperatureData& from);
 
-  operator String();
+  bool operator==(const TemperatureData& rhs);
+  bool operator!=(const TemperatureData& rhs);
+
+  bool operator<(const TemperatureData& rhs);
+  bool operator<=(const TemperatureData& rhs);
+
+  bool operator>(const TemperatureData& rhs);
+  bool operator>=(const TemperatureData& rhs);
   
-} TemperatureData;
+  operator String();
+
+private:
+
+  int raw() const;
+  
+};
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
@@ -68,27 +81,56 @@ typedef struct
   
 } HumidityData;
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef struct
+struct LuminosityData
 {
   uint16_t Value;
+
+  bool operator==(const LuminosityData& rhs) {return Value == rhs.Value; }
+  bool operator!=(const LuminosityData& rhs) {return Value != rhs.Value; }
+
+  bool operator<(const LuminosityData& rhs) {return Value < rhs.Value; }
+  bool operator<=(const LuminosityData& rhs) {return Value <= rhs.Value; }
+
+  bool operator>(const LuminosityData& rhs) {return Value > rhs.Value; }
+  bool operator>=(const LuminosityData& rhs) {return Value >= rhs.Value; }
+
   
-} LuminosityData;
+};
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef struct
+struct AnalogPortData
 {
   uint8_t Pin;
   uint16_t Value;
+
+  bool operator==(const AnalogPortData& rhs) {return Value == rhs.Value; }
+  bool operator!=(const AnalogPortData& rhs) {return Value != rhs.Value; }
+
+  bool operator<(const AnalogPortData& rhs) {return Value < rhs.Value; }
+  bool operator<=(const AnalogPortData& rhs) {return Value <= rhs.Value; }
+
+  bool operator>(const AnalogPortData& rhs) {return Value > rhs.Value; }
+  bool operator>=(const AnalogPortData& rhs) {return Value >= rhs.Value; }
+  
     
-} AnalogPortData;
+};
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef struct
+struct DigitalPortData
 {
   uint8_t Pin;
   uint8_t Value;
+
+  bool operator==(const DigitalPortData& rhs) {return Value == rhs.Value; }
+  bool operator!=(const DigitalPortData& rhs) {return Value != rhs.Value; }
+
+  bool operator<(const DigitalPortData& rhs) {return Value < rhs.Value; }
+  bool operator<=(const DigitalPortData& rhs) {return Value <= rhs.Value; }
+
+  bool operator>(const DigitalPortData& rhs) {return Value > rhs.Value; }
+  bool operator>=(const DigitalPortData& rhs) {return Value >= rhs.Value; }
   
-} DigitalPortData;
+};
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef struct
+struct DateTimeData
 {
   uint8_t day;
   uint8_t month;
@@ -100,46 +142,29 @@ typedef struct
 
   uint8_t dayOfWeek;
 
-  operator String() // формируем дату/время в виде строки
-  {
-    String result;
-
-    if(day < 10)
-      result = '0';
-    result += day;
-    
-    result += '.';
-
-    if(month < 10)
-      result += '0';
-    result += month;
-    
-    result += '.';
-
-    result += year;
-    
-    result += ' ';
-
-    if(hour < 10)
-      result += '0';
-    result += hour;
-    
-    result += ':';
-
-    if(minute < 10)
-      result += '0';
-    result += minute;
-    
-    result += ':';
-
-    if(second < 10)
-      result += '0';
-    result += second;
-    
-    return result;
-  }
+  static bool isLeapYear(uint16_t year);
+  uint32_t unixtime(void) const;
+  static DateTimeData fromUnixtime(uint32_t timeInput);
   
-} DateTimeData;
+  uint16_t date2days(uint16_t _year, uint8_t _month, uint8_t _day) const;
+  long time2long(uint16_t days, uint8_t hours, uint8_t minutes, uint8_t seconds) const;
+
+  DateTimeData addDays(long days);
+
+
+  operator String(); // формируем дату/время в виде строки
+  
+  bool operator <(const DateTimeData& rhs);
+  bool operator <=(const DateTimeData& rhs);
+
+  bool operator >(const DateTimeData& rhs);
+  bool operator >=(const DateTimeData& rhs);
+
+  bool operator ==(const DateTimeData& rhs);
+  bool operator !=(const DateTimeData& rhs);
+  
+  
+};
 //--------------------------------------------------------------------------------------------------------------------------------------
 class CoreSensor
 {
@@ -154,7 +179,7 @@ public:
   virtual uint8_t getDataSize(); // возвращает размер данных буфера показаний с датчика
   virtual bool read(uint8_t* buffer); // читает с датчика, возвращает false в случае, если с датчика не удалось прочитать
   
-  /*virtual*/ bool isUserDataSensor() {return /*false*/ type == UserDataSensor; } // тестирует - не датчик ли это пользовательского типа с какими-то показаниями? С таких датчиков мы только обновляем хранилище, данные обновляет внешняя среда, а не ядро
+  bool isUserDataSensor() {return type == UserDataSensor; } // тестирует - не датчик ли это пользовательского типа с какими-то показаниями? С таких датчиков мы только обновляем хранилище, данные обновляет внешняя среда, а не ядро
 
   CoreSensorType getType() { return type; } // возвращает тип железки
 
