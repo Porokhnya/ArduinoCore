@@ -2179,6 +2179,10 @@ void CoreClass::begin()
     
   #endif // CORE_LORA_TRANSPORT_ENABLED
 
+  #ifdef CORE_SIGNALS_ENABLED
+    Signals.begin();
+  #endif
+
   ON_CORE_BEGIN();
 
   printVersion(Serial);
