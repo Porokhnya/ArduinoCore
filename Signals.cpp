@@ -3,13 +3,13 @@
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_SIGNALS_ENABLED
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-uint8_t signals[CORE_SIGNAL_BYTES] = {0};
+uint8_t SIGNALS[CORE_SIGNAL_BYTES] = {0};
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // SignalOneAction
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 SignalOneAction::SignalOneAction()
 {
-  action = saNone;
+  action = saRaiseSignal;
   actionDataLength = 0;
   actionData = NULL;
 }
@@ -29,28 +29,17 @@ SignalHandler::SignalHandler(uint16_t memAddr)
 void SignalHandler::analyze()
 {
   uint16_t addr = memoryAddress;
-  //uint8_t recordLength = Core.memRead(addr); addr++;
 
-/*
-  uint8_t* record = new uint8_t[recordLength];
 
-  // вычитываем запись
-  for(uint8_t i=0;i<recordLength;i++)
-  {
-    record[i] =  Core.memRead(addr); addr++;
-  } // for
-*/
   // начинаем анализировать
 
-//  uint8_t recordIterator = 0;
   bool hasTimeSettings = Core.memRead(addr) == 1; addr++; //record[recordIterator] != 0;
-//  recordIterator++;
 
-  DBG(F("SIG: hasTimeSettings=")); DBGLN(hasTimeSettings);
+  //DBG(F("SIG: hasTimeSettings=")); DBGLN(hasTimeSettings);
 
   if(hasTimeSettings)
   {
-    DBGLN(F("SIG: Check datetime..."));
+    //DBGLN(F("SIG: Check datetime..."));
     
     DateTimeData timeFrom, timeTo;
     
@@ -90,7 +79,7 @@ void SignalHandler::analyze()
     // понедельник - у нас день недели номер 1
     if(!(daymask & (1 << currentTime.dayOfWeek)))
     {
-      DBGLN(F("SIG: Can't work today!"));
+  //    DBGLN(F("SIG: Can't work today!"));
       // не можем работать в этот день недели, выходим
      // delete [] record;
       return;
@@ -110,7 +99,7 @@ void SignalHandler::analyze()
     }
 
     // если мы здесь - значит, по времени у нас всё ОК, и можем работать
-    DBGLN(F("SIG: Can work, continue checking..."));
+ //   DBGLN(F("SIG: Can work, continue checking..."));
     
   } // hasTimeSettings
 
@@ -172,10 +161,12 @@ void SignalHandler::analyze()
 
 
   // разобрали всю запись, можем её анализировать. У нас есть оператор сравнения - operand,
-  // и имя датчика. Если имени датчика нет - считаем, что сигнал сработал, и мы можем выполнять действия
+  // и имя датчика. Если имени датчика нет - считаем, что сигнал сработал,
+  // т.к. мы прошли проверки по времени, и нам не с чем сравнивать какие бы то ни было данные (даже если они есть в конфиге), 
+  // т.е. - мы можем просто выполнять действия.
   if(!sensorName.length())
   {
-    DBGLN(F("SIG: No sensor name, simply execute actions..."));
+    //DBGLN(F("SIG: No sensor name, execute actions..."));
     executeActions(actions);
   }
   else
@@ -193,6 +184,7 @@ void SignalHandler::analyze()
     delete actions[i];
   }
 
+  delete [] data;
   //delete [] record;
   
 
@@ -200,9 +192,8 @@ void SignalHandler::analyze()
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void SignalHandler::executeActions(SignalActionsList& actions)
 {
-  DBG(F("SIG: Actions to execute="));
-  DBGLN(actions.size());
-
+  //DBG(F("SIG: Actions to execute="));
+  //DBGLN(actions.size());
 
   //Тут выполнение действий, когда сигнал сработал
 
@@ -212,13 +203,11 @@ void SignalHandler::executeActions(SignalActionsList& actions)
 
     switch(oneAction->action)
     {
-      case saNone:
-      break;
-
+      
       case saRaiseSignal:
       {
         // взвод сигнала
-        if(oneAction->actionDataLength != 1 || ! oneAction->actionData)
+        if(oneAction->actionDataLength != 1 || !oneAction->actionData)
         {
           DBGLN(F("SIG: saRaiseSignal action = MALFORMED!"));
         }
@@ -226,8 +215,8 @@ void SignalHandler::executeActions(SignalActionsList& actions)
         {
           // можем взводить сигнал
           uint8_t signalNumber = oneAction->actionData[0];
-          DBG(F("SIG: saRaiseSignal action, signal #"));
-          DBGLN(signalNumber);
+         // DBG(F("SIG: saRaiseSignal action, signal #"));
+         // DBGLN(signalNumber);
           Signals[signalNumber] = 1;
         }
       }
@@ -235,7 +224,7 @@ void SignalHandler::executeActions(SignalActionsList& actions)
 
       case saResetSignal:
       {
-        if(oneAction->actionDataLength != 1|| ! oneAction->actionData)
+        if(oneAction->actionDataLength != 1|| !oneAction->actionData)
         {
           DBGLN(F("SIG: saResetSignal action = MALFORMED!"));
         }
@@ -243,8 +232,8 @@ void SignalHandler::executeActions(SignalActionsList& actions)
         {
           // можем снимать сигнал
           uint8_t signalNumber = oneAction->actionData[0];
-          DBG(F("SIG: saResetSignal action, signal #"));
-          DBGLN(signalNumber);
+          //DBG(F("SIG: saResetSignal action, signal #"));
+         // DBGLN(signalNumber);
           Signals[signalNumber] = 0;          
         }
         
@@ -308,6 +297,12 @@ bool SignalHandler::compareDigitalPort(DigitalPortData& dataStored, SignalOperan
       return false;
     }
 
+  //DBG(F("SIG: compare Digital port, toCompare="));
+  //DBG(data[0]);
+  //DBG(F("; stored="));
+  //DBGLN(dataStored);
+
+
   // поскольку цифровой порт сравнивается только на 1 и 0 - можно применить оператор совпадения с указанным уровнем,
   // игнорируя все остальные. Это мы и делаем.
   return compareNumber(dataStored.Value,sopEqual,data[0],0);
@@ -325,6 +320,12 @@ bool SignalHandler::compareAnalogPort(AnalogPortData& dataStored, SignalOperands
    memcpy(&valueFrom,data,sizeof(uint16_t));
    data += sizeof(uint16_t);
    memcpy(&valueTo,data,sizeof(uint16_t));
+
+  //DBG(F("SIG: compare analog, toCompare="));
+  //DBG(valueFrom);
+  //DBG(F("; stored="));
+  //DBGLN(dataStored);
+
 
    return compareNumber(dataStored.Value,operand,valueFrom,valueTo); 
 }
@@ -391,6 +392,11 @@ bool SignalHandler::compareLuminosity(LuminosityData& dataStored, SignalOperands
   data += sizeof(long);
   memcpy(&lumTo,data,sizeof(long));
 
+  //DBG(F("SIG: compare luminosity, toCompare="));
+  //DBG(lumFrom);
+  //DBG(F("; stored="));
+  //DBGLN(dataStored);
+
 
   return compareNumber(dataStored.Value,operand,lumFrom,lumTo);
   
@@ -398,36 +404,40 @@ bool SignalHandler::compareLuminosity(LuminosityData& dataStored, SignalOperands
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 bool SignalHandler::compareHumidity(HumidityData& dataStored, SignalOperands operand, uint8_t* data, uint8_t dataLength)
 {
-    if(dataLength != 5)
+    if(dataLength < 6)
     {
       DBGLN(F("SIG: compareHumidity - MALFORMED DATA!"));
       return false;
     }
   
-  // dataLength у нас равно 5, и в зависимости от операнда - там либо одно значение, либо - попадание в диапазон
-  // в пятом байте - указание, чего сравниваем - влажность или температуру
-  if(data[4] == 1)
+  // dataLength у нас не меньше 6, и в зависимости от операнда - там либо одно значение, либо - попадание в диапазон
+  // в третьем байте - указание, чего сравниваем - влажность или температуру
+  if(data[2] == 1)
   {
+    //DBGLN(F("SIG: compare humidity humidity"));
+      
     // сравниваем влажность
-    return compareTemperature(dataStored.Humidity, operand, data, dataLength-1);
+    return compareTemperature(dataStored.Humidity, operand, data, dataLength);
   }
   else
   {
+    //DBGLN(F("SIG: compare humidity temperature"));
+
     // сравниваем температуру
-    return compareTemperature(dataStored.Temperature, operand, data, dataLength-1);
+    return compareTemperature(dataStored.Temperature, operand, data, dataLength);
   }
   
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 bool SignalHandler::compareTemperature(TemperatureData& dataStored, SignalOperands operand, uint8_t* data, uint8_t dataLength)
 {
-    if(dataLength != 4)
+    if(dataLength < 6)
     {
       DBGLN(F("SIG: compareTemperature - MALFORMED DATA!"));
       return false;
     }
   
-  // dataLength у нас равно 4, и в зависимости от операнда - там либо одно значение, либо - попадание в диапазон
+  // dataLength у нас не меньше 6, и в зависимости от операнда - там либо одно значение, либо - попадание в диапазон
 
   TemperatureData tempFrom, tempTo;
   tempFrom.Value = (int8_t) data[0]; // в первом байте - значение температуры в целых
@@ -435,11 +445,18 @@ bool SignalHandler::compareTemperature(TemperatureData& dataStored, SignalOperan
   // во втором байте - значение температуры в сотых
   tempFrom.Fract = data[1];
 
-  // в третьем байте - значение конечного диапазона температуры, в целых
-  tempTo.Value = (int8_t) data[2];
+  // третий байт - игнорируем, там признак для влажности стоит
+
+  // в четвёртом байте - значение конечного диапазона температуры, в целых
+  tempTo.Value = (int8_t) data[3];
   
-  // в четвёртом байте - значение конечного диапазона температуры, в сотых
-  tempTo.Fract = data[3];
+  // в пятом байте - значение конечного диапазона температуры, в сотых
+  tempTo.Fract = data[4];
+
+  //DBG(F("SIG: compare temperature, toCompare="));
+  //DBG(tempFrom);
+  //DBG(F("; stored="));
+  //DBGLN(dataStored);
 
   switch(operand)
   {
@@ -478,26 +495,40 @@ bool SignalHandler::compare(const String& sensorName, SignalOperands operand, ui
 
   if(operand == sopNone) // нет операнда
   {
-    DBGLN(F("SIG: No compare operand!"));
+    //DBGLN(F("SIG: No compare operand!"));
     return false;
   }
   
-  DBG(F("SIG: Compare, sensor="));
-  DBGLN(sensorName);
+  //DBG(F("SIG: Compare, sensor="));
+  //DBGLN(sensorName);
 
   // получаем данные из хранилища
   CoreStoredData dataStored = CoreDataStore.get(sensorName);
 
-  if(!dataStored.hasData() || !dataStored.sensor) // нет данных
+  if(!dataStored.hasData()) // нет данных
   {
     if(operand == sopCompareNoData) // если попросили сравнить с условием "с датчика нет данных" - считаем, что сигнал сработал
+    { 
+      if(dataStored.sensor)
+      {
+        return true;
+      }
+      else
+        return false;
+    }
+    else
+        return false;
+  }
+  else
+  {
+    // данные с датчика есть, и если нас попросили просто проверить на их наличие - возвращаем флаг
+    if(operand == sopCompareNoData)
       return true;
-    else  
-      return false;
   }
 
   // с датчика есть данные, можем их анализировать
-// получаем тип данных, который хранит железка определённого вида
+  // получаем тип данных, который хранит железка определённого вида
+  
     CoreSensorType st = dataStored.sensor->getType();
     CoreDataType typeOfData = CoreSensor::getDataType(st);
 
@@ -626,7 +657,7 @@ uint8_t Signal::get()
   if(byteNum >= CORE_SIGNAL_BYTES)
     return 0;
 
-  bool b = (signals[byteNum] & (1 << bitNum)) != 0;
+  bool b = (SIGNALS[byteNum] & (1 << bitNum)) != 0;
   return (b ? 1 : 0);
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -638,12 +669,12 @@ void Signal::set(uint8_t val)
   if(byteNum >= CORE_SIGNAL_BYTES)
     return;
 
-  byte b = signals[byteNum];
+  byte b = SIGNALS[byteNum];
   
   b &= ~(1 << bitNum);
   b |= (val << bitNum);
 
-  signals[byteNum] = b;
+  SIGNALS[byteNum] = b;
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void Signal::offset(uint8_t& byteNum, uint8_t& bitNum)
@@ -658,7 +689,8 @@ SignalsManager Signals;
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 SignalsManager::SignalsManager()
 {
-  reset();
+  memset(SIGNALS,0,sizeof(SIGNALS));
+  bPaused = false;
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Signal& SignalsManager::operator[](uint8_t signalNumber)
@@ -674,7 +706,8 @@ void SignalsManager::addRecord(uint16_t memoryAddress)
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void SignalsManager::reset()
 {
-  memset(signals,0,sizeof(signals));
+//  DBGLN(F("RESET SIGNALS!!!"));
+  memset(SIGNALS,0,sizeof(SIGNALS));
 
   // чистим список адресов
   while(addresses.size())
@@ -685,26 +718,50 @@ void SignalsManager::reset()
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void SignalsManager::begin()
 {
+  //reset();
+  
   //TODO: Тут настройка и пуск в работу!!!
+  
   updateTimer = millis();
+}
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+void SignalsManager::pause()
+{
+  bPaused = true;
+
+  //DBGLN(F("SIG: PAUSED!"));
+}
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+void SignalsManager::resume()
+{
+  bPaused = false;
+
+  //DBGLN(F("SIG: RESUMED!"));
+  
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void SignalsManager::update()
 {
+
+  if(bPaused) // нас поставили на паузу, не надо ничего обновлять: возможно, в этот момент перезаписывается конфиг.
+    return;
+  
   // Тут обновление сигналов
   unsigned long now = millis();
   if(now - updateTimer > CORE_SIGNALS_UPDATE_INTERVAL)
   {
     // пора обновлять сигналы
-    DBGLN(F("SIG: Update signals..."));
+   // DBGLN(F("SIG: Update signals..."));
 
     for(size_t i=0;i<addresses.size();i++)
     {
       SignalHandler handler(addresses[i]);
       handler.analyze();
+      
+      Core.yieldCritical();
     }
     
-    DBGLN(F("SIG: Signals updated."));
+ //   DBGLN(F("SIG: Signals updated."));
 
     updateTimer = millis();
   } // if

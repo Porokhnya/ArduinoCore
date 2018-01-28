@@ -94,6 +94,11 @@ struct LuminosityData
   bool operator>(const LuminosityData& rhs) {return Value > rhs.Value; }
   bool operator>=(const LuminosityData& rhs) {return Value >= rhs.Value; }
 
+  operator String()
+  {
+    return String(Value);
+  }
+
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -110,6 +115,11 @@ struct AnalogPortData
 
   bool operator>(const AnalogPortData& rhs) {return Value > rhs.Value; }
   bool operator>=(const AnalogPortData& rhs) {return Value >= rhs.Value; }
+
+  operator String()
+  {
+    return String(Value);
+  }
   
     
 };
@@ -127,6 +137,11 @@ struct DigitalPortData
 
   bool operator>(const DigitalPortData& rhs) {return Value > rhs.Value; }
   bool operator>=(const DigitalPortData& rhs) {return Value >= rhs.Value; }
+
+  operator String()
+  {
+    return String(Value);
+  }
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------

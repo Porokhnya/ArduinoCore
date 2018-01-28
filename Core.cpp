@@ -517,7 +517,7 @@ bool CoreConfigIterator::readRecord()
 
     case SignalRecord:
     {
-      DBGLN(F("SignalRecord"));
+      //DBGLN(F("SignalRecord"));
 
       uint8_t recordLength = read();
       
@@ -1156,6 +1156,11 @@ bool CoreClass::setCONFIGSTART()
 {
   configSaveAddress = CORE_STORE_ADDRESS;
   return true;
+
+  // поскольку у нас сигналы читаются напрямую из EEPROM - мы должны на время обновления конфига запретить им перечитывать данные
+  #ifdef CORE_SIGNALS_ENABLED
+    Signals.pause();
+  #endif  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::setCONFIGPART(const char* param)
@@ -1467,6 +1472,27 @@ bool CoreClass::getSTORAGE(const char* commandPassed, Stream* pStream)
   return true;  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::getSIGNALS(const char* commandPassed, Stream* pStream)
+{
+   if(commandPassed)
+  {
+      pStream->print(CORE_COMMAND_ANSWER_OK);
+      pStream->print(commandPassed);
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
+  }
+
+   #ifdef CORE_SIGNALS_ENABLED
+      for(uint8_t i=0;i<CORE_SIGNAL_BYTES;i++)
+      {
+        pStream->print(byteToHexString(SIGNALS[i]));
+      }
+   #endif
+
+   pStream->println();
+
+   return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::getCONFIG(const char* commandPassed, Stream* pStream)
 {
   if(commandPassed)
@@ -1679,6 +1705,9 @@ const char RESTART_COMMAND[] PROGMEM = "RESTART"; // перезапустить 
 const char LS_COMMAND[] PROGMEM = "LS"; // отдать список файлов
 const char FILE_COMMAND[] PROGMEM = "FILE"; // отдать содержимое файла
 #endif
+#ifdef CORE_SIGNALS_ENABLED
+const char SIGNALS_COMMAND[] PROGMEM = "SIG"; // получить статус сигналов
+#endif
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::processCommand(const String& command,Stream* pStream)
 {
@@ -1791,6 +1820,13 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
         {
           commandHandled = getSTORAGE(commandName,pStream);
         } // STORAGE_COMMAND
+        #ifdef CORE_SIGNALS_ENABLED
+        else
+        if(!strcmp_P(commandName, SIGNALS_COMMAND))
+        {
+          commandHandled = getSIGNALS(commandName,pStream);
+        } // STORAGE_COMMAND
+        #endif
         #ifdef CORE_SD_SUPPORT_ENABLED
         else
         if(!strcmp_P(commandName, LS_COMMAND)) // LS
@@ -2210,11 +2246,19 @@ void CoreClass::begin()
 
   #ifdef CORE_SIGNALS_ENABLED
     Signals.begin();
+    Signals.resume();
   #endif
 
   ON_CORE_BEGIN();
 
   printVersion(Serial);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreClass::yieldCritical()
+{
+  #ifdef CORE_ESP_TRANSPORT_ENABLED
+    ESP.update();
+  #endif  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::update()

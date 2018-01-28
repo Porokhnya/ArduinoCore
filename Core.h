@@ -202,6 +202,9 @@ class CoreClass
 	public:
 		CoreClass();
 
+
+    void yieldCritical(); // функция, вне очереди обновляющая критические части ядра (например, вычитку из порта ESP, чтобы данные не протухали)
+
     char FractDelimiter; // разделитель целой и дробной частей
     uint8_t TemperatureUnit; // вид измерения температуры (в цельсиях или фаренгейтах)
     unsigned long SensorsUpdateInterval; // интервал обновления показаний с датчиков
@@ -293,6 +296,9 @@ class CoreClass
    // Вернуть в поток конфиг, закодированный в HEX
    bool getCONFIG(const char* commandPassed, Stream* pStream);
 
+   // вернуть в поток состояние сигналов, закодированное в HEX
+   bool getSIGNALS(const char* commandPassed, Stream* pStream);
+
    // текущий адрес записи конфига
    uint16_t configSaveAddress; 
    // Начать запись конфига
@@ -334,6 +340,13 @@ struct CoreStoredData
   operator AnalogPortData() const; // возвращает данные, как состояние аналогового порта
   
   bool hasData() const {return data != NULL;}
+
+  CoreStoredData()
+  {
+    data = NULL;
+    dataSize = 0;
+    sensor = NULL;
+  }
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
