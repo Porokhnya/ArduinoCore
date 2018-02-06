@@ -292,11 +292,8 @@ class CoreUserDataSensor : public CoreSensor
   CoreUserDataSensor();
   ~CoreUserDataSensor();
 
-
-
   virtual void begin(uint8_t* configData); // инициализирует датчик
   virtual bool read(uint8_t* buffer); // читает с датчика, возвращает false в случае, если с датчика не удалось прочитать
-  //virtual bool isUserDataSensor() {return true; }
   
   virtual uint8_t getDataSize(); // возвращает размер данных буфера показаний с датчика
 

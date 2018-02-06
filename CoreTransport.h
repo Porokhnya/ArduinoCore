@@ -99,8 +99,7 @@ typedef struct
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef enum
 {
-  etConnected,      // соединено
-  etDisconnected,   // отсоединено
+  etConnect,      // соединено
   etDataWritten,    // данные записаны
   etDataAvailable   // доступны входящие данные
   
@@ -110,10 +109,9 @@ typedef enum
 //--------------------------------------------------------------------------------------------------------------------------------------
 struct IClientEventsSubscriber
 {
-  virtual void OnClientConnect(CoreTransportClient& client, int errorCode) = 0; // событие "Клиент соединён"
-  virtual void OnClientDisconnect(CoreTransportClient& client, int errorCode) = 0; // событие "Клиент отсоединён"
+  virtual void OnClientConnect(CoreTransportClient& client, bool connected, int errorCode) = 0; // событие "Статус соединения клиента"
   virtual void OnClientDataWritten(CoreTransportClient& client, int errorCode) = 0; // событие "Данные из клиента записаны в поток"
-  virtual void OnClientDataAvailable(CoreTransportClient& client) = 0; // событие "Для клиента поступили данные"
+  virtual void OnClientDataAvailable(CoreTransportClient& client, bool isDone) = 0; // событие "Для клиента поступили данные", флаг - все ли данные приняты
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 // класс асинхронного транспорта, предназначен для предоставления интерфейса неблокирующей работы с AT-прошивками железок,
@@ -161,13 +159,13 @@ protected:
   void unsubscribeClient(CoreTransportClient& client, IClientEventsSubscriber* subscriber);
 
   void setClientID(CoreTransportClient& client, uint8_t id);
-  void setClientData(CoreTransportClient& client,const uint8_t* data, size_t sz);
+  void setClientData(CoreTransportClient& client,uint8_t* data, size_t sz);
   void setClientBusy(CoreTransportClient& client,bool busy);
 
   // функции, косвенно вызывающие события на клиенте
   void setClientConnected(CoreTransportClient& client, bool connected, int errorCode);  
   void notifyClientDataWritten(CoreTransportClient& client, int errorCode);
-  void notifyClientDataAvailable(CoreTransportClient& client);
+  void notifyClientDataAvailable(CoreTransportClient& client, bool isDone);
   
     
   virtual void beginWrite(CoreTransportClient& client) = 0; // начинаем писать в транспорт с клиента
@@ -211,7 +209,7 @@ class CoreTransportClient
 
   void connect(const char* ip, uint16_t port);
   void disconnect();
-  void write(const uint8_t* buff, size_t sz);
+  void write(uint8_t* buff, size_t sz);
 
   bool busy(); // проверяет, занят ли клиент чем-либо  
 
@@ -233,7 +231,7 @@ class CoreTransportClient
     void setID(uint8_t id);
 
     // транспорт может дёргать эту функцию, чтобы установить данные в клиент
-    void setData(const uint8_t* buff, size_t sz);
+    void setData(uint8_t* buff, size_t sz, bool copy);
 
     // транспорт дёргает эту функцию, чтобы клиент сообщил подписчикам статус соединения
     void setConnected(bool isConnected, int errorCode);
@@ -242,7 +240,7 @@ class CoreTransportClient
     void notifyDataWritten(int errorCode);
 
     // транспорт дёргает эту функцию, чтобы клиент сообщил подписчикам, что в клиенте доступны данные
-    void notifyDataAvailable();
+    void notifyDataAvailable(bool isDone);
 
 
  private:
@@ -312,7 +310,6 @@ extern ESPTransportSettingsClass ESPTransportSettings;
 typedef enum
 {
   
-  actionNone,
   actionDisconnect, // запрошено отсоединение клиента
   actionConnect, // запрошено подсоединение клиента
   actionWrite, // запрошена запись из клиента в ESP
@@ -329,6 +326,59 @@ typedef struct
 } ESPClientQueueData; // данные по клиенту в очереди
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<ESPClientQueueData> ESPClientsQueue; // очередь клиентов на совершение какой-либо исходящей операции (коннект, дисконнект, запись)
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  bool ready                : 1; // флаг готовности
+  bool connectedToRouter    : 1; // флаг того, что заокннекчены к роутеру
+  bool isAnyAnswerReceived  : 1; // флаг, что мы получили хотя бы один ответ от модема
+  bool waitForDataWelcome   : 1; // флаг, что ждём приглашения на отсыл данных
+  bool wantReconnect        : 1; // флаг, что мы должны переподсоединиться к роутеру
+  bool onIdleTimer          : 1; // флаг, что мы в режиме простоя
+  
+} CoreESPTransportFlags;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  cmdNone, // ничего не делаем
+  cmdWantReady, // надо получить ready от модуля
+  cmdEchoOff, // выключаем эхо
+  cmdCWMODE, // переводим в смешанный режим
+  cmdCWSAP, // создаём точку доступа
+  cmdCWJAP, // коннектимся к роутеру
+  cmdCWQAP, // отсоединяемся от роутера
+  cmdCIPMODE, // устанавливаем режим работы
+  cmdCIPMUX, // разрешаем множественные подключения
+  cmdCIPSERVER, // запускаем сервер
+  cmdCheckModemHang, // проверяем на зависание модема 
+  cmdCIPCLOSE, // отсоединямся
+  cmdCIPSTART, // соединяемся
+  cmdCIPSEND, // начинаем слать данные
+  cmdWaitSendDone, // ждём окончания отсылки данных
+  
+} ESPCommands;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<ESPCommands> ESPCommandsList;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  espIdle,        // состояние "ничего не делаем"
+  espWaitAnswer,  // состояние "ждём ответа на команду, посланную ESP"
+  espReboot,      // состояние "ESP в процессе перезагрузки"
+  espWaitInit,    // ждём инициализации после подачи питания
+  
+} ESPMachineState;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  kaNone,
+  kaOK,             // OK
+  kaError,          // ERROR
+  kaFail,           // FAIL
+  kaSendOk,         // SEND OK
+  kaSendFail,       // SEND FAIL
+  
+} ESPKnownAnswer;
 //--------------------------------------------------------------------------------------------------------------------------------------
 class CoreESPTransport : public CoreTransport
 {
@@ -356,16 +406,42 @@ class CoreESPTransport : public CoreTransport
 
   private:
 
+
+      void restart();
+      void processIPD();
+
+      bool isESPBootFound(const String& line);
+      bool isKnownAnswer(const String& line, ESPKnownAnswer& result);
+
+      CoreESPTransportFlags flags; // флаги состояния
+      ESPMachineState machineState; // состояние конечного автомата
+
+      ESPCommands currentCommand;
+      ESPCommandsList initCommandsQueue; // очередь команд на инициализацию
+      unsigned long timer; // общий таймер
+      unsigned long idleTime; // время, которое нам надо подождать, ничего не делая
+      
+      void clearInitCommands();
+      void createInitCommands(bool addResetCommand);
+      
+      void sendCommand(const String& command, bool addNewLine=true);
+      void sendCommand(ESPCommands command);
+      
       Stream* workStream; // поток, с которым мы работаем (читаем/пишем в/из него)
+
+      String* wiFiReceiveBuff;
 
       // пул клиентов
       CoreTransportClient* clients[ESP_MAX_CLIENTS];
 
+
+      void clearClientsQueue(bool raiseEvents);
+
       ESPClientsQueue clientsQueue; // очередь действий с клиентами
 
-      bool isInQueue(ESPClientsQueue& queue,CoreTransportClient* client); // тестирует - не в очереди ли уже клиент?
-      void addToQueue(ESPClientsQueue& queue,CoreTransportClient* client, ESPClientAction action, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
-      void removeFromQueue(ESPClientsQueue& queue,CoreTransportClient* client); // удаляет клиента из очереди  
+      bool isClientInQueue(CoreTransportClient* client); // тестирует - не в очереди ли уже клиент?
+      void addClientToQueue(CoreTransportClient* client, ESPClientAction action, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
+      void removeClientFromQueue(CoreTransportClient* client); // удаляет клиента из очереди  
       
       void initClients();
     

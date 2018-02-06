@@ -515,6 +515,55 @@ bool CoreConfigIterator::readRecord()
     }
     return true; // ClusterIDRecord
 
+    case WatchdogRecord: // запись настроек ватчдога
+    {
+             
+       uint8_t b = read();
+       if(!writeOut(b))
+        CoreWatchdog.WatchdogEnabled = b;
+
+        b = read();
+       if(!writeOut(b))
+        CoreWatchdog.WatchdogPin = b;
+
+        uint16_t interval = 0;
+        byte* writePtr = (byte*)&interval;
+        bool shouldSave = false;
+        
+        for(int i=0;i<2;i++)
+        {
+          b = read();
+          if(!writeOut(b))
+          {
+              shouldSave = true;
+             *writePtr++ = b;
+          }
+        } // for
+
+        if(shouldSave)
+        {
+          CoreWatchdog.WatchdogInterval = interval;
+        }
+
+        writePtr = (byte*)&interval;
+        for(int i=0;i<2;i++)
+        {
+          b = read();
+          if(!writeOut(b))
+          {
+              shouldSave = true;
+             *writePtr++ = b;
+          }
+        } // for
+        
+        if(shouldSave)
+        {
+          CoreWatchdog.WatchdogPulseDuration = interval;
+        }
+      
+    }
+    return true;
+
     case SignalRecord:
     {
       //DBGLN(F("SignalRecord"));
@@ -1128,6 +1177,9 @@ void CoreClass::reset()
   #ifdef CORE_SIGNALS_ENABLED
     Signals.reset();
   #endif
+
+  // сбрасываем настройки ватчдога по умолчанию
+  CoreWatchdog.reset();
   
   
   // очищаем сигналы
@@ -2204,11 +2256,11 @@ void CoreClass::begin()
     
     #ifdef CORE_SD_USE_SDFAT
     
-     // DBGLN(F("Init SD using SdFat..."));
+      DBGLN(F("Init SD using SdFat..."));
       
       if(SD.begin(SDSettings.CSPin, CORE_SD_SDFAT_SPEED))
       {
-       // DBGLN(F("SD inited."));
+        DBGLN(F("SD inited."));
       }
       else
       {
@@ -2216,11 +2268,11 @@ void CoreClass::begin()
       }
     #else
     
-     // DBGLN(F("Init SD..."));
+      DBGLN(F("Init SD..."));
       
       if(SD.begin(SDSettings.CSPin))
       {
-      //   DBGLN(F("SD inited."));
+         DBGLN(F("SD inited."));
       }
       else
       {
@@ -2256,6 +2308,8 @@ void CoreClass::begin()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::yieldCritical()
 {
+  CoreWatchdog.update();
+  
   #ifdef CORE_ESP_TRANSPORT_ENABLED
     ESP.update();
   #endif  
@@ -2276,6 +2330,8 @@ void CoreClass::update()
       
     return;
   }
+
+  CoreWatchdog.update();
 
   #ifdef CORE_RS485_TRANSPORT_ENABLED
     // обновляем транспорт RS-485
@@ -2730,6 +2786,47 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
   return result;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+// WatchdogSettingsClass
 //--------------------------------------------------------------------------------------------------------------------------------------
+WatchdogSettingsClass CoreWatchdog;
 //--------------------------------------------------------------------------------------------------------------------------------------
+void WatchdogSettingsClass::reset()
+{
+  WatchdogEnabled = false;
+  WatchdogPin = 0;
+  WatchdogInterval = 0;
+  WatchdogPulseDuration = 0;
+}
 //--------------------------------------------------------------------------------------------------------------------------------------
+void WatchdogSettingsClass::update()
+{
+  if(!WatchdogEnabled)
+    return;
+
+    static bool waitForHigh = true;
+    static unsigned long watchdogTimer = 0;
+
+    unsigned long wantedInterval = waitForHigh ? WatchdogInterval : WatchdogPulseDuration;
+    
+    if(millis() - watchdogTimer > wantedInterval)
+    {
+      /*
+      if(waitForHigh)
+      {
+        DBGLN(F("Watchdog HIGH!"));
+      }
+      else
+      {
+        DBGLN(F("Watchdog LOW!"));        
+      }
+      */
+      pinMode(WatchdogPin,OUTPUT);
+      digitalWrite(WatchdogPin, waitForHigh ? HIGH : LOW); 
+      waitForHigh = !waitForHigh;
+      watchdogTimer = millis();      
+    }
+
+      
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+
