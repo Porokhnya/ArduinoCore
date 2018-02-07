@@ -339,6 +339,9 @@ HardwareSerial* CoreRS485::getMyStream(uint8_t SerialNumber)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::begin()
 {  
+
+  workStream = NULL;
+  
   if(RS485Settings.SerialNumber == 0 || RS485Settings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
     return;
 
@@ -2067,6 +2070,9 @@ void CoreESPTransport::update()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::begin()
 {
+
+  workStream = NULL;
+  
   if(ESPTransportSettings.SerialNumber == 0 || ESPTransportSettings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
     return;
   

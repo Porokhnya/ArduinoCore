@@ -407,14 +407,14 @@ struct WatchdogSettingsClass
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern WatchdogSettingsClass CoreWatchdog;
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef void (*CoreSignalHandler)(void* param);
+typedef void (*CoreDelayedEventHandler)(void* param);
 //--------------------------------------------------------------------------------------------------------------------------------------
-struct CoreSignalPinChangeArg
+struct CoreDelayedEventPinChangeArg
 {
   uint8_t pin;
   uint8_t level;
   
-  CoreSignalPinChangeArg(uint8_t p, uint8_t l)
+  CoreDelayedEventPinChangeArg(uint8_t p, uint8_t l)
   {
     pin = p;
     level = l;
@@ -426,29 +426,29 @@ typedef struct
   unsigned long timer;
   unsigned long duration;
   void* param;
-  CoreSignalHandler handler;
+  CoreDelayedEventHandler handler;
   
-} CoreSignalRecord;
+} CoreDelayedEventData;
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef Vector<CoreSignalRecord> CoreSignalsList;
+typedef Vector<CoreDelayedEventData> CoreDelayedEventsList;
 //--------------------------------------------------------------------------------------------------------------------------------------
-class CoreSignalClass
+class CoreDelayedEventClass
 {
   public:
-    CoreSignalClass();
+    CoreDelayedEventClass();
 
     void update();
-    void raise(unsigned long raiseDelay,CoreSignalHandler handler, void* param);
+    void raise(unsigned long raiseDelay,CoreDelayedEventHandler handler, void* param);
 
-    static void CoreSignalPinChange(void* param);
+    static void CoreDelayedEventPinChange(void* param);
 
   private:
 
-    CoreSignalsList signals;
+    CoreDelayedEventsList signals;
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
-extern CoreSignalClass CoreSignal;
+extern CoreDelayedEventClass CoreDelayedEvent;
 //--------------------------------------------------------------------------------------------------------------------------------------
 #define CORE_HEADER1 0xE1
 #define CORE_HEADER2 0xED

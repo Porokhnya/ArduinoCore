@@ -1999,7 +1999,7 @@ bool CoreClass::setPIN(CommandParser& parser, Stream* pStream)
   if(parser.argsCount() > 3)
   {
     unsigned long raiseDelay = atol(parser.getArg(3));
-    CoreSignal.raise(raiseDelay,CoreSignalClass::CoreSignalPinChange,(void*) new CoreSignalPinChangeArg(pinNumber,!isHigh));
+    CoreDelayedEvent.raise(raiseDelay,CoreDelayedEventClass::CoreDelayedEventPinChange,(void*) new CoreDelayedEventPinChangeArg(pinNumber,!isHigh));
   }
   
 
@@ -2382,7 +2382,7 @@ void CoreClass::update()
   }
 
   CoreWatchdog.update();
-  CoreSignal.update();
+  CoreDelayedEvent.update();
 
   #ifdef CORE_RS485_TRANSPORT_ENABLED
     // обновляем транспорт RS-485
@@ -2880,16 +2880,16 @@ void WatchdogSettingsClass::update()
       
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-CoreSignalClass CoreSignal;
+CoreDelayedEventClass CoreDelayedEvent;
 //--------------------------------------------------------------------------------------------------------------------------------------
-CoreSignalClass::CoreSignalClass()
+CoreDelayedEventClass::CoreDelayedEventClass()
 {
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreSignalClass::raise(unsigned long raiseDelay,CoreSignalHandler handler, void* param)
+void CoreDelayedEventClass::raise(unsigned long raiseDelay,CoreDelayedEventHandler handler, void* param)
 {
-  CoreSignalRecord rec;
+  CoreDelayedEventData rec;
   rec.timer = millis();
   rec.duration = raiseDelay;
   rec.handler = handler;
@@ -2898,7 +2898,7 @@ void CoreSignalClass::raise(unsigned long raiseDelay,CoreSignalHandler handler, 
   signals.push_back(rec);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreSignalClass::update()
+void CoreDelayedEventClass::update()
 {
     for(size_t i=0;i<signals.size();)
     {
@@ -2922,11 +2922,9 @@ void CoreSignalClass::update()
     } // for
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreSignalClass::CoreSignalPinChange(void* param)
+void CoreDelayedEventClass::CoreDelayedEventPinChange(void* param)
 {
-  DBGLN(F("SIGNAL: pin change!"));
-  CoreSignalPinChangeArg* arg = (CoreSignalPinChangeArg*) param;
-
+  CoreDelayedEventPinChangeArg* arg = (CoreDelayedEventPinChangeArg*) param;
   pinMode(arg->pin,OUTPUT);
   digitalWrite(arg->pin,arg->level);
 
