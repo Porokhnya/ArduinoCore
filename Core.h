@@ -407,6 +407,49 @@ struct WatchdogSettingsClass
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern WatchdogSettingsClass CoreWatchdog;
 //--------------------------------------------------------------------------------------------------------------------------------------
+typedef void (*CoreSignalHandler)(void* param);
+//--------------------------------------------------------------------------------------------------------------------------------------
+struct CoreSignalPinChangeArg
+{
+  uint8_t pin;
+  uint8_t level;
+  
+  CoreSignalPinChangeArg(uint8_t p, uint8_t l)
+  {
+    pin = p;
+    level = l;
+  }
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  unsigned long timer;
+  unsigned long duration;
+  void* param;
+  CoreSignalHandler handler;
+  
+} CoreSignalRecord;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<CoreSignalRecord> CoreSignalsList;
+//--------------------------------------------------------------------------------------------------------------------------------------
+class CoreSignalClass
+{
+  public:
+    CoreSignalClass();
+
+    void update();
+    void raise(unsigned long raiseDelay,CoreSignalHandler handler, void* param);
+
+    static void CoreSignalPinChange(void* param);
+
+  private:
+
+    CoreSignalsList signals;
+  
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern CoreSignalClass CoreSignal;
+//--------------------------------------------------------------------------------------------------------------------------------------
 #define CORE_HEADER1 0xE1
 #define CORE_HEADER2 0xED
 #define CORE_HEADER3 0x9F

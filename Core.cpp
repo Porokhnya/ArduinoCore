@@ -1783,7 +1783,7 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
         else
         if(!strcmp_P(commandName, PIN_COMMAND))
         {
-            // запросили установить уровень на пине SET=PIN|13|ON, SET=PIN|13|1, SET=PIN|13|OFF, SET=PIN|13|0
+            // запросили установить уровень на пине SET=PIN|13|ON, SET=PIN|13|1, SET=PIN|13|OFF, SET=PIN|13|0, SET=PIN|13|ON|2000 
             if(cParser.argsCount() > 2)
             {
               commandHandled = setPIN(cParser, pStream);
@@ -1994,6 +1994,13 @@ bool CoreClass::setPIN(CommandParser& parser, Stream* pStream)
   pStream->print(pinNumber);
   pStream->print(CORE_COMMAND_PARAM_DELIMITER);
   pStream->println(level);
+
+  // если есть ещё один параметр - значит, надо держать сигнал определённое время, например, SET=PIN|13|ON|2000
+  if(parser.argsCount() > 3)
+  {
+    unsigned long raiseDelay = atol(parser.getArg(3));
+    CoreSignal.raise(raiseDelay,CoreSignalClass::CoreSignalPinChange,(void*) new CoreSignalPinChangeArg(pinNumber,!isHigh));
+  }
   
 
   return true;
@@ -2238,7 +2245,7 @@ void CoreClass::updateTimers()
 {
   unsigned long curMillis = millis();
   
-  for(size_t i = 0;i < sensorTimers.size(); i++)
+  for(size_t i = 0;i < sensorTimers.size();)
   {
     if(curMillis - sensorTimers[i].startTimer > sensorTimers[i].timerDelay)
     {
@@ -2258,6 +2265,8 @@ void CoreClass::updateTimers()
     } // if
     else
     {
+      i++;
+       
       // время конвертации не закончилось, надо обновить датчик, вдруг он внутри себя что-то захочет сделать, во время конвертации,
       // например, если датчику требуется 10 семплов за 10 секунд - он при вызове startMeasure может взводить таймер, а в вызовах
       // update проверять, и каждую секунду делать семпл
@@ -2373,6 +2382,7 @@ void CoreClass::update()
   }
 
   CoreWatchdog.update();
+  CoreSignal.update();
 
   #ifdef CORE_RS485_TRANSPORT_ENABLED
     // обновляем транспорт RS-485
@@ -2868,6 +2878,59 @@ void WatchdogSettingsClass::update()
     }
 
       
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreSignalClass CoreSignal;
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreSignalClass::CoreSignalClass()
+{
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSignalClass::raise(unsigned long raiseDelay,CoreSignalHandler handler, void* param)
+{
+  CoreSignalRecord rec;
+  rec.timer = millis();
+  rec.duration = raiseDelay;
+  rec.handler = handler;
+  rec.param = param;
+  
+  signals.push_back(rec);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSignalClass::update()
+{
+    for(size_t i=0;i<signals.size();)
+    {
+        if(millis() - signals[i].timer > signals[i].duration)
+        {
+          // сигнал сработал
+          if(signals[i].handler)
+            signals[i].handler(signals[i].param);
+
+          for(size_t j=i+1; j< signals.size(); j++)
+          {
+            signals[j-1] = signals[j];
+          }
+
+          signals.pop();
+        } // if
+        else
+        {
+          i++;
+        }
+    } // for
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSignalClass::CoreSignalPinChange(void* param)
+{
+  DBGLN(F("SIGNAL: pin change!"));
+  CoreSignalPinChangeArg* arg = (CoreSignalPinChangeArg*) param;
+
+  pinMode(arg->pin,OUTPUT);
+  digitalWrite(arg->pin,arg->level);
+
+  delete arg;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 
