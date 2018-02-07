@@ -7,7 +7,7 @@
 #include "CoreArray.h"
 #include "CoreSensor.h"
 #include "CoreTransport.h"
-#include "CorePinStateAction.h"
+#include "CorePinScenario.h"
 #include "LoRa.h"
 #include "Signals.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
