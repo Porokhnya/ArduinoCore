@@ -1927,6 +1927,7 @@ void CoreESPTransport::update()
                      {
                         if(ESPTransportSettings.Flags.ConnectToRouter)
                         {
+                          DBGLN(F("ESP: No connect to router, want to reconnect..."));
                           // нет соединения с роутером, надо переподсоединиться, как только это будет возможно.
                           flags.wantReconnect = true;
                         }
@@ -2273,7 +2274,7 @@ void CoreESPTransport::initClients()
   for(int i=0;i<ESP_MAX_CLIENTS;i++)
   {
     if(clients[i])
-      clients[i]->Destroy();
+      continue;
       
     CoreTransportClient* client = CoreTransportClient::Create(this);
     setClientID(*client,i);
