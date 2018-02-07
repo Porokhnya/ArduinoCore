@@ -307,6 +307,9 @@ class CoreClass
    // Записать часть конфига - куски по 50 байт
    bool setCONFIGPART(const char* param);
 
+   // команда установки уровня на пине
+   bool setPIN(CommandParser& parser, Stream* outStream);
+
    // команды для SD
    #ifdef CORE_SD_SUPPORT_ENABLED
     bool getLS(const char* commandPassed, const CommandParser& parser, Stream* pStream);

@@ -1753,6 +1753,7 @@ const char CONFIGSTART_COMMAND[] PROGMEM = "CONFIG_START"; // начать со�
 const char CONFIGPART_COMMAND[] PROGMEM = "CONFIG_PART"; // записать часть конфига
 const char STORAGE_COMMAND[] PROGMEM = "STORAGE"; // получить показания со всех датчиков хранилища
 const char RESTART_COMMAND[] PROGMEM = "RESTART"; // перезапустить ядро
+const char PIN_COMMAND[] PROGMEM = "PIN"; // установить уровень на пине
 #ifdef CORE_SD_SUPPORT_ENABLED
 const char LS_COMMAND[] PROGMEM = "LS"; // отдать список файлов
 const char FILE_COMMAND[] PROGMEM = "FILE"; // отдать содержимое файла
@@ -1780,10 +1781,24 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
             commandHandled = printBackSETResult(setRESTART(),commandName,pStream);
         } // RESTART_COMMAND
         else
+        if(!strcmp_P(commandName, PIN_COMMAND))
+        {
+            // запросили установить уровень на пине SET=PIN|13|ON, SET=PIN|13|1, SET=PIN|13|OFF, SET=PIN|13|0
+            if(cParser.argsCount() > 2)
+            {
+              commandHandled = setPIN(cParser, pStream);
+            }
+            else
+            {
+              // недостаточно параметров
+              commandHandled = printBackSETResult(false,commandName,pStream);
+            }
+        } // PIN_COMMAND        
+        else
         if(!strcmp_P(commandName, CONFIGSTART_COMMAND))
         {
             // запросили начать запись конфига
-            commandHandled = printBackSETResult(setCONFIGSTART(),commandName,pStream);
+              commandHandled = printBackSETResult(setCONFIGSTART(),commandName,pStream);
         } // CONFIGSTART_COMMAND
         else
         if(!strcmp_P(commandName, CONFIGPART_COMMAND))
@@ -1957,6 +1972,32 @@ bool CoreClass::getLS(const char* commandPassed, const CommandParser& parser, St
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_SD_SUPPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::setPIN(CommandParser& parser, Stream* pStream)
+{
+
+  if(parser.argsCount() < 3)
+    return false;
+  
+  int pinNumber = atoi(parser.getArg(1));
+  const char* level = parser.getArg(2);
+  
+  bool isHigh = !strcasecmp_P(level,(const char*) F("ON")) || *level == '1';
+
+  pinMode(pinNumber,OUTPUT);
+  digitalWrite(pinNumber,isHigh);
+
+  pStream->print(CORE_COMMAND_ANSWER_OK);
+
+  pStream->print(parser.getArg(0));
+  pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+  pStream->print(pinNumber);
+  pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+  pStream->println(level);
+  
+
+  return true;
+}
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::setRESTART()
 {
