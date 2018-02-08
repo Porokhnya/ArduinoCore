@@ -17,6 +17,7 @@ bool CoreCommandBuffer::hasCommand()
     while(pStream->available())
     {
       ch = pStream->read();
+            
       if(ch == '\r' || ch == '\n')
       {
         return strBuff->length() > 0; // вдруг лишние управляющие символы придут в начале строки?

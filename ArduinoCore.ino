@@ -65,8 +65,9 @@ CorePinScenario scene; // сценарий мигания светодиодом
 //--------------------------------------------------------------------------------------------------------------------------------------
 void setup() 
 {
-  Serial.begin(CORE_COMMUNICATION_SPEED);  
-  
+ 
+  Serial.begin(CORE_COMMUNICATION_SPEED);
+
   // все необработанные данные из Serial будут перенаправлены в функцию unhandledCommandHandler
   Core.setup(unhandledCommandHandler);
   
@@ -79,6 +80,7 @@ void setup()
 
   // говорим ядру, чтобы начинало работу
   Core.begin();
+
 
 /*
   // моргаем светодиодом по сценарию, по кругу

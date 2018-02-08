@@ -2014,7 +2014,6 @@ bool CoreClass::setRESTART()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::handleCommands()
 {
-
   if(Commands.hasCommand())
   {
 
@@ -2305,17 +2304,33 @@ void CoreClass::begin()
 
     
     #ifdef CORE_SD_USE_SDFAT
+
+      bool sdInited = false;
     
       DBGLN(F("Init SD using SdFat..."));
       
-      if(SD.begin(SDSettings.CSPin, CORE_SD_SDFAT_SPEED))
+      delay(400);
+      
+      for(int i=0;i<5;i++)
       {
-        DBGLN(F("SD inited."));
-      }
-      else
-      {
-         DBGLN(F("SD init error!"));
-      }
+        if(SD.begin(SDSettings.CSPin, CORE_SD_SDFAT_SPEED))
+        {
+          sdInited = true;
+          break;
+        }
+        else
+          delay(500);
+       
+      } // for
+
+        if(sdInited)
+        {
+          DBGLN(F("SD inited."));
+        }
+        else
+        {
+           DBGLN(F("SD init error!"));
+        }      
     #else
     
       DBGLN(F("Init SD..."));
