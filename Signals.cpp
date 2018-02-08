@@ -217,7 +217,7 @@ void SignalHandler::executeActions(SignalActionsList& actions)
           uint8_t signalNumber = oneAction->actionData[0];
          // DBG(F("SIG: saRaiseSignal action, signal #"));
          // DBGLN(signalNumber);
-          Signals[signalNumber] = 1;
+          Signals[signalNumber] = (uint8_t) 1;
         }
       }
       break;
@@ -234,7 +234,7 @@ void SignalHandler::executeActions(SignalActionsList& actions)
           uint8_t signalNumber = oneAction->actionData[0];
           //DBG(F("SIG: saResetSignal action, signal #"));
          // DBGLN(signalNumber);
-          Signals[signalNumber] = 0;          
+          Signals[signalNumber] = (uint8_t) 0;          
         }
         
       }
