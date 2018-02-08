@@ -282,6 +282,7 @@ typedef struct
 //--------------------------------------------------------------------------------------------------------------------------------------
 struct ESPTransportSettingsClass
 {
+  bool enabled;
   ESPTransportSettingsFlags Flags; // флаги
   
   String APName; // имя точки доступа
@@ -460,6 +461,7 @@ extern CoreESPTransport ESP;
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
+  bool enabled;
   uint8_t UARTSpeed; // скорость работы с RS-485 (1 - 9600, 2 - 19200, 4 - 38400, 6 - 57600, 12 - 115200)
   uint8_t SerialNumber; // номер Serial, который используется для работы с RS-485 (1 - Serial1, 2 - Serial2, 3 - Serial 3)
   uint8_t DEPin; // пин управления приёмом/передачей по RS-485

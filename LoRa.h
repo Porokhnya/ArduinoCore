@@ -97,6 +97,7 @@ extern LoRaClass LoRa;
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
+  bool enabled;
   uint8_t frequency;
   uint8_t ss;
   uint8_t reset;

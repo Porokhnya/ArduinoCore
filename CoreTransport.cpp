@@ -341,6 +341,9 @@ void CoreRS485::begin()
 {  
 
   workStream = NULL;
+
+  if(!RS485Settings.enabled)
+    return;
   
   if(RS485Settings.SerialNumber == 0 || RS485Settings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
     return;
@@ -1003,6 +1006,8 @@ void CoreRS485::addToExcludedList(uint8_t clientNumber)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::update()
 {
+  if(!RS485Settings.enabled)
+    return;  
   
   if(!workStream) // нет буфера для данных или неизвестный Serial
     return;
@@ -1023,6 +1028,9 @@ void CoreRS485::update()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::reset()
 {
+  if(!RS485Settings.enabled)
+    return;
+  
   /*
   // тут очищаем наши данные
   delete [] dataBuffer;
@@ -1422,6 +1430,10 @@ void CoreESPTransport::processIPD()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::update()
 {
+  if(!ESPTransportSettings.enabled)
+    return;
+
+  
   if(!workStream)
     return;
 
@@ -2072,6 +2084,9 @@ void CoreESPTransport::begin()
 {
 
   workStream = NULL;
+
+  if(!ESPTransportSettings.enabled)
+    return;
   
   if(ESPTransportSettings.SerialNumber == 0 || ESPTransportSettings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
     return;

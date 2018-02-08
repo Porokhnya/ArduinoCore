@@ -541,6 +541,9 @@ LoraDispatcherClass::LoraDispatcherClass()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void LoraDispatcherClass::begin()
 {
+    if(!LoRaSettings.enabled)
+      return;
+  
     int8_t reset = LoRaSettings.reset == 0xFF ? -1 : LoRaSettings.reset;
 
     LoRa.setPins(LoRaSettings.ss, reset, LoRaSettings.dio);
@@ -622,6 +625,10 @@ void LoraDispatcherClass::begin()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void LoraDispatcherClass::update()
 {
+    if(!LoRaSettings.enabled)
+      return;
+
+  
   #ifndef CORE_LORA_DISABLE_CORE_LOGIC
   
     if(LoRaSettings.isMasterMode)
@@ -638,6 +645,8 @@ void LoraDispatcherClass::update()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void LoraDispatcherClass::reset()
 {
+  if(!LoRaSettings.enabled)
+    return;
 
   LoRaSettings.retransmitCount = CORE_LORA_RETRANSMIT_COUNT;
   LoRaSettings.sendDuration = CORE_LORA_SEND_DURATION;

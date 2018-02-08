@@ -620,18 +620,13 @@ bool CoreConfigIterator::readRecord()
 
     case ESPSettingsRecord: // данные о настройках ESP
     {
-
-      #ifdef _CORE_DEBUG
-        if(!outStream)
-        {      
-      //    DBGLN(F("ESP SETTINGS FOUND !!!"));
-        }
-      #endif  
       
       char symbol = '\0';
 
       // имя точки доступа (набор байт, заканчивающийся нулевым байтом)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
+      
+      ESPTransportSettings.enabled = true;
       
         // сохраняем
         if(!outStream)
@@ -890,16 +885,13 @@ bool CoreConfigIterator::readRecord()
 
     case RS485SettingsRecord: // данные о настройках RS485
     {
+
       
-      #ifdef _CORE_DEBUG
-        if(!outStream)
-        {      
-         //   DBGLN(F("RS485 SETTINGS FOUND!!!"));
-        }
-      #endif
       
       #ifdef CORE_RS485_TRANSPORT_ENABLED
 
+        RS485Settings.enabled = true;
+        
         uint8_t b = read();
         if(!writeOut(b))
           RS485Settings.UARTSpeed = b;
@@ -973,14 +965,10 @@ bool CoreConfigIterator::readRecord()
 
     case LoRaSettingsRecord:
     {
-      #ifdef _CORE_DEBUG
-        if(!outStream)
-        {      
-         //   DBGLN(F("LoRa SETTINGS FOUND!!!"));
-        }
-      #endif
-      
+            
       #ifdef CORE_LORA_TRANSPORT_ENABLED
+        LoRaSettings.enabled = true;
+        
         uint8_t loraB = read();
         if(!writeOut(loraB))
           LoRaSettings.frequency = loraB;
@@ -2302,6 +2290,9 @@ void CoreClass::begin()
   
     SDSettings.CSPin = CORE_SD_CS_PIN;
 
+    
+    pinMode(SDSettings.CSPin,OUTPUT);
+    digitalWrite(SDSettings.CSPin,LOW);
     
     #ifdef CORE_SD_USE_SDFAT
 

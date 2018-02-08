@@ -16,7 +16,7 @@ bool CoreCommandBuffer::hasCommand()
     char ch;
     while(pStream->available())
     {
-      ch = pStream->read();
+      ch = (char) pStream->read();
             
       if(ch == '\r' || ch == '\n')
       {
