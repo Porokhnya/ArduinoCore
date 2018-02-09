@@ -2680,7 +2680,10 @@ void CoreESPWebServerClass::processQuery(CoreTransportClient* client, char* quer
     // теперь посмотрим, не команда ли это к ядру?
     if(uri.startsWith(CORE_COMMAND_SET) || uri.startsWith(CORE_COMMAND_GET))
     {
-      // меняем слеши наразделители команд
+      // меняем слеши наразделители команд, т.е. мы можем обрабатывать два типа команд:
+      // GET=ESP|IP, где | кодируется как последовательность %7С, и
+      // GET=ESP/IP
+      
       uri.replace("/",CORE_COMMAND_PARAM_DELIMITER);
       
       // это команда к ядру, выполняем её
