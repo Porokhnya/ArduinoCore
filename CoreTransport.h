@@ -209,7 +209,7 @@ class CoreTransportClient
 
   void connect(const char* ip, uint16_t port);
   void disconnect();
-  void write(uint8_t* buff, size_t sz);
+  bool write(uint8_t* buff, size_t sz, bool takeBufferOwnership=false);
 
   bool busy(); // проверяет, занят ли клиент чем-либо  
 
@@ -470,6 +470,21 @@ typedef struct
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<CoreWebServerQuery> CoreWebServerQueries;
 //--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  int pendingBytes;
+  CoreTransportClient* client;
+  
+} CoreWebServerPendingFileData;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<CoreWebServerPendingFileData> CoreWebServerPendingFiles;
+//--------------------------------------------------------------------------------------------------------------------------------------
+#define WEB_HEADER_BEGIN F("HTTP/1.1 ")
+#define WEB_HEADER_CONNECTION F("Connection: close")
+#define WEB_HEADER_CONTENT_TYPE F("Content-Type: ")
+#define WEB_HEADER_CONTENT_LENGTH F("Content-Length: ")
+#define WEB_HEADER_LINE F("\r\n")
+//--------------------------------------------------------------------------------------------------------------------------------------
 class CoreESPWebServerClass : public IClientEventsSubscriber, public Stream
 {
   public:
@@ -495,8 +510,14 @@ class CoreESPWebServerClass : public IClientEventsSubscriber, public Stream
     CoreWebServerQuery* getPendingQuery(CoreTransportClient* client);
 
     void processQuery(CoreTransportClient* client, char* query);
+    void processURI(CoreTransportClient* client, String& uri);
 
     String* internalBuffer;
+    
+    CoreWebServerPendingFiles pendingFiles;
+    CoreWebServerPendingFileData* getPendingFileData(CoreTransportClient* client);
+    void removePendingFileData(CoreTransportClient* client);
+    void sendNextFileData(CoreWebServerPendingFileData* pfd);
     
 };
 //--------------------------------------------------------------------------------------------------------------------------------------

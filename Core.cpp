@@ -1856,6 +1856,12 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
           commandHandled = getSENSORS(commandName,pStream);
                     
         } // SENSORS_COMMAND
+         else
+        if(!strcmp_P(commandName, PIN_COMMAND))
+        {
+            commandHandled = getPIN(commandName,cParser,pStream);                    
+          
+        } // PIN_COMMAND       
         else
         if(!strcmp_P(commandName, FEATURES_COMMAND))
         {
@@ -2082,6 +2088,25 @@ bool CoreClass::getLS(const char* commandPassed, const CommandParser& parser, St
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_SD_SUPPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::getPIN(const char* commandPassed, const CommandParser& parser, Stream* pStream)
+{
+  if(parser.argsCount() < 2)
+    return false;  
+
+   int pinNumber = atoi(parser.getArg(1));   
+   int pinState = getPinState(pinNumber);
+
+  pStream->print(CORE_COMMAND_ANSWER_OK);
+
+  pStream->print(commandPassed);
+  pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+  pStream->print(pinNumber);
+  pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+  pStream->println(pinState ? F("HIGH") : F("LOW"));   
+
+  return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::setPIN(CommandParser& parser, Stream* pStream)
 {
 
@@ -2271,68 +2296,84 @@ int CoreClass::getPinMode(int p)
    if (p > max_pin) 
        return -1;
 
-#if TARGET_BOARD == DUE_BOARD
-Pio*
-#else
-uint8_t 
+#if (TARGET_BOARD == MEGA_BOARD)
+
+  uint8_t port = digitalPinToPort(p);
+  uint8_t portBit  = digitalPinToBitMask(p);
+  volatile uint8_t* mode =    portModeRegister(port);
+  volatile uint8_t* out = portOutputRegister(port);
+     
+  if ((*mode) & portBit)
+  {
+    return OUTPUT;
+  }
+  else
+  {     
+    if( (*out) & portBit )
+    { 
+      return INPUT;
+    }
+    else
+    { 
+      return INPUT;
+    }
+  }
+#elif (TARGET_BOARD == DUE_BOARD)
+
+  if((g_pinStatus[p] & 0xF) == PIN_STATUS_DIGITAL_INPUT)
+  {
+    DBGLN("INPUT");
+    return INPUT;
+  }
+  else
+  if((g_pinStatus[p] & 0xF) == PIN_STATUS_DIGITAL_INPUT_PULLUP)
+  {
+    DBGLN("INPUT");
+    return INPUT;
+  }
+ else
+ if((g_pinStatus[p] & 0xF) == PIN_STATUS_DIGITAL_OUTPUT)
+ {
+    DBGLN("OUTPUT");
+    return OUTPUT;
+ }
+
+  return INPUT;
+    
 #endif
-   port = digitalPinToPort(p);
-   
-uint8_t portBit  = digitalPinToBitMask(p);
 
-
-   volatile 
-#if TARGET_BOARD == DUE_BOARD
-  WoReg*
-#else   
-   uint8_t*
-#endif   
-   mode = 
-#if TARGET_BOARD == DUE_BOARD
-  (&(port->PIO_PER));
-#else   
-   portModeRegister(port);
-#endif   
-
-   return ((*mode & portBit) != 0);
+return -1;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 int CoreClass::getPinState(int pin)
 {
+#if (TARGET_BOARD == MEGA_BOARD)
+  
   int mode = getPinMode(pin);
   if(mode == -1)
     return mode;
 
-#if TARGET_BOARD == DUE_BOARD
-Pio*
-#else
-uint8_t 
-#endif
-  port = digitalPinToPort(pin);
+  uint8_t port = digitalPinToPort(pin);
   uint8_t portBit = digitalPinToBitMask(pin);
 
   if(mode == INPUT)
   {
-    volatile 
-#if TARGET_BOARD == DUE_BOARD
-    RoReg*
-#else    
-    uint8_t* 
-#endif    
-    pir = portInputRegister(port);
-    return (*pir & portBit) == LOW ? LOW : HIGH;    
+    volatile uint8_t* pir = portInputRegister(port);
+    return (*pir & portBit) ? HIGH : LOW;    
   }
   else
   {
-    volatile 
-#if TARGET_BOARD == DUE_BOARD
-    RoReg*
-#else    
-    uint8_t* 
-#endif    
-    por = portOutputRegister(port);
-    return (*por & portBit) == LOW ? LOW : HIGH;        
+    volatile uint8_t* por = portOutputRegister(port);
+    return (*por & portBit) ? HIGH : LOW;
   }
+
+#elif (TARGET_BOARD == DUE_BOARD)
+
+  return digitalRead(pin);
+
+#endif
+
+  return LOW;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::isOnTimer(CoreSensor* sensor)

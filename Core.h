@@ -309,6 +309,8 @@ class CoreClass
 
    // команда установки уровня на пине
    bool setPIN(CommandParser& parser, Stream* outStream);
+   // команда чтения уровня на пине
+   bool getPIN(const char* commandPassed, const CommandParser& parser, Stream* pStream);
 
    // команды для SD
    #ifdef CORE_SD_SUPPORT_ENABLED

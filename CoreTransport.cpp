@@ -112,19 +112,20 @@ void CoreTransportClient::connect(const char* ip, uint16_t port)
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::write(uint8_t* buff, size_t sz)
+bool CoreTransportClient::write(uint8_t* buff, size_t sz, bool takeBufferOwnership)
 {
     if(!sz || !buff || !connected() || clientID == 0xFF)
-      return;
+      return false;
 /*
     DBG(F("Client #"));
     DBG(clientID);
     DBG(F(": write, data size="));
     DBGLN(sz);
 */
-    setData(buff,sz,true);
+    setData(buff,sz,!takeBufferOwnership);
     parent->beginWrite(*this);
-      
+
+   return true;
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -162,7 +163,7 @@ void CoreTransportClient::notifyDataWritten(int errorCode)
   raiseEvent(etDataWritten, errorCode);
 
   // и очищаем внутренний буфер с данными
-  clearBuffer(); 
+ // clearBuffer(); 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 int CoreTransportClient::getSubscriberIndex(IClientEventsSubscriber* subscriber)
@@ -284,7 +285,7 @@ void CoreTransport::setClientConnected(CoreTransportClient& client, bool isConne
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransport::setClientData(CoreTransportClient& client,uint8_t* buff, size_t sz)
 {
-  client.setData(buff,sz,false);
+  return client.setData(buff,sz,false);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_RS485_TRANSPORT_ENABLED
@@ -2719,10 +2720,73 @@ void CoreESPWebServerClass::OnClientDataWritten(CoreTransportClient& client, int
   
     CoreWebServerQuery* pending = getPendingQuery(&client);
     if(pending)
-      removePendingQuery(pending);
-    
-    client.disconnect();
+    {
+      removePendingQuery(pending);    
+      client.disconnect();
+    }
+    else
+    {
+      // тут проверяем, нет ли у нас ещё данных для клиента?
+      CoreWebServerPendingFileData* pfd = getPendingFileData(&client);
+      
+      if(errorCode != CT_ERROR_NONE)
+      {
+        if(pfd)
+          removePendingFileData(&client);
+          
+        client.disconnect();
+        return;
+      }
 
+      // всё норм, проверяем, есть ли для этого клиента данные?
+      if(!pfd)
+      {
+        client.disconnect();
+        return;
+      }
+
+      // данные ещё есть, отсылаем
+      sendNextFileData(pfd);
+      
+    } // else
+
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPWebServerClass::sendNextFileData(CoreWebServerPendingFileData* pfd)
+{
+  if(!pfd)
+    return;
+
+  // тут читаем в буфер, и отсылаем
+  const int BUFFER_SIZE = CORE_ESP_WEB_SERVER_CLIENT_BUFFER; // будем читать по N байт
+
+  int toSend = min(BUFFER_SIZE,pfd->pendingBytes);
+
+  uint8_t* buff = new uint8_t[toSend];
+  //TODO: тут чтение из файла!!!
+
+  // пока просто заполняем тестовыми данными
+  for(int i=0;i<toSend;i++)
+  {
+    buff[i] = random('a','z');
+  }
+
+  pfd->pendingBytes -= toSend;
+  
+  if(pfd->pendingBytes < 1)
+  {
+    // данные закончились
+    removePendingFileData(pfd->client);    
+  }
+
+  // посылаем новую порцию данных
+  if(!pfd->client->write(buff,toSend,true))
+  {
+    delete [] buff;
+    pfd->client->disconnect();
+    removePendingFileData(pfd->client);
+  }
+  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreWebServerQuery* CoreESPWebServerClass::getPendingQuery(CoreTransportClient* client)
@@ -2843,7 +2907,22 @@ void CoreESPWebServerClass::processQuery(CoreTransportClient* client, char* quer
       // это команда к ядру, выполняем её
       Core.processCommand(uri,this);
 
-      String data = F("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n");
+      String data = WEB_HEADER_BEGIN;
+      data += F("200 OK");
+      data += WEB_HEADER_LINE;
+
+      data += WEB_HEADER_CONNECTION;
+      data += WEB_HEADER_LINE;
+
+      data += WEB_HEADER_CONTENT_TYPE;
+      data += F("text/plain");
+      data += WEB_HEADER_LINE;
+
+      data += WEB_HEADER_CONTENT_LENGTH;
+      data += internalBuffer->length();
+      data += WEB_HEADER_LINE;
+      data += WEB_HEADER_LINE;
+      
       data += *internalBuffer;
       
       delete internalBuffer;
@@ -2854,14 +2933,127 @@ void CoreESPWebServerClass::processQuery(CoreTransportClient* client, char* quer
     }
     else
     {
+      // другие запросы, пытаемся разобрать
+      processURI(client,uri);
+      /*
       // другое URI, отсылаем его пока взад
       String data = F("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/html\r\n\r\nRECEIVED: ");
       data += uri;
   
       client->write((uint8_t*)data.c_str(),data.length());
+      */
     }
 
   
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPWebServerClass::processURI(CoreTransportClient* client, String& uri)
+{
+    const char* filename = uri.c_str();
+    const char* paramPtr = strstr(filename,"?");
+    if(paramPtr)
+    {
+      uri[paramPtr - filename] = '\0';
+      paramPtr++;
+    }
+
+    DBG(F("URI: "));
+    DBGLN(filename);
+
+    if(paramPtr)
+    {
+      DBG(F("PARAMS: "));
+      DBGLN(paramPtr);      
+    }
+
+    // игнорируем favicon
+    if(!strcasecmp_P(filename,(const char*) F("favicon.ico")))
+    {
+      String headers = WEB_HEADER_BEGIN;
+      headers += F("404 Not Found");
+      headers += WEB_HEADER_LINE;
+
+      headers += WEB_HEADER_CONNECTION;
+      headers += WEB_HEADER_LINE;
+
+      headers += WEB_HEADER_CONTENT_TYPE;
+      headers += F("text/plain");
+      headers += WEB_HEADER_LINE;
+
+      headers += WEB_HEADER_CONTENT_LENGTH;
+      headers += "0";
+      headers += WEB_HEADER_LINE;
+      headers += WEB_HEADER_LINE;
+
+      client->write((uint8_t*)headers.c_str(),headers.length());
+      return;
+    }
+    // получили имя файла, пытаемся его послать
+    // для теста просто пошлём килобайт 50-300 одного символа
+    int contentLength = 1024*random(50,300);
+    
+    //TODO: ТУТ ЧТЕНИЕ ИЗ ФАЙЛА !!!!
+    
+      String headers = WEB_HEADER_BEGIN;
+      headers += F("200 OK");
+      headers += WEB_HEADER_LINE;
+
+      headers += WEB_HEADER_CONNECTION;
+      headers += WEB_HEADER_LINE;
+
+      headers += WEB_HEADER_CONTENT_TYPE;
+      headers += F("text/plain");
+      headers += WEB_HEADER_LINE;
+
+      headers += WEB_HEADER_CONTENT_LENGTH;
+      headers += contentLength;
+      headers += WEB_HEADER_LINE;
+      headers += WEB_HEADER_LINE;
+
+
+    // запоминаем, сколько надо отослать данных и в какого клиента
+    CoreWebServerPendingFileData pfd;
+    pfd.pendingBytes = contentLength;
+    pfd.client = client;
+    pendingFiles.push_back(pfd);
+
+    // отсылаем заголовки
+    client->write((uint8_t*)headers.c_str(),headers.length());
+    
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPWebServerClass::removePendingFileData(CoreTransportClient* client)
+{
+  for(size_t i=0;i<pendingFiles.size();)
+  {
+     if(pendingFiles[i].client == client)
+     {
+        //TODO: Тут закрытие файла!!!
+        for(size_t k=i+1;k<pendingFiles.size();k++)
+        {
+          pendingFiles[k-1] = pendingFiles[k];
+        }
+        pendingFiles.pop();
+        break;
+     }
+     else
+     {
+      i++;
+     }
+  } // for
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreWebServerPendingFileData* CoreESPWebServerClass::getPendingFileData(CoreTransportClient* client)
+{
+  for(size_t i=0;i<pendingFiles.size();i++)
+  {
+     if(pendingFiles[i].client == client)
+     {
+        return &(pendingFiles[i]);
+     }
+  }
+
+  return NULL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
