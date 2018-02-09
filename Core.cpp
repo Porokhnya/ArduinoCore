@@ -1937,7 +1937,11 @@ bool CoreClass::getESP(const char* commandPassed, const CommandParser& parser, S
       String staIP, apIP;
       bool res = ESP.getIP(staIP, apIP);
       
-      pStream->print(CORE_COMMAND_ANSWER_OK);
+      if(res)
+        pStream->print(CORE_COMMAND_ANSWER_OK);
+      else
+        pStream->print(CORE_COMMAND_ANSWER_ERROR);
+      
       pStream->print(commandPassed);
       pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
       pStream->print(whichCommand);
@@ -1957,6 +1961,67 @@ bool CoreClass::getESP(const char* commandPassed, const CommandParser& parser, S
       return true;
       
    } // IP command
+   else
+   if(!strcasecmp_P(whichCommand,(const char*) F("MAC")))
+   {
+      // получить информацию о MAC-адресах
+      String staMAC, apMAC;
+      bool res = ESP.getMAC(staMAC, apMAC);
+      
+      if(res)
+        pStream->print(CORE_COMMAND_ANSWER_OK);
+      else
+        pStream->print(CORE_COMMAND_ANSWER_ERROR);
+      
+      pStream->print(commandPassed);
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
+      pStream->print(whichCommand);
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+
+      if(!res)
+      {
+        pStream->println(F("BUSY"));
+      }
+      else
+      {
+        pStream->print(staMAC);
+        pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+        pStream->println(apMAC);       
+      }
+
+      return true;    
+   } // MAC command
+   else
+   if(!strcasecmp_P(whichCommand,(const char*) F("PING")))
+   {
+      // пропинговать google.com
+      bool pingSucceeded = false;
+      bool res = ESP.pingGoogle(pingSucceeded);
+      
+      if(res)
+        pStream->print(CORE_COMMAND_ANSWER_OK);
+      else
+        pStream->print(CORE_COMMAND_ANSWER_ERROR);
+      
+      pStream->print(commandPassed);
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
+      pStream->print(whichCommand);
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+
+      if(!res)
+      {
+        pStream->println(F("BUSY"));
+      }
+      else
+      {
+        if(pingSucceeded)
+          pStream->println(F("PING_OK"));
+       else
+          pStream->println(F("NO_PING"));
+      }
+
+      return true;        
+   } // PING command
 
    return false;
 }

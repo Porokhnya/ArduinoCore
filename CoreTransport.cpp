@@ -1176,6 +1176,160 @@ void CoreESPTransport::sendCommand(const String& command, bool addNewLine)
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreESPTransport::pingGoogle(bool& result)
+{
+    if(machineState != espIdle || !workStream || !ready() || initCommandsQueue.size()) // чего-то делаем, не могём
+    {
+      //DBGLN(F("ESP: BUSY!!!"));
+      return false;
+    }
+
+        ESPKnownAnswer ka;
+        workStream->println(F("AT+PING=\"google.com\""));
+        // поскольку у нас serialEvent не основан на прерываниях, на самом-то деле (!),
+        // то мы должны получить ответ вот прямо вот здесь, и разобрать его.
+
+        String line; // тут принимаем данные до конца строки
+        bool  pingDone = false;
+        
+        char ch;
+        while(1)
+        { 
+          if(pingDone) // получили ответ на PING
+            break;
+            
+          while(workStream->available())
+          {
+            ch = workStream->read();
+        
+            if(ch == '\r')
+              continue;
+            
+            if(ch == '\n')
+            {
+              // получили строку, разбираем её
+                 if(isKnownAnswer(line, ka))
+                 {
+                    result = (ka == kaOK);
+                    pingDone = true;
+                 }
+             line = "";
+            } // ch == '\n'
+            else
+              line += ch;
+        
+          if(pingDone) // получили ответ на PING
+              break;
+ 
+          } // while
+          
+        } // while(1)    
+
+
+  return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
+{
+    if(machineState != espIdle || !workStream || !ready() || initCommandsQueue.size()) // чего-то делаем, не могём
+    {
+      //DBGLN(F("ESP: BUSY!!!"));
+      return false;
+    }
+
+        ESPKnownAnswer ka;
+        workStream->println(F("AT+CIPSTAMAC?"));
+
+        String line; // тут принимаем данные до конца строки
+        staMAC = "-";
+        apMAC = "-";
+        
+        bool  apMACDone = false, staMACDone=false;
+        char ch;
+        while(1)
+        { 
+          if(staMACDone) // получили MAC-адрес станции
+            break;
+            
+          while(workStream->available())
+          {
+            ch = workStream->read();
+        
+            if(ch == '\r')
+              continue;
+            
+            if(ch == '\n')
+            {
+              // получили строку, разбираем её
+                 if(line.startsWith(F("+CIPSTAMAC:"))) // MAC станции
+                 {
+                    DBGLN(F("Station MAC found, parse..."));
+            
+                   staMAC = line.substring(11);                      
+                  
+                 } // if(line.startsWith
+                 else
+                 if(isKnownAnswer(line, ka))
+                 {
+                    staMACDone = true;
+                 }
+             line = "";
+            } // ch == '\n'
+            else
+              line += ch;
+        
+          if(staMACDone) // получили MAC станции
+              break;
+ 
+          } // while
+          
+        } // while(1)
+
+        // теперь получаем MAC точки доступа
+        workStream->println(F("AT+CIPAPMAC?"));
+        
+        while(1)
+        { 
+          if(apMACDone) // получили MAC-адрес точки доступа
+            break;
+            
+          while(workStream->available())
+          {
+            ch = workStream->read();
+        
+            if(ch == '\r')
+              continue;
+            
+            if(ch == '\n')
+            {
+              // получили строку, разбираем её
+                 if(line.startsWith(F("+CIPAPMAC:"))) // MAC нашей точки доступа
+                 {
+                   DBGLN(F("softAP MAC found, parse..."));
+            
+                   apMAC = line.substring(10);                      
+                  
+                 } // if(line.startsWith
+                 else
+                 if(isKnownAnswer(line,ka))
+                 {
+                    apMACDone = true;
+                 }
+             line = "";
+            } // ch == '\n'
+            else
+              line += ch;
+        
+          if(apMACDone) // получили MAC точки доступа
+              break;
+ 
+          } // while
+          
+        } // while(1)
+
+  return true;              
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
 {
     if(machineState != espIdle || !workStream || !ready() || initCommandsQueue.size()) // чего-то делаем, не могём
@@ -1763,7 +1917,7 @@ void CoreESPTransport::update()
                     {
                       if(clientsQueue.size())
                       {
-                        DBGLN(F("ESP: Client disconnected."));
+                       // DBGLN(F("ESP: Client disconnected."));
                         // клиент отсоединён, ставим ему соответствующий флаг, освобождаем его и удаляем из очереди
                         ESPClientQueueData dt = clientsQueue[0];
 
@@ -1790,7 +1944,7 @@ void CoreESPTransport::update()
                             // законнектились удачно
                             if(clientsQueue.size())
                             {
-                               DBGLN(F("ESP: Client connected."));
+                             //  DBGLN(F("ESP: Client connected."));
                                ESPClientQueueData dt = clientsQueue[0];
                                
                                CoreTransportClient* thisClient = dt.client;
@@ -2680,7 +2834,7 @@ void CoreESPWebServerClass::processQuery(CoreTransportClient* client, char* quer
     // теперь посмотрим, не команда ли это к ядру?
     if(uri.startsWith(CORE_COMMAND_SET) || uri.startsWith(CORE_COMMAND_GET))
     {
-      // меняем слеши наразделители команд, т.е. мы можем обрабатывать два типа команд:
+      // меняем слеши на разделители команд, т.е. мы можем обрабатывать два типа команд:
       // GET=ESP|IP, где | кодируется как последовательность %7С, и
       // GET=ESP/IP
       

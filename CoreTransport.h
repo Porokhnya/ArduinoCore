@@ -391,6 +391,12 @@ class CoreESPTransport : public CoreTransport
 
     // возвращает IP клиента и станции
     bool getIP(String& staIP, String& apIP);
+    
+    // возвращает MAC клиента и станции
+    bool getMAC(String& staMAC, String& apMAC);
+
+    // пропинговать гугл
+    bool pingGoogle(bool& result);
 
     virtual bool ready(); // проверяем на готовность к работе
 
