@@ -316,6 +316,11 @@ class CoreClass
     bool getFILE(const char* commandPassed, const CommandParser& parser, Stream* pStream);
    #endif
 
+   // команды для ESP
+   #ifdef CORE_ESP_TRANSPORT_ENABLED
+    bool getESP(const char* commandPassed, const CommandParser& parser, Stream* pStream);
+   #endif
+
    // перезапустить ядро
    bool wantRestart;
    bool setRESTART();

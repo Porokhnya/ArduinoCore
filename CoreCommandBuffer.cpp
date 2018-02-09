@@ -51,9 +51,10 @@ void CommandParser::clear()
   {
     delete [] arguments[i];  
   }
-  
-  while(arguments.size())
-    arguments.pop();
+
+  arguments.empty();
+  //while(arguments.size())
+  //  arguments.pop();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 const char* CommandParser::getArg(size_t idx) const

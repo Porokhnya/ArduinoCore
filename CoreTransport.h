@@ -389,6 +389,9 @@ class CoreESPTransport : public CoreTransport
     virtual void update(); // обновляем состояние транспорта
     virtual void begin(); // начинаем работу
 
+    // возвращает IP клиента и станции
+    bool getIP(String& staIP, String& apIP);
+
     virtual bool ready(); // проверяем на готовность к работе
 
    // подписка на события клиентов
@@ -449,6 +452,51 @@ class CoreESPTransport : public CoreTransport
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern CoreESPTransport ESP;
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_ESP_WEB_SERVER
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  CoreTransportClient* client;
+  char* query;
+  
+} CoreWebServerQuery;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<CoreWebServerQuery> CoreWebServerQueries;
+//--------------------------------------------------------------------------------------------------------------------------------------
+class CoreESPWebServerClass : public IClientEventsSubscriber, public Stream
+{
+  public:
+    CoreESPWebServerClass();
+
+  // IClientEventsSubscriber
+  virtual void OnClientConnect(CoreTransportClient& client, bool connected, int errorCode); // событие "Статус соединения клиента"
+  virtual void OnClientDataWritten(CoreTransportClient& client, int errorCode); // событие "Данные из клиента записаны в поток"
+  virtual void OnClientDataAvailable(CoreTransportClient& client, bool isDone); // событие "Для клиента поступили данные", флаг - все ли данные приняты
+
+  // Stream
+  virtual void flush(){}
+  virtual int peek() {return 0;}
+  virtual int read() {return 0;}
+  virtual int available() {return 0;}
+  virtual size_t write(uint8_t ch) { *internalBuffer += (char) ch; return 1;}
+
+  private:
+
+    CoreWebServerQueries pendingQueries;
+    bool isOurClient(CoreTransportClient* client);
+    void removePendingQuery(CoreWebServerQuery* query);
+    CoreWebServerQuery* getPendingQuery(CoreTransportClient* client);
+
+    void processQuery(CoreTransportClient* client, char* query);
+
+    String* internalBuffer;
+    
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern CoreESPWebServerClass CoreESPWebServer;
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_ESP_WEB_SERVER
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_ESP_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------

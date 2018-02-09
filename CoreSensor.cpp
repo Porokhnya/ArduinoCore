@@ -1158,8 +1158,9 @@ void CoreDS18B20LineManager::clearAddresses()
     delete [] addresses[i];
   }
 
-  while(addresses.size())
-    addresses.pop();
+  addresses.empty();
+  //while(addresses.size())
+  //  addresses.pop();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreDS18B20LineManager::begin(CoreDS18B20Resolution res)
@@ -1531,8 +1532,9 @@ void CoreDS18B20DispatcherClass::clear()
     delete list[i];
   }
 
-  while(list.size())
-    list.pop();
+  list.empty();
+  //while(list.size())
+  //  list.pop();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreDS18B20LineManager* CoreDS18B20DispatcherClass::add(uint8_t pin)

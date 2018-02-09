@@ -116,9 +116,13 @@ void CoreTransportClient::write(uint8_t* buff, size_t sz)
 {
     if(!sz || !buff || !connected() || clientID == 0xFF)
       return;
-
+/*
+    DBG(F("Client #"));
+    DBG(clientID);
+    DBG(F(": write, data size="));
+    DBGLN(sz);
+*/
     setData(buff,sz,true);
-
     parent->beginWrite(*this);
       
   
@@ -229,8 +233,6 @@ void CoreTransportClient::notifyDataAvailable(bool isDone)
   // сообщаем подписчикам, что у нас есть данные
   raiseEvent(etDataAvailable,isDone);
 
-  // подписчики обработали данные, чистим буфер
-  clearBuffer();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 // CoreTransport
@@ -1053,8 +1055,9 @@ void CoreRS485::reset()
     rsPacketPtr = (uint8_t*)&rs485Packet;
     rs485WritePtr = 0;
 
-    while(excludedList.size())
-      excludedList.pop();
+    excludedList.empty();
+    //while(excludedList.size())
+    //  excludedList.pop();
     
   #endif // CORE_RS485_DISABLE_CORE_LOGIC
     
@@ -1157,19 +1160,108 @@ CoreESPTransport::CoreESPTransport() : CoreTransport()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::sendCommand(const String& command, bool addNewLine)
 {
-  DBG(F("ESP: Send command - "));
+  DBG(F("ESP: ==>> "));
   DBGLN(command);
   
   workStream->write(command.c_str(),command.length());
   
   if(addNewLine)
   {
-    workStream->write('\n');
+    workStream->println();
   }  
 
+  machineState = espWaitAnswer; // говорим, что надо ждать ответа от ESP
   // запоминаем время отсылки последней команды
   timer = millis();
   
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
+{
+    if(machineState != espIdle || !workStream || !ready() || initCommandsQueue.size()) // чего-то делаем, не могём
+    {
+      //DBGLN(F("ESP: BUSY!!!"));
+      return false;
+    }
+
+    workStream->println(F("AT+CIFSR"));  
+    
+    String line; // тут принимаем данные до конца строки
+    bool knownAnswerFound = false;
+    ESPKnownAnswer ka;  
+
+    char ch;
+    while(1)
+    { 
+      if(knownAnswerFound) // получили оба IP
+        break;
+        
+      while(workStream->available())
+      {
+        ch = (char) workStream->read();
+    
+        if(ch == '\r')
+          continue;
+        
+        if(ch == '\n')
+        {
+          // получили строку, разбираем её
+            if(line.startsWith(F("+CIFSR:APIP"))) // IP нашей точки доступа
+             {
+               DBGLN(F("AP IP found, parse..."));
+        
+               int idx = line.indexOf("\"");
+               if(idx != -1)
+               {
+                  apCurrentIP = line.substring(idx+1);
+                  idx = apCurrentIP.indexOf("\"");
+                  if(idx != -1)
+                    apCurrentIP = apCurrentIP.substring(0,idx);
+                  
+               }
+               else
+                apCurrentIP = F("0.0.0.0");
+
+             } // if(line.startsWith(F("+CIFSR:APIP")))
+             else
+              if(line.startsWith(F("+CIFSR:STAIP"))) // IP нашей точки доступа, назначенный роутером
+             {
+                  DBGLN(F("STA IP found, parse..."));
+        
+               int idx = line.indexOf("\"");
+               if(idx != -1)
+               {
+                  stationCurrentIP = line.substring(idx+1);
+                  idx = stationCurrentIP.indexOf("\"");
+                  if(idx != -1)
+                    stationCurrentIP = stationCurrentIP.substring(0,idx);
+                  
+               }
+               else
+                stationCurrentIP = F("0.0.0.0");
+
+             } // if(line.startsWith(F("+CIFSR:STAIP")))
+
+           if(isKnownAnswer(line,ka))
+            knownAnswerFound = true;
+         
+          line = F("");
+        } // ch == '\n'
+        else
+        {
+              line += ch;
+        }
+    
+     if(knownAnswerFound) // получили оба IP
+        break;
+
+      } // while
+      
+    } // while(1)
+
+
+    return true;
+    
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::sendCommand(ESPCommands command)
@@ -1258,7 +1350,7 @@ void CoreESPTransport::sendCommand(ESPCommands command)
     case cmdCIPSERVER:
     {
       DBGLN(F("ESP: Starting TCP-server..."));
-      sendCommand(F("AT+CIPSERVER=1,1975"));
+      sendCommand(F("AT+CIPSERVER=1,80"));
     }
     break;
 
@@ -1273,7 +1365,6 @@ void CoreESPTransport::sendCommand(ESPCommands command)
     
   } // switch
 
-  machineState = espWaitAnswer; // говорим, что надо ждать ответа от ESP
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreESPTransport::isESPBootFound(const String& line)
@@ -1345,11 +1436,13 @@ void CoreESPTransport::processIPD()
     
     if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
     {
-      
+
+      /*
       DBG(F("ESP: data for client  #"));
       DBG(clientID);
       DBG(F("; len="));
       DBGLN(lengthOfData);
+      */
 
        CoreTransportClient* client = clients[clientID];
 
@@ -1375,7 +1468,7 @@ void CoreESPTransport::processIPD()
             while(totalWritten < lengthOfData) // пока не запишем все данные с клиента
             {
                 if(workStream->available())
-                {
+                {                  
                   *writePtr++ = (uint8_t) workStream->read();
                   packetWritten++;
                   totalWritten++;
@@ -1390,8 +1483,6 @@ void CoreESPTransport::processIPD()
                   // сообщаем подписчикам, что данные для клиента получены
                   notifyClientDataAvailable(*client, totalWritten >= lengthOfData);
     
-                  // чистим буфер данных у клиента, он уже не нужен                    
-                  setClientData(*client,NULL,0);                   
                    
                   // пересчитываем длину пакета, вдруг там мало осталось, и незачем выделять под несколько байт огромный буфер
                   packetSize =  min(MAX_PACKET_SIZE, lengthOfData - totalWritten);
@@ -1412,8 +1503,6 @@ void CoreESPTransport::processIPD()
               // сообщаем подписчикам, что данные для клиента получены
               notifyClientDataAvailable(*client, totalWritten >= lengthOfData);
 
-              // чистим буфер данных у клиента, он уже не нужен                    
-              setClientData(*client,NULL,0);                                         
             }
             else
             {
@@ -1425,7 +1514,7 @@ void CoreESPTransport::processIPD()
     } // if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
     
 
-  DBGLN(F("ESP: +IPD parsed."));         
+  DBGLN(F("ESP: +IPD parsed."));  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::update()
@@ -1467,15 +1556,15 @@ void CoreESPTransport::update()
 
      if(wiFiReceiveBuff->startsWith(F("+IPD")) && wiFiReceiveBuff->indexOf(":") != -1)
      {
-        DBGLN(F("ESP: +IPD detected, parse!"));
+       // DBGLN(F("ESP: +IPD detected, parse!"));
         
         processIPD();
         
         hasAnswerLine = false; // говорим, что нет у нас строки с ответом, ибо нечего проверять ответ на +IPD - мы разобрали его сами
         delete wiFiReceiveBuff;
         wiFiReceiveBuff = new String();
-        
-        break; // надо вывалится из цикла, поскольку мы уже всё отослали клиенту, для которого пришли данные
+        timer = millis();        
+        return; // надо вывалится из цикла, поскольку мы уже всё отослали клиенту, для которого пришли данные
      }
     
     ch = workStream->read();
@@ -1485,7 +1574,6 @@ void CoreESPTransport::update()
     else
     if(ch == '\n')
     {   
-        DBGLN(F("ESP: answer line detected!"));
         hasAnswerLine = true; // выставляем флаг, что у нас есть строка ответа от ESP  
         break; // выходим из цикла, остальное дочитаем позже, если это потребуется кому-либо
     }
@@ -1513,16 +1601,32 @@ void CoreESPTransport::update()
     
   } // while(workStream->available())
 
+  if(hasAnswer)
+  {
+     timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
+  }
+
   #ifdef _CORE_DEBUG
 
-      if(hasAnswerLine)
+      if(hasAnswerLine && wiFiReceiveBuff->length())
       {
+        /*
         // выводим то, что получено, для теста
-        DBG(F("ESP: <<=="));
+        DBG(F("ESP: <<==(c:"));
+        DBG(currentCommand);
+        DBG(F(", m:"));        
+        DBG(machineState);
+        DBG(F(", l:"));
+        DBG(wiFiReceiveBuff->length());
+        DBG(F("): "));
         DBGLN(*wiFiReceiveBuff);
+        */
       }
   
   #endif // _CORE_DEBUG
+
+    if(hasAnswerLine && !wiFiReceiveBuff->length()) // пустая строка, не надо обрабатывать
+      hasAnswerLine = false;
 
     // при разборе ответа тут будет лежать тип ответа, чтобы часто не сравнивать со строкой
     ESPKnownAnswer knownAnswer = kaNone;
@@ -1531,7 +1635,7 @@ void CoreESPTransport::update()
     switch(machineState)
     {
         case espIdle: // ничего не делаем, можем работать с очередью команд и клиентами
-        {
+        {            
             // смотрим - если есть хоть одна команда в очереди инициализации - значит, мы в процессе инициализации, иначе - можно работать с очередью клиентов
             if(initCommandsQueue.size())
             {
@@ -1596,7 +1700,9 @@ void CoreESPTransport::update()
                       // хочет отослать данные
                       DBG(F("ESP: client #"));
                       DBG(clientID);
-                      DBGLN(F(" want to send data..."));
+                      DBG(F(" has data="));
+                      DBG(dt.client->getDataSize());
+                      DBGLN(F(" and wants to send it..."));
 
                       currentCommand = cmdCIPSEND;
 
@@ -1614,6 +1720,8 @@ void CoreESPTransport::update()
               }
               else
               {
+                timer = millis(); // обновляем таймер в режиме ожидания, поскольку мы не ждём ответа на команды
+
                 // у нас прошла инициализация, нет клиентов в очереди на обработку, следовательно - мы можем проверять модем на зависание
                 // тут смотрим - не пора ли послать команду для проверки на зависание. Слишком часто её звать нельзя, что очевидно,
                 // поэтому мы будем звать её минимум раз в N секунд. При этом следует учитывать, что мы всё равно должны звать эту команду
@@ -1636,16 +1744,15 @@ void CoreESPTransport::update()
         case espWaitAnswer: // ждём ответа от модема на посланную ранее команду (функция sendCommand переводит конечный автомат в эту ветку)
         {
           // команда, которую послали - лежит в currentCommand, время, когда её послали - лежит в timer.
-          if(hasAnswer)
-          {
               if(hasAnswerLine)
-              {
+              {                
                 // есть строка ответа от модема, можем её анализировать, в зависимости от посланной команды (лежит в currentCommand)
                 switch(currentCommand)
                 {
                   case cmdNone:
                   {
                     // ничего не делаем
+                    DBGLN(F("ESP: NO COMMAND!!!!"));
                   }
                   break; // cmdNone
 
@@ -1660,9 +1767,11 @@ void CoreESPTransport::update()
                         // клиент отсоединён, ставим ему соответствующий флаг, освобождаем его и удаляем из очереди
                         ESPClientQueueData dt = clientsQueue[0];
 
-                        setClientBusy(*(dt.client),false);
-                        setClientConnected(*(dt.client),false,CT_ERROR_NONE);
-                        removeClientFromQueue(dt.client);
+                        CoreTransportClient* thisClient = dt.client;
+                        removeClientFromQueue(thisClient);
+
+                        setClientBusy(*thisClient,false);
+                        setClientConnected(*thisClient,false,CT_ERROR_NONE);
                         
                       } // if(clientsQueue.size()) 
                       
@@ -1683,9 +1792,12 @@ void CoreESPTransport::update()
                             {
                                DBGLN(F("ESP: Client connected."));
                                ESPClientQueueData dt = clientsQueue[0];
-                               setClientBusy(*(dt.client),false);
-                               setClientConnected(*(dt.client),true,CT_ERROR_NONE);
+                               
+                               CoreTransportClient* thisClient = dt.client;
                                removeClientFromQueue(dt.client);
+                               
+                               setClientBusy(*thisClient,false);
+                               setClientConnected(*thisClient,true,CT_ERROR_NONE);
                             }
                           }
                           else
@@ -1695,9 +1807,12 @@ void CoreESPTransport::update()
                             {
                                DBGLN(F("ESP: Client connect ERROR!"));
                                ESPClientQueueData dt = clientsQueue[0];
-                               setClientBusy(*(dt.client),false);
-                               setClientConnected(*(dt.client),false,CT_ERROR_CANT_CONNECT);
-                               removeClientFromQueue(dt.client);
+
+                               CoreTransportClient* thisClient = dt.client;
+                               removeClientFromQueue(thisClient);
+                               
+                               setClientBusy(*thisClient,false);
+                               setClientConnected(*thisClient,false,CT_ERROR_CANT_CONNECT);
                             }
                           }
                           machineState = espIdle; // переходим к следующей команде
@@ -1710,7 +1825,7 @@ void CoreESPTransport::update()
                   case cmdWaitSendDone:
                   {
                     // дожидаемся конца отсыла данных от клиента в ESP
-                    bool closingUnexpectedly = wiFiReceiveBuff->indexOf(F(",CLOSED"));
+                    bool closingUnexpectedly = wiFiReceiveBuff->indexOf(F(",CLOSED")) != -1;
                     
                     if(closingUnexpectedly)
                     {
@@ -1719,14 +1834,16 @@ void CoreESPTransport::update()
                       {
                          DBGLN(F("ESP: client connection closed unexpectedly!"));
                          ESPClientQueueData dt = clientsQueue[0];
+
+                         CoreTransportClient* thisClient = dt.client;
+                         removeClientFromQueue(thisClient);
                          
-                         setClientBusy(*(dt.client),false);
+                         setClientBusy(*thisClient,false);
 
                           // очищаем данные у клиента
-                          setClientData(*(dt.client),NULL,0);
-                         
-                         notifyClientDataWritten(*(dt.client),CT_ERROR_CANT_WRITE);
-                         removeClientFromQueue(dt.client);
+                          setClientData(*thisClient,NULL,0);
+                       
+                         notifyClientDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
                       }                     
                         
                         machineState = espIdle; // переходим к следующей команде
@@ -1745,13 +1862,15 @@ void CoreESPTransport::update()
                              DBGLN(F("ESP: data was sent."));
                              ESPClientQueueData dt = clientsQueue[0];
                              
-                             setClientBusy(*(dt.client),false);
+                             CoreTransportClient* thisClient = dt.client;
+                             removeClientFromQueue(thisClient);
+
+                             setClientBusy(*thisClient,false);
 
                              // очищаем данные у клиента
-                             setClientData(*(dt.client),NULL,0);
-                             
-                             notifyClientDataWritten(*(dt.client),CT_ERROR_NONE);
-                             removeClientFromQueue(dt.client);
+                             setClientData(*thisClient,NULL,0);
+
+                             notifyClientDataWritten(*thisClient,CT_ERROR_NONE);
                           }                     
                         } // send ok
                         else
@@ -1761,14 +1880,16 @@ void CoreESPTransport::update()
                           {
                              DBGLN(F("ESP: send data fail!"));
                              ESPClientQueueData dt = clientsQueue[0];
+
+                             CoreTransportClient* thisClient = dt.client;
+                             removeClientFromQueue(thisClient);
                              
-                             setClientBusy(*(dt.client),false);
+                             setClientBusy(*thisClient,false);
                              
                              // очищаем данные у клиента
-                             setClientData(*(dt.client),NULL,0);
+                             setClientData(*thisClient,NULL,0);
                              
-                             notifyClientDataWritten(*(dt.client),CT_ERROR_CANT_WRITE);
-                             removeClientFromQueue(dt.client);
+                             notifyClientDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
                           }                     
                         } // else send fail
   
@@ -1810,13 +1931,16 @@ void CoreESPTransport::update()
                          DBGLN(F("ESP: Client write ERROR!"));
                          ESPClientQueueData dt = clientsQueue[0];
 
-                         setClientBusy(*(dt.client),false);
+                         CoreTransportClient* thisClient = dt.client;
+                         removeClientFromQueue(thisClient);
+
+                         setClientBusy(*thisClient,false);
                          
                          // очищаем данные у клиента
-                         setClientData(*(dt.client),NULL,0);
+                         setClientData(*thisClient,NULL,0);
 
-                         notifyClientDataWritten(*(dt.client),CT_ERROR_CANT_WRITE);
-                         removeClientFromQueue(dt.client);
+                         notifyClientDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
+                        
                       }                     
                       
                       machineState = espIdle; // переходим к следующей команде
@@ -1956,30 +2080,7 @@ void CoreESPTransport::update()
                 
               } // if(hasAnswerLine)
               
-          } // if(hasAnswer)
-          else
-          {
-              // нет ответа от ESP, проверяем, зависла ли она?
-              unsigned long hangTime = ESPTransportSettings.HangTimeout;
-              hangTime *= 1000;
-
-              if(millis() - timer > hangTime)
-              {
-                DBGLN(F("ESP: modem not answering, reboot!"));
-
-                if(ESPTransportSettings.Flags.UseRebootPin)
-                {
-                  // есть пин, который надо использовать при зависании
-                  pinMode(ESPTransportSettings.RebootPin,OUTPUT);
-                  digitalWrite(ESPTransportSettings.RebootPin,!ESPTransportSettings.PowerOnLevel);
-                }
-
-                machineState = espReboot;
-                timer = millis();
-                
-              } // if
-            
-          } // else ESP not answering
+         
         }
         break; // espWaitAnswer
 
@@ -2077,12 +2178,36 @@ void CoreESPTransport::update()
         wiFiReceiveBuff = new String();   
            
     } // if(hasAnswerLine)
+
+    if(!hasAnswer) // проверяем на зависание
+    {
+
+      // нет ответа от ESP, проверяем, зависла ли она?
+      unsigned long hangTime = ESPTransportSettings.HangTimeout;
+      hangTime *= 1000;
+
+      if(millis() - timer > hangTime)
+      {
+        DBGLN(F("ESP: modem not answering, reboot!"));
+
+        if(ESPTransportSettings.Flags.UseRebootPin)
+        {
+          // есть пин, который надо использовать при зависании
+          pinMode(ESPTransportSettings.RebootPin,OUTPUT);
+          digitalWrite(ESPTransportSettings.RebootPin,!ESPTransportSettings.PowerOnLevel);
+        }
+
+        machineState = espReboot;
+        timer = millis();
+        
+      } // if   
+         
+    }
     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::begin()
 {
-
   workStream = NULL;
 
   if(!ESPTransportSettings.enabled)
@@ -2092,6 +2217,10 @@ void CoreESPTransport::begin()
     return;
   
   initClients();
+
+  #ifdef CORE_ESP_WEB_SERVER
+    subscribe(&CoreESPWebServer);
+  #endif  
 
   HardwareSerial* hs = NULL;
 
@@ -2134,6 +2263,14 @@ void CoreESPTransport::begin()
 
 
   restart();
+
+  if(ESPTransportSettings.Flags.UseRebootPin)
+  {
+    // есть пин, который надо использовать при зависании
+    pinMode(ESPTransportSettings.RebootPin,OUTPUT);
+    digitalWrite(ESPTransportSettings.RebootPin,!ESPTransportSettings.PowerOnLevel);
+    machineState = espReboot;
+  }
 
 
 
@@ -2191,9 +2328,10 @@ void CoreESPTransport::createInitCommands(bool addResetCommand)
 void CoreESPTransport::clearInitCommands()
 {
   DBGLN(F("ESP: Clear init queue..."));  
-  
-  while(initCommandsQueue.size())
-    initCommandsQueue.pop();  
+
+  initCommandsQueue.empty();
+  //while(initCommandsQueue.size())
+  //  initCommandsQueue.pop();  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::clearClientsQueue(bool raiseEvents)
@@ -2234,8 +2372,9 @@ void CoreESPTransport::clearClientsQueue(bool raiseEvents)
         setClientBusy(*(dt.client),false);
     } // for
 
-  while(clientsQueue.size())
-    clientsQueue.pop();
+  clientsQueue.empty();
+  //while(clientsQueue.size())
+  //  clientsQueue.pop();
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -2335,11 +2474,11 @@ CoreTransportClient* CoreESPTransport::getFreeClient()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::beginWrite(CoreTransportClient& client)
 {
-  DBGLN(F("Write from client to ESP..."));
+  //DBGLN(F("ESP: write from client..."));
 
   if(!client.connected())
   {
-    DBGLN(F("ESP client not connected!"));
+    DBGLN(F("ESP: client not connected!"));
     return;
   }
 
@@ -2349,17 +2488,23 @@ void CoreESPTransport::beginWrite(CoreTransportClient& client)
   // добавляем клиента в очередь на запись
   addClientToQueue(&client, actionWrite);
 
+/*
+  DBG(F("Client #"));
+  DBG(client.getID());
+  DBG(F(" has data size: "));
+  DBGLN(client.getDataSize());
+*/
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с записью в поток с этого клиента
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::beginConnect(CoreTransportClient& client, const char* ip, uint16_t port)
 {
-   DBGLN(F("Connect ESP client to IP..."));
+   DBGLN(F("ESP: connect client to IP..."));
 
   if(client.connected())
   {
-    DBGLN(F("ESP client already connected!"));
+    DBGLN(F("ESP: client already connected!"));
     return;
   }
 
@@ -2376,11 +2521,11 @@ void CoreESPTransport::beginConnect(CoreTransportClient& client, const char* ip,
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::beginDisconnect(CoreTransportClient& client)
 {
-  DBGLN(F("Disconnect ESP client..."));
+ // DBGLN(F("ESP: Disconnect client..."));
 
   if(!client.connected())
   {
-    DBGLN(F("ESP client not connected!"));
+//    DBGLN(F("ESP: client not connected!"));
     return;
   }
 
@@ -2400,5 +2545,269 @@ bool CoreESPTransport::ready()
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_ESP_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_ESP_WEB_SERVER
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreESPWebServerClass CoreESPWebServer;
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreESPWebServerClass::CoreESPWebServerClass()
+{
+  internalBuffer = new String();
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPWebServerClass::OnClientConnect(CoreTransportClient& client, bool connected, int errorCode)
+{
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPWebServerClass::OnClientDataWritten(CoreTransportClient& client, int errorCode)
+{
+  DBGLN(F("WEB: Client DATA WRITTEN!"));
+  
+    CoreWebServerQuery* pending = getPendingQuery(&client);
+    if(pending)
+      removePendingQuery(pending);
+    
+    client.disconnect();
 
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreWebServerQuery* CoreESPWebServerClass::getPendingQuery(CoreTransportClient* client)
+{
+   for(size_t i=0;i<pendingQueries.size();i++)
+  {
+    if(pendingQueries[i].client == client)
+      return &(pendingQueries[i]);
+  } 
+
+  return NULL;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreESPWebServerClass::isOurClient(CoreTransportClient* client)
+{
+  for(size_t i=0;i<pendingQueries.size();i++)
+  {
+    if(pendingQueries[i].client == client)
+      return true;
+  }
+
+  return false;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+String UrlDecode(const String& uri) // декодирует URI-строку
+{
+  String result;
+  int len = uri.length();
+  result.reserve(len);
+  int s = 0;
+
+ while (s < len) 
+ {
+    char c = uri[s++];
+
+    if (c == '%' && s + 2 < len) 
+    {
+        char c2 = uri[s++];
+        char c3 = uri[s++];
+        if (isxdigit(c2) && isxdigit(c3)) 
+        {
+            c2 = tolower(c2);
+            c3 = tolower(c3);
+
+            if (c2 <= '9')
+                c2 = c2 - '0';
+            else
+                c2 = c2 - 'a' + 10;
+
+            if (c3 <= '9')
+                c3 = c3 - '0';
+            else
+                c3 = c3 - 'a' + 10;
+
+            result  += char(16 * c2 + c3);
+
+        } 
+        else 
+        { 
+            result += c;
+            result += c2;
+            result += c3;
+        }
+    } 
+    else 
+    if (c == '+') 
+        result += ' ';
+    else 
+        result += c;
+ } // while 
+
+  return result;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPWebServerClass::processQuery(CoreTransportClient* client, char* query)
+{
+    if(!query)
+      return;
+
+   // надо перейти за слеш, поскольку нам нужен только адрес страницы
+
+
+    // теперь нам надо выцепить URI, который мы будем анализировать
+    char* space = strstr(query, " ");
+    String method, uri;
+
+    while(query != space)
+    {
+      method += (char) *query++;
+    }
+
+    query++;
+    
+    if(*query == '/') 
+      query++;
+          
+    while(*query && *query != ' ')
+    {
+      uri += (char) *query++;
+    }
+
+    uri = UrlDecode(uri);
+    
+/*
+    DBGLN(F("///////////////////////////////////////////////////////////////////"));
+    DBGLN(uri);
+    DBGLN(F("///////////////////////////////////////////////////////////////////"));
+*/
+    // теперь посмотрим, не команда ли это к ядру?
+    if(uri.startsWith(CORE_COMMAND_SET) || uri.startsWith(CORE_COMMAND_GET))
+    {
+      // меняем слеши наразделители команд
+      uri.replace("/",CORE_COMMAND_PARAM_DELIMITER);
+      
+      // это команда к ядру, выполняем её
+      Core.processCommand(uri,this);
+
+      String data = F("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n");
+      data += *internalBuffer;
+      
+      delete internalBuffer;
+      internalBuffer = new String();
+
+      client->write((uint8_t*)data.c_str(),data.length());
+      
+    }
+    else
+    {
+      // другое URI, отсылаем его пока взад
+      String data = F("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/html\r\n\r\nRECEIVED: ");
+      data += uri;
+  
+      client->write((uint8_t*)data.c_str(),data.length());
+    }
+
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
+{
+    // данные для клиента пришли
+    const char* data = (const char*) client.getData();
+    size_t dataSize = client.getDataSize();
+      
+    if(!isOurClient(&client))
+    {
+      // нет в списке клиентов, проверяем, возможно, запрос к нам
+
+      if(dataSize > 4)
+      {
+          bool httpQueryFound = strstr_P(data,(const char*) F("GET ")) == data && strstr(data,(const char*) F("HTTP/")) != NULL;
+          if(httpQueryFound)
+          {
+            bool hasCompletedQuery = strstr_P(data,(const char*) F("\r\n\r\n")) != NULL;
+            if(hasCompletedQuery)
+            {
+              /*
+              DBGLN(F("WEB: Completed query found!"));
+              DBGLN(F("================================================"));
+
+              #ifdef _CORE_DEBUG
+                Serial.write(data,dataSize);
+              #endif
+
+              DBGLN(F("================================================"));
+              */
+              
+              // уже есть готовый запрос, выщемляем первую строку - и вперёд
+              const char* rn = strstr_P(data,(const char*)F("\r\n"));
+                            
+              char* query = new char[rn-data+1];              
+              memcpy(query,data,rn-data);
+              query[rn-data] = 0;
+
+              
+              processQuery(&client, query);
+              
+              delete [] query;
+            }
+            else
+            {
+              DBGLN(F("WEB: Uncompleted query, save first line"));
+                // нет полного запроса, выщемляем первую строку - и сохраняем
+              const char* rn = strstr_P(data,(const char*)F("\r\n"));
+              if(rn)
+              {
+                char* query = new char[rn-data+1];
+                memcpy(query,data,rn-data);
+                query[rn-data] = 0;
+
+                CoreWebServerQuery pending;
+                pending.client = &client;
+                pending.query = query;
+                pendingQueries.push_back(pending);
+              }
+              
+              
+            } // else
+          } // httpQueryFound
+          
+      } // if(dataSize > 4)
+      
+    } // not our client
+    else
+    {
+      // наш клиент, уже есть в списке клиентов, надо проверить - пришёл ли весь запрос
+      bool hasCompletedQuery = isDone;//strstr_P(data,(const char*) F("\r\n\r\n")) != NULL;
+      if(hasCompletedQuery)
+      {
+        DBGLN(F("WEB: client data done, process query..."));
+        CoreWebServerQuery* pending = getPendingQuery(&client);
+        if(pending)
+        {
+          processQuery(&client, pending->query);
+        }
+        
+      }
+    } // else our client
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPWebServerClass::removePendingQuery(CoreWebServerQuery* query)
+{
+  for(size_t i=0;i<pendingQueries.size();)
+  {
+      if(&(pendingQueries[i]) == query)
+      {
+        delete[] query->query;
+        for(size_t k=i+1;k<pendingQueries.size();k++)
+        {
+          pendingQueries[k-1] = pendingQueries[k];
+        }
+        pendingQueries.pop();
+        break;
+      }
+      else
+        i++;
+  } // for
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_ESP_WEB_SERVER
+//--------------------------------------------------------------------------------------------------------------------------------------
 

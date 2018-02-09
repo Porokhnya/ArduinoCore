@@ -1060,8 +1060,9 @@ void CoreSensors::clear()
     delete s;
    }
 
-   while(list.size())
-    list.pop();
+   list.empty();
+   //while(list.size())
+   // list.pop();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreClass Core;
@@ -1171,8 +1172,9 @@ void CoreClass::reset()
   
   
   // очищаем сигналы
-  while(sensorTimers.size())
-    sensorTimers.pop(); 
+  sensorTimers.empty();
+  //while(sensorTimers.size())
+  //  sensorTimers.pop(); 
 
   // очищаем список датчиков
   list.clear();
@@ -1749,6 +1751,10 @@ const char FILE_COMMAND[] PROGMEM = "FILE"; // отдать содержимое
 #ifdef CORE_SIGNALS_ENABLED
 const char SIGNALS_COMMAND[] PROGMEM = "SIG"; // получить статус сигналов
 #endif
+
+#ifdef CORE_ESP_TRANSPORT_ENABLED
+const char ESP_COMMAND[] PROGMEM = "ESP"; // запрос к модулю ESP
+#endif
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::processCommand(const String& command,Stream* pStream)
 {
@@ -1895,7 +1901,15 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
             // запросили получить список файлов в папке, GET=FILE|FilePath
             commandHandled = getFILE(commandName,cParser,pStream);                    
         } // LS        
-        #endif // CORE_SD_SUPPORT_ENABLED                
+        #endif // CORE_SD_SUPPORT_ENABLED 
+
+        #ifdef CORE_ESP_TRANSPORT_ENABLED
+        else
+        if(!strcmp_P(commandName, ESP_COMMAND)) // ESP
+        {
+          commandHandled = getESP(commandName,cParser,pStream); 
+        }
+        #endif //CORE_ESP_TRANSPORT_ENABLED
         
         //TODO: тут разбор команды !!!
         
@@ -1906,6 +1920,48 @@ void CoreClass::processCommand(const String& command,Stream* pStream)
     if(!commandHandled && pUnhandled)
       pUnhandled(command, pStream);  
 }
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_ESP_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreClass::getESP(const char* commandPassed, const CommandParser& parser, Stream* pStream)
+{
+  if(parser.argsCount() < 2)
+    return false;
+
+
+   const char* whichCommand = parser.getArg(1);
+
+   if(!strcasecmp_P(whichCommand,(const char*) F("IP")))
+   {
+      // получить информацию о IP
+      String staIP, apIP;
+      bool res = ESP.getIP(staIP, apIP);
+      
+      pStream->print(CORE_COMMAND_ANSWER_OK);
+      pStream->print(commandPassed);
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
+      pStream->print(whichCommand);
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+
+      if(!res)
+      {
+        pStream->println(F("BUSY"));
+      }
+      else
+      {
+        pStream->print(staIP);
+        pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+        pStream->println(apIP);       
+      }
+
+      return true;
+      
+   } // IP command
+
+   return false;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_ESP_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_SD_SUPPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -2310,7 +2366,7 @@ void CoreClass::begin()
           break;
         }
         else
-          delay(500);
+          delay(200);
        
       } // for
 
@@ -2641,8 +2697,10 @@ void CoreDataStoreClass::clear()
   {
     delete [] list[i].data;
   }
-  while(list.size())
-    list.pop();
+
+  list.empty();
+  //while(list.size())
+  //  list.pop();
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------

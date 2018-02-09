@@ -710,8 +710,9 @@ void SignalsManager::reset()
   memset(SIGNALS,0,sizeof(SIGNALS));
 
   // чистим список адресов
-  while(addresses.size())
-    addresses.pop();
+  addresses.empty();
+  //while(addresses.size())
+  //  addresses.pop();
 
   updateTimer = millis();    
 }

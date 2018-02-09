@@ -48,6 +48,11 @@ public:
           --d_size;
     };
 
+    void empty() // simple set size to 0 without memory free
+    {
+      d_size = 0;
+    }
+    
     void clear() //here
     {
         if(d_data)
