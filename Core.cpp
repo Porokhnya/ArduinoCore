@@ -25,7 +25,7 @@ SDSettingsStruct SDSettings;
 //--------------------------------------------------------------------------------------------------------------------------------------
 // FileUtils
 //--------------------------------------------------------------------------------------------------------------------------------------
-void FileUtils::printFile(const String& fileName, Stream* outStream)
+ void FileUtils::printFile(const String& fileName, Stream* outStream)
 {
   #ifdef CORE_SD_USE_SDFAT
 
@@ -2322,19 +2322,16 @@ int CoreClass::getPinMode(int p)
 
   if((g_pinStatus[p] & 0xF) == PIN_STATUS_DIGITAL_INPUT)
   {
-    DBGLN("INPUT");
     return INPUT;
   }
   else
   if((g_pinStatus[p] & 0xF) == PIN_STATUS_DIGITAL_INPUT_PULLUP)
   {
-    DBGLN("INPUT");
     return INPUT;
   }
  else
  if((g_pinStatus[p] & 0xF) == PIN_STATUS_DIGITAL_OUTPUT)
  {
-    DBGLN("OUTPUT");
     return OUTPUT;
  }
 

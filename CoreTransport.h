@@ -5,6 +5,13 @@
 #include "CoreConfig.h"
 #include "CoreArray.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_SD_USE_SDFAT
+  #include <SdFat.h>
+  extern SdFat SD;
+#else
+  #include <SD.h>
+#endif
+//--------------------------------------------------------------------------------------------------------------------------------------
 class CoreTransportClient;
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern "C" {
@@ -472,9 +479,13 @@ typedef Vector<CoreWebServerQuery> CoreWebServerQueries;
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
-  int pendingBytes;
+  unsigned long pendingBytes;
   CoreTransportClient* client;
-  
+#ifdef CORE_SD_USE_SDFAT
+  SdFile file;
+#else
+  File file;
+#endif  
 } CoreWebServerPendingFileData;
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<CoreWebServerPendingFileData> CoreWebServerPendingFiles;
@@ -518,6 +529,9 @@ class CoreESPWebServerClass : public IClientEventsSubscriber, public Stream
     CoreWebServerPendingFileData* getPendingFileData(CoreTransportClient* client);
     void removePendingFileData(CoreTransportClient* client);
     void sendNextFileData(CoreWebServerPendingFileData* pfd);
+
+    void send404(CoreTransportClient* client);
+    String getContentType(const String& fileName);
     
 };
 //--------------------------------------------------------------------------------------------------------------------------------------

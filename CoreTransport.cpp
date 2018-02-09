@@ -2716,7 +2716,7 @@ void CoreESPWebServerClass::OnClientConnect(CoreTransportClient& client, bool co
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPWebServerClass::OnClientDataWritten(CoreTransportClient& client, int errorCode)
 {
-  DBGLN(F("WEB: Client DATA WRITTEN!"));
+//  DBGLN(F("WEB: Client DATA WRITTEN!"));
   
     CoreWebServerQuery* pending = getPendingQuery(&client);
     if(pending)
@@ -2760,15 +2760,20 @@ void CoreESPWebServerClass::sendNextFileData(CoreWebServerPendingFileData* pfd)
   // тут читаем в буфер, и отсылаем
   const int BUFFER_SIZE = CORE_ESP_WEB_SERVER_CLIENT_BUFFER; // будем читать по N байт
 
-  int toSend = min(BUFFER_SIZE,pfd->pendingBytes);
+  unsigned long toSend = min(BUFFER_SIZE,pfd->pendingBytes);
 
   uint8_t* buff = new uint8_t[toSend];
-  //TODO: тут чтение из файла!!!
-
-  // пока просто заполняем тестовыми данными
-  for(int i=0;i<toSend;i++)
+  
+  //тут чтение из файла
+  for(unsigned long i=0;i<toSend;i++)
   {
-    buff[i] = random('a','z');
+     int iCh = pfd->file.read();
+      if(iCh == -1)
+      {
+        // ОШИБКА ЧТЕНИЯ С ФАЙЛА!!!
+        break;
+      }
+       buff[i] = (byte) iCh;
   }
 
   pfd->pendingBytes -= toSend;
@@ -2935,16 +2940,94 @@ void CoreESPWebServerClass::processQuery(CoreTransportClient* client, char* quer
     {
       // другие запросы, пытаемся разобрать
       processURI(client,uri);
-      /*
-      // другое URI, отсылаем его пока взад
-      String data = F("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/html\r\n\r\nRECEIVED: ");
-      data += uri;
-  
-      client->write((uint8_t*)data.c_str(),data.length());
-      */
+
     }
 
   
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPWebServerClass::send404(CoreTransportClient* client)
+{
+    String headers = WEB_HEADER_BEGIN;
+    headers += F("404 Not Found");
+    headers += WEB_HEADER_LINE;
+
+    headers += WEB_HEADER_CONNECTION;
+    headers += WEB_HEADER_LINE;
+
+    headers += WEB_HEADER_CONTENT_TYPE;
+    headers += F("text/plain");
+    headers += WEB_HEADER_LINE;
+
+    headers += WEB_HEADER_CONTENT_LENGTH;
+    headers += "0";
+    headers += WEB_HEADER_LINE;
+    headers += WEB_HEADER_LINE;
+
+    client->write((uint8_t*)headers.c_str(),headers.length());  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+String CoreESPWebServerClass::getContentType(const String& fileName)
+{
+  String s = fileName;
+  s.toLowerCase();
+
+  if(s.endsWith(F(".txt")))
+    return F("text/plain");
+  else
+  if(s.endsWith(F(".html")) || s.endsWith(F(".htm")))
+    return F("text/html");
+  else
+  if(s.endsWith(F(".css")))
+    return F("text/css");
+  else
+  if(s.endsWith(F(".bin")))
+    return F("application/octet-stream");
+  else
+  if(s.endsWith(F(".csv")))
+    return F("text/csv");
+  else
+  if(s.endsWith(F(".doc")) || s.endsWith(F(".docx")))
+    return F("application/msword");
+  else
+  if(s.endsWith(F(".gif")))
+    return F("image/gif");
+  else
+  if(s.endsWith(F(".ico")))
+    return F("image/x-icon");
+  else
+  if(s.endsWith(F(".jpeg")) || s.endsWith(F(".jpg")))
+    return F("image/jpeg");
+  else
+  if(s.endsWith(F(".js")))
+    return F("application/javascript");
+  else
+  if(s.endsWith(F(".json")))
+    return F("application/json");
+  else
+  if(s.endsWith(F(".png")))
+    return F("image/png");
+  else
+  if(s.endsWith(F(".pdf")))
+    return F("application/pdf");
+  else
+  if(s.endsWith(F(".rar")))
+    return F("application/x-rar-compressed");
+  else
+  if(s.endsWith(F(".rtf")))
+    return F("application/rtf");
+  else
+  if(s.endsWith(F(".wav")))
+    return F("audio/x-wav");
+  else
+  if(s.endsWith(F(".xml")))
+    return F("application/xml");
+  else
+  if(s.endsWith(F(".zip")))
+    return F("application/zip");
+
+  return F("application/octet-stream");
+    
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPWebServerClass::processURI(CoreTransportClient* client, String& uri)
@@ -2966,34 +3049,41 @@ void CoreESPWebServerClass::processURI(CoreTransportClient* client, String& uri)
       DBGLN(paramPtr);      
     }
 
-    // игнорируем favicon
-    if(!strcasecmp_P(filename,(const char*) F("favicon.ico")))
-    {
-      String headers = WEB_HEADER_BEGIN;
-      headers += F("404 Not Found");
-      headers += WEB_HEADER_LINE;
+    #ifdef CORE_SD_SUPPORT_ENABLED
+      // поддержка SD присутствует, читаем файл
 
-      headers += WEB_HEADER_CONNECTION;
-      headers += WEB_HEADER_LINE;
-
-      headers += WEB_HEADER_CONTENT_TYPE;
-      headers += F("text/plain");
-      headers += WEB_HEADER_LINE;
-
-      headers += WEB_HEADER_CONTENT_LENGTH;
-      headers += "0";
-      headers += WEB_HEADER_LINE;
-      headers += WEB_HEADER_LINE;
-
-      client->write((uint8_t*)headers.c_str(),headers.length());
+      #ifdef CORE_SD_USE_SDFAT
+        SdFile f;
+        f.open(filename,O_READ);
+        if(!f.isOpen())
+        {
+          send404(client);
+          return;
+        }
+      #else
+        File f = SD.open(filename,FILE_READ);
+        if(!f)
+        {
+          send404(client);
+          return;          
+        }
+      #endif
+      
+    #else
+      // не включена поддержка SD, ничего не выдаём
+      send404(client);
       return;
-    }
-    // получили имя файла, пытаемся его послать
-    // для теста просто пошлём килобайт 50-300 одного символа
-    int contentLength = 1024*random(50,300);
-    
-    //TODO: ТУТ ЧТЕНИЕ ИЗ ФАЙЛА !!!!
-    
+    #endif
+
+    // файл открыт, получаем его длину, формируем заголовки и отсылаем его клиенту
+    unsigned long contentLength = 
+
+    #ifdef CORE_SD_USE_SDFAT
+      f.fileSize();
+    #else
+      f.size();
+    #endif
+
       String headers = WEB_HEADER_BEGIN;
       headers += F("200 OK");
       headers += WEB_HEADER_LINE;
@@ -3002,7 +3092,7 @@ void CoreESPWebServerClass::processURI(CoreTransportClient* client, String& uri)
       headers += WEB_HEADER_LINE;
 
       headers += WEB_HEADER_CONTENT_TYPE;
-      headers += F("text/plain");
+      headers += getContentType(filename);
       headers += WEB_HEADER_LINE;
 
       headers += WEB_HEADER_CONTENT_LENGTH;
@@ -3015,11 +3105,12 @@ void CoreESPWebServerClass::processURI(CoreTransportClient* client, String& uri)
     CoreWebServerPendingFileData pfd;
     pfd.pendingBytes = contentLength;
     pfd.client = client;
+    pfd.file = f;
     pendingFiles.push_back(pfd);
 
     // отсылаем заголовки
-    client->write((uint8_t*)headers.c_str(),headers.length());
-    
+    client->write((uint8_t*)headers.c_str(),headers.length());    
+     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPWebServerClass::removePendingFileData(CoreTransportClient* client)
@@ -3028,7 +3119,16 @@ void CoreESPWebServerClass::removePendingFileData(CoreTransportClient* client)
   {
      if(pendingFiles[i].client == client)
      {
-        //TODO: Тут закрытие файла!!!
+        //Тут закрытие файла
+        if(pendingFiles[i].file
+         #ifdef CORE_SD_USE_SDFAT
+         .isOpen()
+         #endif
+         )
+         {
+          pendingFiles[i].file.close();
+         }
+         
         for(size_t k=i+1;k<pendingFiles.size();k++)
         {
           pendingFiles[k-1] = pendingFiles[k];
