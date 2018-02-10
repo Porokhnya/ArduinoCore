@@ -451,7 +451,6 @@ class CoreESPTransport : public CoreTransport
       // пул клиентов
       CoreTransportClient* clients[ESP_MAX_CLIENTS];
 
-
       void clearClientsQueue(bool raiseEvents);
 
       ESPClientsQueue clientsQueue; // очередь действий с клиентами
@@ -717,6 +716,7 @@ class CoreMQTT : public IClientEventsSubscriber, public Stream
 private:
 
   MQTTPublishList publishList;
+  void clearPublishQueue();
 
   CoreTransportClient* currentClient;
   CoreTransport* currentTransport;

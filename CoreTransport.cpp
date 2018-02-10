@@ -3320,6 +3320,18 @@ void CoreMQTT::reset()
   mqttMessageId = 0;
   currentStoreNumber = 0;
   clearReportsQueue();
+  clearPublishQueue();
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::clearPublishQueue()
+{
+  for(size_t i=0;i<publishList.size();i++)
+  {
+    delete [] publishList[i].payload;
+    delete [] publishList[i].topic;
+  }
+
+  publishList.empty();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreMQTT::processIncomingPacket(CoreTransportClient* client)
@@ -3561,6 +3573,7 @@ void CoreMQTT::OnClientDataWritten(CoreTransportClient& client, int errorCode)
   {
     DBGLN(F("MQTT: Can't write to client!"));
     clearReportsQueue();
+    clearPublishQueue();
     currentClient = NULL;
     machineState = mqttWaitReconnect;
 
@@ -3583,6 +3596,7 @@ void CoreMQTT::OnClientConnect(CoreTransportClient& client, bool connected, int 
     // клиент не подсоединился, сбрасываем текущего клиента и вываливаемся в ожидание переподсоединения.
     DBGLN(F("MQTT: Can't connect to broker, try to reconnect..."));
     clearReportsQueue();
+    clearPublishQueue();
     currentClient = NULL;
     machineState = mqttWaitReconnect;
     timer = millis();    
@@ -3660,7 +3674,7 @@ void CoreMQTT::convertAnswerToJSON(const String& answer, String* resultBuffer)
 //--------------------------------------------------------------------------------------------------------------------------------
 bool CoreMQTT::publish(const char* topicName, const char* payload)
 {
-  if(!MQTTSettings.enabled || MQTTSettings.workMode == mqttDisabled || !currentTransport || ! currentClient || !topicName) // выключены
+  if(!MQTTSettings.enabled || MQTTSettings.workMode == mqttDisabled || !currentTransport || !currentClient || !topicName) // выключены
     return false; 
 
   MQTTPublishQueue pq;
@@ -3679,6 +3693,8 @@ bool CoreMQTT::publish(const char* topicName, const char* payload)
   }
 
   publishList.push_back(pq);
+
+  return true;
 }
 //--------------------------------------------------------------------------------------------------------------------------------
 void CoreMQTT::update()
@@ -3717,6 +3733,7 @@ void CoreMQTT::update()
           DBGLN(F("MQTT: unable to connect within 20 seconds, try to reconnect..."));
           // долго ждали, переподсоединяемся
           clearReportsQueue();
+          clearPublishQueue();
           currentClient = NULL;
           machineState = mqttWaitReconnect;
           timer = millis();
@@ -3730,6 +3747,7 @@ void CoreMQTT::update()
         {
           DBGLN(F("MQTT: start reconnect!"));
           clearReportsQueue();
+          clearPublishQueue();
           currentClient = NULL;
           machineState = mqttWaitClient;
         }
@@ -3959,6 +3977,7 @@ void CoreMQTT::update()
           DBGLN(F("MQTT: wait for send results timeout, reconnect!"));
           // долго ждали результата записи в клиента, переподсоединяемся
           clearReportsQueue();
+          clearPublishQueue();
           currentClient = NULL;
           machineState = mqttWaitReconnect;
           timer = millis();
