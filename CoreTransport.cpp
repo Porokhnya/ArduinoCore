@@ -3534,7 +3534,8 @@ void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
   if(machineState == mqttWaitSendPublishPacketDone)
   {
 //    DBGLN(F("MQTT: PUBLISH packet was sent!"));
-    // отсылали пакет публикации
+    // отсылали пакет публикации, тут к нам пришла обратка,
+    // поскольку мы подписались на все топики для нашего клиента, на будущее
      machineState = mqttSendPublishPacket;
   }
   else
@@ -3542,7 +3543,8 @@ void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
 //      DBG(F("MQTT: OnClientDataAvailable - UNHANDLED MACHINE STATE: "));
 //      DBGLN(machineState);
 
-      // тут разбираем, что пришло
+      // тут разбираем, что пришло от брокера. Если мы здесь, значит данные от брокера
+      // пришли в необрабатываемую ветку, т.е. это публикация прямо с брокера.
       processIncomingPacket(currentClient);
   }
     
@@ -3802,14 +3804,38 @@ void CoreMQTT::update()
             if(hasReportTopics)
             {
               // у нас есть топик для репорта
-              topicName =  MQTTSettings.clientID + F("/REPORT");
+              topicName =  MQTTSettings.clientID + F("/REPORT/");
 
               // удаляем перевод строки
               reportQueue[0]->trim();
 
+              // тут в имя топика надо добавить запрошенную команду, чтобы в клиенте можно было ориентироваться
+              // на конкретные топики отчёта
+              int idx = reportQueue[0]->indexOf("=");
+              String commandStatus = reportQueue[0]->substring(0,idx);
+              reportQueue[0]->remove(0,idx+1);
+
+              // теперь в reportQueue[0] у нас лежит ответ после OK= или ER=
+              String delim = String(CORE_COMMAND_PARAM_DELIMITER);
+              idx = reportQueue[0]->indexOf(delim);
+              if(idx != -1)
+              {
+                // есть ответ с параметрами, выцепляем первый - это и будет дополнением к имени топика
+                topicName += reportQueue[0]->substring(0,idx);
+                reportQueue[0]->remove(0,idx);
+                *reportQueue[0] = commandStatus + *reportQueue[0];
+              }
+              else
+              {
+                // только один ответ - имя команды, без возвращённых параметров
+                topicName += *reportQueue[0];
+                *reportQueue[0] = commandStatus;
+              }
+              
+
               #ifdef MQTT_REPORT_AS_JSON
                 // сперва убираем =, и заменяем его на |
-                reportQueue[0]->replace("=", String(CORE_COMMAND_PARAM_DELIMITER));
+                //reportQueue[0]->replace("=", String(CORE_COMMAND_PARAM_DELIMITER));
                 // и конвертируем в JSON
                 convertAnswerToJSON(*(reportQueue[0]),&data);
               #else
