@@ -103,6 +103,18 @@ void loop()
   // обрабатываем входящие по Serial команды
   Core.handleCommands();
 
+  // тут раз в 10 секунд будем публиковать свой топик в брокера MQTT
+  #ifdef CORE_MQTT_TRANSPORT_ENABLED
+    static unsigned long freeramMillis = 0;
+    if(millis() - freeramMillis > 10000)
+    {
+      freeramMillis = millis();
+      String topicName = F("FREERAM");
+      String payload = String(Core.getFreeMemory());
+      MQTT.publish(topicName.c_str(),payload.c_str());
+    }
+  #endif // CORE_MQTT_TRANSPORT_ENABLED
+
 /*
   if(Signals[12])
   {

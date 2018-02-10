@@ -3658,6 +3658,29 @@ void CoreMQTT::convertAnswerToJSON(const String& answer, String* resultBuffer)
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------
+bool CoreMQTT::publish(const char* topicName, const char* payload)
+{
+  if(!MQTTSettings.enabled || MQTTSettings.workMode == mqttDisabled || !currentTransport || ! currentClient || !topicName) // выключены
+    return false; 
+
+  MQTTPublishQueue pq;
+  int tnLen = strlen(topicName);
+  pq.topic = new char[tnLen+1];
+  memset(pq.topic,0,tnLen+1);
+  strcpy(pq.topic,topicName);
+
+  pq.payload = NULL;
+  if(payload)
+  {
+    int pllen = strlen(payload);
+    pq.payload = new char[pllen+1];
+    memset(pq.payload,0,pllen+1);
+    strcpy(pq.payload,payload);    
+  }
+
+  publishList.push_back(pq);
+}
+//--------------------------------------------------------------------------------------------------------------------------------
 void CoreMQTT::update()
 {
   if(!MQTTSettings.enabled || MQTTSettings.workMode == mqttDisabled || !currentTransport) // выключены
@@ -3787,9 +3810,10 @@ void CoreMQTT::update()
       {
         // тут мы находимся в процессе публикации, поэтому можем проверять - есть ли топики для репорта
         bool hasReportTopics = reportQueue.size() > 0;
+        bool hasPublishTopics = publishList.size() > 0;
         
         unsigned long interval = MQTTSettings.intervalBetweenTopics;
-        if(hasReportTopics || millis() - timer > interval)
+        if(hasReportTopics || hasPublishTopics || millis() - timer > interval)
         {
           DBGLN(F("MQTT: SEND NEXT TOPIC!"));
 
@@ -3854,7 +3878,36 @@ void CoreMQTT::update()
                   }
                   reportQueue.pop();
               }
-            }
+            } // hasReportTopics
+            else
+            if(hasPublishTopics)
+            {
+              // есть пакеты для публикации
+              MQTTPublishQueue pq = publishList[0];
+
+              // тут публикуем из пакета для публикации
+              topicName =  MQTTSettings.clientID + "/";
+              topicName += pq.topic;
+
+              if(pq.payload)
+                data = pq.payload;
+
+              // чистим память
+              delete [] pq.topic;
+              delete [] pq.payload;
+              
+              // и удаляем из списка
+              if(publishList.size() < 2)
+                publishList.empty();
+              else
+              {
+                for(size_t kk=1;kk<publishList.size();kk++)
+                {
+                  publishList[kk-1] = publishList[kk];  
+                }
+                publishList.pop();
+              }
+            } // hasPublishTopics
             else
             {
               // обычный режим работы, отсылаем показания с хранилища

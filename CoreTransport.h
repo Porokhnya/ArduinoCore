@@ -682,6 +682,15 @@ typedef enum
   
 } MQTTState;
 //--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  char* topic;
+  char* payload;
+  
+} MQTTPublishQueue;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<MQTTPublishQueue> MQTTPublishList;
+//--------------------------------------------------------------------------------------------------------------------------------------
 class CoreMQTT : public IClientEventsSubscriber, public Stream
 {
   public:
@@ -701,8 +710,13 @@ class CoreMQTT : public IClientEventsSubscriber, public Stream
   virtual int available() {return 0;}
   virtual size_t write(uint8_t ch) { *streamBuffer += (char) ch; return 1;}
 
+  // для публикации любого стороннего топика
+  bool publish(const char* topicName, const char* payload);
+
 
 private:
+
+  MQTTPublishList publishList;
 
   CoreTransportClient* currentClient;
   CoreTransport* currentTransport;
