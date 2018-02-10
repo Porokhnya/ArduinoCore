@@ -456,7 +456,7 @@ class CoreESPTransport : public CoreTransport
 
       ESPClientsQueue clientsQueue; // очередь действий с клиентами
 
-      bool isClientInQueue(CoreTransportClient* client); // тестирует - не в очереди ли уже клиент?
+      bool isClientInQueue(CoreTransportClient* client, ESPClientAction action); // тестирует - не в очереди ли уже клиент?
       void addClientToQueue(CoreTransportClient* client, ESPClientAction action, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
       void removeClientFromQueue(CoreTransportClient* client); // удаляет клиента из очереди  
       
@@ -631,5 +631,110 @@ extern CoreRS485 RS485;
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_RS485_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_MQTT_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  mqttDisabled, // выключено
+  mqttThroughESP, // через ESP
+  
+} MQTTWorkMode;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  bool enabled;
+  MQTTWorkMode workMode;
+  String clientID;
+  String serverAddress;
+  int serverPort;
+  String userName;
+  String password;
+  uint16_t intervalBetweenTopics;
+
+  void reset()
+  {
+    enabled = false;
+  }
+  
+  
+} CoreMQTTSettings;
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern CoreMQTTSettings MQTTSettings;
+//--------------------------------------------------------------------------------------------------------------------------------------
+#define MQTT_CONNECT_COMMAND (1 << 4)
+#define MQTT_PUBLISH_COMMAND (3 << 4)
+#define MQTT_SUBSCRIBE_COMMAND (8 << 4)
+#define MQTT_QOS1 (1 << 1)
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<uint8_t> MQTTBuffer;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  mqttWaitClient, // ожидаем свободного клиента
+  mqttWaitConnection, // ожидаем подсоединения к брокеру
+  mqttWaitReconnect, // ожидаем переподсоединения к брокеру (в случае неуспешного соединения)
+  mqttSendConnectPacket, // отсылаем пакет с информацией о подсоединении к брокеру
+  mqttWaitSendConnectPacketDone,
+  mqttSendSubscribePacket, // отсылаем пакет с информацией о подписке
+  mqttWaitSendSubscribePacketDone,
+  mqttSendPublishPacket, // отсылаем пакет публикации
+  mqttWaitSendPublishPacketDone,
+  
+} MQTTState;
+//--------------------------------------------------------------------------------------------------------------------------------------
+class CoreMQTT : public IClientEventsSubscriber, public Stream
+{
+  public:
+    CoreMQTT();
+    void reset();
+    void update();
+    void begin();
+
+  virtual void OnClientConnect(CoreTransportClient& client, bool connected, int errorCode); // событие "Статус соединения клиента"
+  virtual void OnClientDataWritten(CoreTransportClient& client, int errorCode); // событие "Данные из клиента записаны в поток"
+  virtual void OnClientDataAvailable(CoreTransportClient& client, bool isDone); // событие "Для клиента поступили данные", флаг - все ли данные приняты
+
+  // Stream
+  virtual void flush(){}
+  virtual int peek() {return 0;}
+  virtual int read() {return 0;}
+  virtual int available() {return 0;}
+  virtual size_t write(uint8_t ch) { *streamBuffer += (char) ch; return 1;}
+
+
+private:
+
+  CoreTransportClient* currentClient;
+  CoreTransport* currentTransport;
+  unsigned long timer;
+
+  MQTTState machineState;
+  uint16_t mqttMessageId;
+  String* streamBuffer;
+
+  size_t currentStoreNumber;
+
+  void pushToReportQueue(String* toReport);
+  Vector<String*> reportQueue;
+  void clearReportsQueue();
+
+  void constructFixedHeader(byte command, MQTTBuffer& fixedHeader,size_t payloadSize);
+
+  void constructConnectPacket(String& mqttBuffer,int& mqttBufferLength,const char* id, const char* user, const char* pass,const char* willTopic,uint8_t willQoS, uint8_t willRetain, const char* willMessage);
+  void constructSubscribePacket(String& mqttBuffer,int& mqttBufferLength, const char* topic);
+  void constructPublishPacket(String& mqttBuffer,int& mqttBufferLength, const char* topic, const char* payload);
+  
+  void encode(MQTTBuffer& buff,const char* str);
+
+  void writePacket(MQTTBuffer& fixedHeader,MQTTBuffer& payload, String& mqttBuffer,int& mqttBufferLength);
+
+  void processIncomingPacket(CoreTransportClient* client);
+
+  void convertAnswerToJSON(const String& answer, String* resultBuffer);
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern CoreMQTT MQTT;
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_MQTT_TRANSPORT_ENABLED
 
 #endif

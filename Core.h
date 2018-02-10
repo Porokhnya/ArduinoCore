@@ -94,8 +94,9 @@ typedef enum
   ClusterIDRecord = 10, // данные о ID кластера, к которому принадлежит группа устройств
   SignalRecord = 11, // запись о сигнале
   WatchdogRecord = 12, // запись настроек ватчдога
+  MQTTSettingsRecord = 13, // настройки MQTT
 
-  DummyLastRecord = 13 // последняя запись, для проверки вхождения в диапазон
+  DummyLastRecord = 14 // последняя запись, для проверки вхождения в диапазон
   
 } CoreConfigRecordType;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -236,6 +237,8 @@ class CoreClass
 
    uint8_t memRead(unsigned int address); // читает байт из EEPROM
    void memWrite(unsigned int address, uint8_t val); // пишет байт в EEPROM
+
+   void* memFind(const void *haystack, size_t n, const void *needle, size_t m);
 
    // обрабатывает команду и пишет результат её обработки в вызвавший поток. Команды приходят во внутреннем формате, и в поток ответ пишется тоже во внутреннем формате
    void processCommand(const String& command,Stream* outStream);

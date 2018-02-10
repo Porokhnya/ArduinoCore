@@ -74,7 +74,7 @@ bool CommandParser::parse(const String& command, bool isSetCommand)
 
     while(*startPtr)
     {
-      const char* delimPtr = strchr(startPtr,'|');
+      const char* delimPtr = strchr(startPtr,CORE_COMMAND_PARAM_DELIMITER);
             
       if(!delimPtr)
       {

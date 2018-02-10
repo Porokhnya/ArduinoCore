@@ -1159,12 +1159,11 @@ void CoreDS18B20LineManager::clearAddresses()
   }
 
   addresses.empty();
-  //while(addresses.size())
-  //  addresses.pop();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreDS18B20LineManager::begin(CoreDS18B20Resolution res)
 {
+  
   if(!pin)
     return;
   
@@ -1194,7 +1193,8 @@ void CoreDS18B20LineManager::begin(CoreDS18B20Resolution res)
    ow.write(0xCC); // пофиг на адреса (SKIP ROM)
    ow.write(0x48); // COPY SCRATCHPAD
    delay(10);
-   ow.reset();    
+   ow.reset(); 
+
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint16_t CoreDS18B20LineManager::startConversion()
@@ -1209,7 +1209,9 @@ uint16_t CoreDS18B20LineManager::startConversion()
   // закончилась до момента начала следующего цикла опроса датчиков
   
   if(!pin)
+  {
     return 0;
+  }
 
   if(flags.isFirstTimeConversion) // перед первым вызовом конвертации инициализируемся
   {
@@ -1319,7 +1321,7 @@ uint8_t CoreDS18B20LineManager::catchSensor(CoreSensorDS18B20* sensor)
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreDS18B20LineManager::addressExists(const uint8_t* address, uint8_t*& existing)
 {
-  
+
   for(size_t i=0;i<addresses.size();i++)
   {
     existing = addresses[i];
@@ -1364,7 +1366,6 @@ uint8_t* CoreDS18B20LineManager::addAddress(const uint8_t* address, size_t senso
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreDS18B20LineManager::findAddress(OneWire& ow, uint8_t* output, CoreSensorDS18B20* sensor)
 {
-
   // тут смотрим - есть ли у датчика сохранённый адрес с шины?
   if(sensor->getAddress(output)) // адрес уже есть у датчика, не надо искать
   {
@@ -1436,7 +1437,8 @@ bool CoreDS18B20LineManager::isGoodAddress(const uint8_t* address)
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreDS18B20LineManager::readTemperature(int8_t& tempValue, uint8_t& tempFract, CoreSensorDS18B20* sensor)
-{  
+{ 
+   
   if(!pin)
     return false;
 
@@ -1526,7 +1528,7 @@ CoreDS18B20DispatcherClass::CoreDS18B20DispatcherClass()
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreDS18B20DispatcherClass::clear()
-{
+{  
   for(size_t i=0;i<list.size();i++)
   {
     delete list[i];
@@ -1538,11 +1540,13 @@ void CoreDS18B20DispatcherClass::clear()
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreDS18B20LineManager* CoreDS18B20DispatcherClass::add(uint8_t pin)
-{
+{    
   for(size_t i=0;i<list.size();i++)
   {
     if(list[i]->getPin() == pin)
+    {
       return list[i];
+    }
   }
 
   CoreDS18B20LineManager* manager = new CoreDS18B20LineManager(pin);
@@ -1559,12 +1563,11 @@ CoreSensorDS18B20::CoreSensorDS18B20() : CoreSensor(DS18B20)
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorDS18B20::begin(uint8_t* configData)
-{
+{ 
   // запоминаем менеджера нашей линии
   myManager = CoreDS18B20Dispatcher.add(*configData);
   myIndex = myManager->catchSensor(this);
-
-
+  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint16_t CoreSensorDS18B20::startMeasure()
@@ -1580,6 +1583,7 @@ uint8_t CoreSensorDS18B20::getDataSize()
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSensorDS18B20::read(uint8_t* buffer)
 {
+  
   int8_t temp;
   uint8_t tempFract;
   bool result = myManager->readTemperature(temp,tempFract,this);

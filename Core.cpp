@@ -25,7 +25,7 @@ SDSettingsStruct SDSettings;
 //--------------------------------------------------------------------------------------------------------------------------------------
 // FileUtils
 //--------------------------------------------------------------------------------------------------------------------------------------
- void FileUtils::printFile(const String& fileName, Stream* outStream)
+void FileUtils::printFile(const String& fileName, Stream* outStream)
 {
   #ifdef CORE_SD_USE_SDFAT
 
@@ -618,6 +618,171 @@ bool CoreConfigIterator::readRecord()
     }
     return true; // SensorsUpdateIntervalRecord
 
+
+    case MQTTSettingsRecord: // данные о настройках MQTT
+    {
+      #ifdef CORE_MQTT_TRANSPORT_ENABLED
+      
+          // тут читаем все настройки MQTT
+          MQTTSettings.enabled = true;
+          
+          // читаем режим работы
+          uint8_t b = read();
+          bool inSaveMode = !writeOut(b);
+          
+          if(inSaveMode)
+            MQTTSettings.workMode = (MQTTWorkMode) b;
+
+          // читаем ID клиента
+          if(inSaveMode)
+            MQTTSettings.clientID = "";
+
+          while(1)
+          {
+            char ch = read();
+            writeOut(ch);
+            
+            if(ch == '\0')
+              break;
+              
+            if(inSaveMode)
+              MQTTSettings.clientID += ch;            
+          }
+
+          // читаем адрес сервера
+          if(inSaveMode)
+            MQTTSettings.serverAddress = "";
+
+          while(1)
+          {
+            char ch = read();
+            writeOut(ch);
+            
+            if(ch == '\0')
+              break;
+              
+            if(inSaveMode)
+              MQTTSettings.serverAddress += ch;            
+          }
+
+          // читаем порт сервера
+          if(inSaveMode)
+          {
+            byte* writePtr = (byte*)&(MQTTSettings.serverPort);
+            *writePtr++ = read();
+            *writePtr = read();
+          }
+          else
+          {
+            writeOut(read());
+            writeOut(read());
+          }
+
+          // читаем имя пользователя
+          if(inSaveMode)
+            MQTTSettings.userName = "";
+
+          while(1)
+          {
+            char ch = read();
+            writeOut(ch);
+            
+            if(ch == '\0')
+              break;
+              
+            if(inSaveMode)
+              MQTTSettings.userName += ch;            
+          }
+
+          // читаем пароль
+          if(inSaveMode)
+            MQTTSettings.password = "";
+            
+          while(1)
+          {
+            char ch = read();
+            writeOut(ch);
+            
+            if(ch == '\0')
+              break;
+              
+            if(inSaveMode)
+              MQTTSettings.password += ch;            
+          }
+
+          // читаем интервал обновления топиков
+          if(inSaveMode)
+          {
+            byte* writePtr = (byte*)&(MQTTSettings.intervalBetweenTopics);
+            *writePtr++ = read();
+            *writePtr = read();            
+          }
+          else
+          {
+            writeOut(read());
+            writeOut(read());
+          }
+      
+      #else
+
+        char ch;
+
+         // тут пропускаем все настройки MQTT
+         writeOut(read()); // пропускаем режим работы
+          
+          // пропускаем ID клиента
+          while(1)
+          {
+            ch = read();
+            writeOut(ch);
+
+            if(ch == '\0')
+              break;
+          }
+
+          // пропускаем адрес сервера
+          while(1)
+          {
+            ch = read();
+            writeOut(ch);
+
+            if(ch == '\0')
+              break;
+          }
+
+          // пропускаем порт
+          writeOut(read());
+          writeOut(read());
+
+          // пропускаем имя пользователя
+          while(1)
+          {
+            ch = read();
+            writeOut(ch);
+
+            if(ch == '\0')
+              break;
+          }
+
+          // пропускаем пароль
+          while(1)
+          {
+            ch = read();
+            writeOut(ch);
+
+            if(ch == '\0')
+              break;
+          }
+
+          // пропускаем интервал обновлений топиков
+          writeOut(read());
+          writeOut(read());
+         
+      
+      #endif // CORE_MQTT_TRANSPORT_ENABLED
+    }
+    return true;
+
     case ESPSettingsRecord: // данные о настройках ESP
     {
       
@@ -1148,6 +1313,46 @@ bool CoreClass::loadConfig()
    return true;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void* CoreClass::memFind(const void *haystack, size_t n, const void *needle, size_t m)
+{
+        const unsigned char *y = (const unsigned char *)haystack;
+        const unsigned char *x = (const unsigned char *)needle;
+
+        size_t j, k, l;
+
+        if (m > n || !m || !n)
+                return NULL;
+
+        if (1 != m) {
+                if (x[0] == x[1]) {
+                        k = 2;
+                        l = 1;
+                } else {
+                        k = 1;
+                        l = 2;
+                }
+
+                j = 0;
+                while (j <= n - m) {
+                        if (x[1] != y[j + 1]) {
+                                j += k;
+                        } else {
+                                if (!memcmp(x + 2, y + j + 2, m - 2)
+                                    && x[0] == y[j])
+                                        return (void *)&y[j];
+                                j += l;
+                        }
+                }
+        } else
+                do {
+                        if (*y == *x)
+                                return (void *)y;
+                        y++;
+                } while (--n);
+
+        return NULL;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::reset()
 {
 
@@ -1169,12 +1374,15 @@ void CoreClass::reset()
 
   // сбрасываем настройки ватчдога по умолчанию
   CoreWatchdog.reset();
+
+  #ifdef CORE_MQTT_TRANSPORT_ENABLED
+    MQTTSettings.reset();
+    MQTT.reset();
+  #endif
   
   
   // очищаем сигналы
   sensorTimers.empty();
-  //while(sensorTimers.size())
-  //  sensorTimers.pop(); 
 
   // очищаем список датчиков
   list.clear();
@@ -1426,6 +1634,14 @@ bool CoreClass::getFEATURES(const char* commandPassed, Stream* pStream)
     pStream->print(F("SIG")); 
   #endif
 
+
+  #ifdef CORE_MQTT_TRANSPORT_ENABLED
+    if(written)
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+      
+    written++;
+    pStream->print(F("MQTT")); 
+  #endif
 
   pStream->println();
 
@@ -2411,12 +2627,14 @@ void CoreClass::updateTimers()
     } // if
     else
     {
-      i++;
        
       // время конвертации не закончилось, надо обновить датчик, вдруг он внутри себя что-то захочет сделать, во время конвертации,
       // например, если датчику требуется 10 семплов за 10 секунд - он при вызове startMeasure может взводить таймер, а в вызовах
       // update проверять, и каждую секунду делать семпл
       sensorTimers[i].sensor->update();
+      
+      i++;
+
     }
   } // for
 }
@@ -2516,6 +2734,10 @@ void CoreClass::begin()
     Signals.resume();
   #endif
 
+  #ifdef CORE_MQTT_TRANSPORT_ENABLED
+    MQTT.begin();
+  #endif
+
   ON_CORE_BEGIN();
 
   printVersion(Serial);
@@ -2554,19 +2776,29 @@ void CoreClass::update()
     RS485.update();
   #endif
 
+
   #ifdef CORE_ESP_TRANSPORT_ENABLED
     ESP.update();
   #endif
 
+
   #ifdef CORE_LORA_TRANSPORT_ENABLED
     LoraDispatcher.update();    
   #endif // CORE_LORA_TRANSPORT_ENABLED  
-  
+
+
   updateTimers(); // обновляем таймеры
+
 
   #ifdef CORE_SIGNALS_ENABLED
     Signals.update();
   #endif
+
+
+  #ifdef CORE_MQTT_TRANSPORT_ENABLED
+    MQTT.update();
+  #endif
+
   
   unsigned long curMillis = millis();
 
@@ -2581,6 +2813,7 @@ void CoreClass::update()
     }
   } // for
   #endif // CORE_DIGITALPORT_ENABLED
+
 
   #ifdef CORE_DS3231_ENABLED
   // с датчиков DS3231 надо обновлять показания каждую секунду, вне зависимости от выставленного интервала

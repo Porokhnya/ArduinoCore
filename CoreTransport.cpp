@@ -115,7 +115,10 @@ void CoreTransportClient::connect(const char* ip, uint16_t port)
 bool CoreTransportClient::write(uint8_t* buff, size_t sz, bool takeBufferOwnership)
 {
     if(!sz || !buff || !connected() || clientID == 0xFF)
+    {
+      DBGLN(F("Client - CAN'T WRITE!"));
       return false;
+    }
 /*
     DBG(F("Client #"));
     DBG(clientID);
@@ -991,7 +994,7 @@ void CoreRS485::addToExcludedList(uint8_t clientNumber)
           Serial.print(clientNumber);
           Serial.println(F(" excluded from query!"));
         #endif
-*/        
+*/
       }
 
         return;
@@ -1057,8 +1060,6 @@ void CoreRS485::reset()
     rs485WritePtr = 0;
 
     excludedList.empty();
-    //while(excludedList.size())
-    //  excludedList.pop();
     
   #endif // CORE_RS485_DISABLE_CORE_LOGIC
     
@@ -1760,12 +1761,12 @@ void CoreESPTransport::update()
   {
      timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
   }
-
+/*
   #ifdef _CORE_DEBUG
 
       if(hasAnswerLine && wiFiReceiveBuff->length())
       {
-        /*
+        
         // выводим то, что получено, для теста
         DBG(F("ESP: <<==(c:"));
         DBG(currentCommand);
@@ -1775,11 +1776,11 @@ void CoreESPTransport::update()
         DBG(wiFiReceiveBuff->length());
         DBG(F("): "));
         DBGLN(*wiFiReceiveBuff);
-        */
+        
       }
   
   #endif // _CORE_DEBUG
-
+*/
     if(hasAnswerLine && !wiFiReceiveBuff->length()) // пустая строка, не надо обрабатывать
       hasAnswerLine = false;
 
@@ -1818,7 +1819,7 @@ void CoreESPTransport::update()
                       // хочет отсоединиться
                       DBG(F("ESP: client #"));
                       DBG(clientID);
-                      DBGLN(F(" want to disconnect..."));
+                      DBGLN(F(" wants to disconnect..."));
 
                       currentCommand = cmdCIPCLOSE;
                       String cmd = F("AT+CIPCLOSE=");
@@ -1853,11 +1854,13 @@ void CoreESPTransport::update()
                     case actionWrite:
                     {
                       // хочет отослать данные
+                      /*
                       DBG(F("ESP: client #"));
                       DBG(clientID);
                       DBG(F(" has data="));
                       DBG(dt.client->getDataSize());
                       DBGLN(F(" and wants to send it..."));
+                      */
 
                       currentCommand = cmdCIPSEND;
 
@@ -1952,7 +1955,8 @@ void CoreESPTransport::update()
                                removeClientFromQueue(dt.client);
                                
                                setClientBusy(*thisClient,false);
-                               setClientConnected(*thisClient,true,CT_ERROR_NONE);
+                               // тут вызывать не надо, поскольку при удачном соединении в порт упадёт ID,CONNECTED, мы его разберём и вызовем событие
+                               //setClientConnected(*thisClient,true,CT_ERROR_NONE);
                             }
                           }
                           else
@@ -2014,7 +2018,7 @@ void CoreESPTransport::update()
                           // send ok
                           if(clientsQueue.size())
                           {
-                             DBGLN(F("ESP: data was sent."));
+                             //DBGLN(F("ESP: data was sent."));
                              ESPClientQueueData dt = clientsQueue[0];
                              
                              CoreTransportClient* thisClient = dt.client;
@@ -2065,11 +2069,11 @@ void CoreESPTransport::update()
                        // тут пишем напрямую
                        if(clientsQueue.size())
                        {
-                          DBGLN(F("ESP: > received, start write from client to ESP..."));
-
                           // говорим, что ждём окончания отсыла данных
                           currentCommand = cmdWaitSendDone;                          
                           ESPClientQueueData dt = clientsQueue[0];
+
+                          DBGLN(F("ESP: > received, start write from client to ESP..."));
                           
                           workStream->write(dt.client->getData(),dt.client->getDataSize());
 
@@ -2363,6 +2367,7 @@ void CoreESPTransport::update()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::begin()
 {
+  
   workStream = NULL;
 
   if(!ESPTransportSettings.enabled)
@@ -2370,12 +2375,18 @@ void CoreESPTransport::begin()
   
   if(ESPTransportSettings.SerialNumber == 0 || ESPTransportSettings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
     return;
+
+  DBG(F("ESP: begin, serial is: "));
+  DBGLN(ESPTransportSettings.SerialNumber);
   
   initClients();
+
+
 
   #ifdef CORE_ESP_WEB_SERVER
     subscribe(&CoreESPWebServer);
   #endif  
+
 
   HardwareSerial* hs = NULL;
 
@@ -2408,14 +2419,11 @@ void CoreESPTransport::begin()
     #error "Unknown target board!"
   #endif    
 
-
-
   workStream = hs;
   unsigned long uspeed = ESPTransportSettings.UARTSpeed;
   uspeed *= 9600;
 
   hs->begin(uspeed);
-
 
   restart();
 
@@ -2427,8 +2435,6 @@ void CoreESPTransport::begin()
     machineState = espReboot;
   }
 
-
-
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::restart()
@@ -2437,7 +2443,7 @@ void CoreESPTransport::restart()
   wiFiReceiveBuff = new String();
 
   // очищаем очередь клиентов, заодно им рассылаем события
-  clearClientsQueue(true);
+  clearClientsQueue(true);  
 
   // т.к. мы ничего не инициализировали - говорим, что мы не готовы предоставлять клиентов
   flags.ready = false;
@@ -2458,9 +2464,10 @@ void CoreESPTransport::restart()
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::createInitCommands(bool addResetCommand)
-{
+{  
   // очищаем очередь команд
   clearInitCommands();
+
   
   DBGLN(F("ESP: Create init queue..."));
   
@@ -2485,13 +2492,12 @@ void CoreESPTransport::clearInitCommands()
   DBGLN(F("ESP: Clear init queue..."));  
 
   initCommandsQueue.empty();
-  //while(initCommandsQueue.size())
-  //  initCommandsQueue.pop();  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::clearClientsQueue(bool raiseEvents)
 {
-  DBGLN(F("ESP: Clear clients queue..."));
+  DBG(F("ESP: Clear clients queue: "));
+  DBGLN(clientsQueue.size());
   
   // тут попросили освободить очередь клиентов.
   // для этого нам надо выставить каждому клиенту флаг того, что он свободен,
@@ -2528,16 +2534,16 @@ void CoreESPTransport::clearClientsQueue(bool raiseEvents)
     } // for
 
   clientsQueue.empty();
-  //while(clientsQueue.size())
-  //  clientsQueue.pop();
+
+  DBGLN(F("ESP: clients queue cleared."));
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool CoreESPTransport::isClientInQueue(CoreTransportClient* client)
+bool CoreESPTransport::isClientInQueue(CoreTransportClient* client, ESPClientAction action)
 {
   for(size_t i=0;i<clientsQueue.size();i++)
   {
-    if(clientsQueue[i].client == client)
+    if(clientsQueue[i].client == client && clientsQueue[i].action == action)
       return true;
   }
 
@@ -2546,8 +2552,11 @@ bool CoreESPTransport::isClientInQueue(CoreTransportClient* client)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::addClientToQueue(CoreTransportClient* client, ESPClientAction action, const char* ip, uint16_t port)
 {
-  if(isClientInQueue(client))
+  if(isClientInQueue(client, action))
+  {
+    DBGLN(F("ESP: Client already in queue!"));
     return;
+  }
 
     ESPClientQueueData dt;
     dt.client = client;
@@ -2629,7 +2638,7 @@ CoreTransportClient* CoreESPTransport::getFreeClient()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::beginWrite(CoreTransportClient& client)
 {
-  //DBGLN(F("ESP: write from client..."));
+//  DBGLN(F("ESP: write from client..."));
 
   if(!client.connected())
   {
@@ -2643,19 +2652,19 @@ void CoreESPTransport::beginWrite(CoreTransportClient& client)
   // добавляем клиента в очередь на запись
   addClientToQueue(&client, actionWrite);
 
-/*
-  DBG(F("Client #"));
+
+  DBG(F("ESP: Client #"));
   DBG(client.getID());
   DBG(F(" has data size: "));
   DBGLN(client.getDataSize());
-*/
+
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с записью в поток с этого клиента
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::beginConnect(CoreTransportClient& client, const char* ip, uint16_t port)
 {
-   DBGLN(F("ESP: connect client to IP..."));
+//   DBGLN(F("ESP: connect client to IP..."));
 
   if(client.connected())
   {
@@ -2716,12 +2725,14 @@ void CoreESPWebServerClass::OnClientConnect(CoreTransportClient& client, bool co
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPWebServerClass::OnClientDataWritten(CoreTransportClient& client, int errorCode)
 {
-//  DBGLN(F("WEB: Client DATA WRITTEN!"));
+//  DBG(F("WEB: Client DATA WRITTEN, errorCode = "));
+//  DBGLN(errorCode);
   
     CoreWebServerQuery* pending = getPendingQuery(&client);
     if(pending)
     {
-      removePendingQuery(pending);    
+      removePendingQuery(pending);
+  //    DBGLN(F("WEB: disconnect client 1!"));    
       client.disconnect();
     }
     else
@@ -2733,7 +2744,8 @@ void CoreESPWebServerClass::OnClientDataWritten(CoreTransportClient& client, int
       {
         if(pfd)
           removePendingFileData(&client);
-          
+        
+//        DBGLN(F("WEB: disconnect client 2!"));     
         client.disconnect();
         return;
       }
@@ -2741,12 +2753,21 @@ void CoreESPWebServerClass::OnClientDataWritten(CoreTransportClient& client, int
       // всё норм, проверяем, есть ли для этого клиента данные?
       if(!pfd)
       {
-        client.disconnect();
+        // нет у нас клиента такого
         return;
       }
 
-      // данные ещё есть, отсылаем
-      sendNextFileData(pfd);
+      if(pfd->pendingBytes < 1)
+      {
+        // данные закончились
+        pfd->client->disconnect();
+        removePendingFileData(pfd->client);    
+      }
+      else
+      {
+        // данные ещё есть, отсылаем
+        sendNextFileData(pfd);
+      }
       
     } // else
 
@@ -2761,6 +2782,9 @@ void CoreESPWebServerClass::sendNextFileData(CoreWebServerPendingFileData* pfd)
   const int BUFFER_SIZE = CORE_ESP_WEB_SERVER_CLIENT_BUFFER; // будем читать по N байт
 
   unsigned long toSend = min(BUFFER_SIZE,pfd->pendingBytes);
+
+ // DBG(F("WEB: sendNextFileData, dataLen="));
+ // DBGLN(toSend);
 
   uint8_t* buff = new uint8_t[toSend];
   
@@ -2777,12 +2801,14 @@ void CoreESPWebServerClass::sendNextFileData(CoreWebServerPendingFileData* pfd)
   }
 
   pfd->pendingBytes -= toSend;
-  
+  /*
   if(pfd->pendingBytes < 1)
   {
     // данные закончились
+    pfd->client->disconnect();
     removePendingFileData(pfd->client);    
   }
+  */
 
   // посылаем новую порцию данных
   if(!pfd->client->write(buff,toSend,true))
@@ -2907,7 +2933,7 @@ void CoreESPWebServerClass::processQuery(CoreTransportClient* client, char* quer
       // GET=ESP|IP, где | кодируется как последовательность %7С, и
       // GET=ESP/IP
       
-      uri.replace("/",CORE_COMMAND_PARAM_DELIMITER);
+      uri.replace("/",String(CORE_COMMAND_PARAM_DELIMITER));
       
       // это команда к ядру, выполняем её
       Core.processCommand(uri,this);
@@ -2964,7 +2990,7 @@ void CoreESPWebServerClass::send404(CoreTransportClient* client)
     headers += WEB_HEADER_LINE;
     headers += WEB_HEADER_LINE;
 
-    client->write((uint8_t*)headers.c_str(),headers.length());  
+    client->write((uint8_t*)headers.c_str(),headers.length());
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 String CoreESPWebServerClass::getContentType(const String& fileName)
@@ -3050,6 +3076,7 @@ void CoreESPWebServerClass::processURI(CoreTransportClient* client, String& uri)
     }
 
     #ifdef CORE_SD_SUPPORT_ENABLED
+    
       // поддержка SD присутствует, читаем файл
 
       #ifdef CORE_SD_USE_SDFAT
@@ -3068,48 +3095,48 @@ void CoreESPWebServerClass::processURI(CoreTransportClient* client, String& uri)
           return;          
         }
       #endif
+     
+          // файл открыт, получаем его длину, формируем заголовки и отсылаем его клиенту
+          unsigned long contentLength = 
       
+          #ifdef CORE_SD_USE_SDFAT
+            f.fileSize();
+          #else
+            f.size();
+          #endif
+      
+            String headers = WEB_HEADER_BEGIN;
+            headers += F("200 OK");
+            headers += WEB_HEADER_LINE;
+      
+            headers += WEB_HEADER_CONNECTION;
+            headers += WEB_HEADER_LINE;
+      
+            headers += WEB_HEADER_CONTENT_TYPE;
+            headers += getContentType(filename);
+            headers += WEB_HEADER_LINE;
+      
+            headers += WEB_HEADER_CONTENT_LENGTH;
+            headers += contentLength;
+            headers += WEB_HEADER_LINE;
+            headers += WEB_HEADER_LINE;
+      
+      
+          // запоминаем, сколько надо отослать данных и в какого клиента
+          CoreWebServerPendingFileData pfd;
+          pfd.pendingBytes = contentLength;
+          pfd.client = client;
+          pfd.file = f;
+          pendingFiles.push_back(pfd);
+      
+          // отсылаем заголовки
+          client->write((uint8_t*)headers.c_str(),headers.length());    
+
     #else
       // не включена поддержка SD, ничего не выдаём
       send404(client);
-      return;
     #endif
-
-    // файл открыт, получаем его длину, формируем заголовки и отсылаем его клиенту
-    unsigned long contentLength = 
-
-    #ifdef CORE_SD_USE_SDFAT
-      f.fileSize();
-    #else
-      f.size();
-    #endif
-
-      String headers = WEB_HEADER_BEGIN;
-      headers += F("200 OK");
-      headers += WEB_HEADER_LINE;
-
-      headers += WEB_HEADER_CONNECTION;
-      headers += WEB_HEADER_LINE;
-
-      headers += WEB_HEADER_CONTENT_TYPE;
-      headers += getContentType(filename);
-      headers += WEB_HEADER_LINE;
-
-      headers += WEB_HEADER_CONTENT_LENGTH;
-      headers += contentLength;
-      headers += WEB_HEADER_LINE;
-      headers += WEB_HEADER_LINE;
-
-
-    // запоминаем, сколько надо отослать данных и в какого клиента
-    CoreWebServerPendingFileData pfd;
-    pfd.pendingBytes = contentLength;
-    pfd.client = client;
-    pfd.file = f;
-    pendingFiles.push_back(pfd);
-
-    // отсылаем заголовки
-    client->write((uint8_t*)headers.c_str(),headers.length());    
+    
      
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -3168,10 +3195,13 @@ void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, b
 
       if(dataSize > 4)
       {
-          bool httpQueryFound = strstr_P(data,(const char*) F("GET ")) == data && strstr(data,(const char*) F("HTTP/")) != NULL;
+          //bool httpQueryFound = strstr_P(data,(const char*) F("GET ")) == data && strstr(data,(const char*) F("HTTP/")) != NULL;
+          bool httpQueryFound = Core.memFind(data,dataSize,"GET ",4) == data && Core.memFind(data,dataSize,"HTTP/",5) != NULL;
+          
           if(httpQueryFound)
           {
-            bool hasCompletedQuery = strstr_P(data,(const char*) F("\r\n\r\n")) != NULL;
+            //bool hasCompletedQuery = strstr_P(data,(const char*) F("\r\n\r\n")) != NULL;
+            bool hasCompletedQuery  = Core.memFind(data,dataSize,"\r\n\r\n",4) != NULL;
             if(hasCompletedQuery)
             {
               /*
@@ -3186,7 +3216,8 @@ void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, b
               */
               
               // уже есть готовый запрос, выщемляем первую строку - и вперёд
-              const char* rn = strstr_P(data,(const char*)F("\r\n"));
+//              const char* rn = strstr_P(data,(const char*)F("\r\n"));
+              const char* rn = (const char*) Core.memFind(data,dataSize,"\r\n",2);
                             
               char* query = new char[rn-data+1];              
               memcpy(query,data,rn-data);
@@ -3201,7 +3232,8 @@ void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, b
             {
               DBGLN(F("WEB: Uncompleted query, save first line"));
                 // нет полного запроса, выщемляем первую строку - и сохраняем
-              const char* rn = strstr_P(data,(const char*)F("\r\n"));
+              //const char* rn = strstr_P(data,(const char*)F("\r\n"));
+              const char* rn = (const char*) Core.memFind((const uint8_t*)data,dataSize,(const uint8_t*)"\r\n",2);
               if(rn)
               {
                 char* query = new char[rn-data+1];
@@ -3224,7 +3256,7 @@ void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, b
     else
     {
       // наш клиент, уже есть в списке клиентов, надо проверить - пришёл ли весь запрос
-      bool hasCompletedQuery = isDone;//strstr_P(data,(const char*) F("\r\n\r\n")) != NULL;
+      bool hasCompletedQuery = isDone;
       if(hasCompletedQuery)
       {
         DBGLN(F("WEB: client data done, process query..."));
@@ -3259,4 +3291,851 @@ void CoreESPWebServerClass::removePendingQuery(CoreWebServerQuery* query)
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_ESP_WEB_SERVER
 //--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_MQTT_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreMQTTSettings MQTTSettings;
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreMQTT MQTT;
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreMQTT::CoreMQTT()
+{
+  currentClient = NULL;
+  timer = 0;
+  machineState = mqttWaitClient;
+  currentTransport = NULL;
+  mqttMessageId = 0;
+  streamBuffer = new String();
+  currentStoreNumber = 0;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::reset()
+{
+  // тут сброс - вызывается, когда конфиг перезагружается
+
+  // освобождаем клиента
+  currentClient = NULL;
+  timer = 0;
+  machineState = mqttWaitClient;
+  currentTransport = NULL;
+  mqttMessageId = 0;
+  currentStoreNumber = 0;
+  clearReportsQueue();
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::processIncomingPacket(CoreTransportClient* client)
+{
+  const uint8_t* packet = client->getData();
+  size_t dataLen = client->getDataSize();
+
+  if(!dataLen)
+    return;
+
+
+  if(dataLen > 0)
+  {
+
+    uint8_t bCommand = packet[0];
+    if((bCommand & MQTT_PUBLISH_COMMAND) == MQTT_PUBLISH_COMMAND)
+    {
+      // это к нам опубликовали топик
+        DBGLN(F("MQTT: PUBLISH topic found!!!"));
+
+      bool isQoS1 = (bCommand & 6) == MQTT_QOS1;
+
+      // декодируем длину сообщения
+      
+        unsigned long multiplier = 1;
+        int remainingLength = 0;
+        unsigned int curReadPos = 1;
+        uint8_t encodedByte;
+        
+        do
+        {
+          encodedByte =  packet[curReadPos];
+          curReadPos++;
+          
+          remainingLength += (encodedByte & 127) * multiplier;
+          multiplier *= 128;
+          
+        if (multiplier > 0x200000)
+          break; // malformed
+          
+        } while ((encodedByte & 128) != 0);
+
+
+        DBG(F("MQTT: Remaining length: "));
+        DBGLN(remainingLength);
+
+      if(curReadPos >= dataLen) // malformed
+      {
+          DBGLN(F("MQTT: MALFORMED 1"));
+        return;
+      }
+
+      // теперь получаем имя топика
+      uint8_t topicLengthMSB = packet[curReadPos];    
+      curReadPos++;
+
+      if(curReadPos >= dataLen) // malformed
+      {
+          DBGLN(F("MQTT: MALFORMED 2"));
+        return;
+      }
+            
+      uint8_t topicLengthLSB = packet[curReadPos];
+      curReadPos++;
+
+      uint16_t topicLength = (topicLengthMSB<<8)+topicLengthLSB;
+      
+      DBG(F("MQTT: Topic length: "));
+      DBGLN(topicLength);
+
+
+      // теперь собираем топик
+      String topic;
+      for(uint16_t j=0;j<topicLength;j++)
+      {
+        if(curReadPos >= dataLen) // malformed
+        {
+            DBGLN(F("MQTT: MALFORMED 3"));
+          return;
+        }        
+        topic += (char) packet[curReadPos];
+        curReadPos++;
+      }
+
+      // тут работаем с payload, склеивая его с топиком
+      if(isQoS1)
+      {
+       // игнорируем ID сообщения
+       curReadPos += 2; // два байта на ID сообщения
+      }
+
+
+      String* payload = new String();
+
+      for(size_t p=curReadPos;p<dataLen;p++)
+      {
+        (*payload) += (char) packet[p];
+      }
+
+      if(payload->length())
+      {
+            DBG(F("MQTT: Payload are: "));
+            DBGLN(*payload);
+
+          // теперь склеиваем payload с топиком
+          if(topic.length() && topic[topic.length()-1] != '/')
+          {
+            if((*payload)[0] != '/')
+              topic += '/';
+          }
+
+          topic += *payload;
+      }
+      
+      delete payload;
+      
+      if(topic.length())
+      {
+            DBG(F("MQTT: Topic are: "));
+            DBGLN(topic);
+
+          const char* setCommandPtr = strstr_P(topic.c_str(),(const char*) F("SET/") );
+          const char* getCommandPtr = strstr_P(topic.c_str(),(const char*) F("GET/") );
+          bool isSetCommand = setCommandPtr != NULL;
+          bool isGetCommand = getCommandPtr != NULL;
+
+          if(isSetCommand || isGetCommand)
+          {
+            const char* normalizedTopic = isSetCommand ? setCommandPtr : getCommandPtr;
+
+            // нашли команду SET или GET, перемещаемся за неё
+            //normalizedTopic += 4;
+
+            // удаляем ненужные префиксы
+            topic.remove(0,normalizedTopic - topic.c_str() );
+            bool bFirst = true;
+            for(unsigned int k=0;k<topic.length();k++)
+            {
+              if(topic[k] == '/')
+              {
+                if(bFirst)
+                {
+                  bFirst = false;
+                  topic[k] = '='; 
+                }
+                else
+                  topic[k] = CORE_COMMAND_PARAM_DELIMITER;             
+              }
+            } // for
+
+              DBG(F("Normalized topic are: "));
+              DBGLN(topic);
+
+              delete streamBuffer;
+              streamBuffer = new String();
+              Core.processCommand(topic,this);
+
+              // тут получили ответ, и надо опубликовать его в брокер
+              pushToReportQueue(streamBuffer);
+            
+          } // if(isSetCommand || isGetCommand)
+          else // unsupported topic
+          {
+              DBG(F("Unsupported topic: "));
+              DBGLN(topic);
+          } // else
+          
+      } // if(topic.length())
+      else
+      {
+        DBGLN(F("Malformed topic name!!!"));
+      }
+
+    } // if((bCommand & MQTT_PUBLISH_COMMAND) == MQTT_PUBLISH_COMMAND)
+    
+  } // if(dataLen > 0)    
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::pushToReportQueue(String* toReport)
+{
+  String* newReport = new String();
+  *newReport = *toReport;
+
+  DBG(F("MQTT: Want to report - "));
+  DBGLN(*newReport);
+
+  reportQueue.push_back(newReport);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
+{
+  if(&client != currentClient) // не наш клиент
+    return;
+
+  timer = millis();
+
+//  DBGLN(F("MQTT: DATA FROM CLIENT !!!"));
+
+  if(machineState == mqttWaitSendConnectPacketDone)
+  {
+//    DBGLN(F("MQTT: CONNECT packet was sent!"));
+    machineState = mqttSendSubscribePacket;
+  }
+  else
+  if(machineState == mqttWaitSendSubscribePacketDone)
+  {
+//    DBGLN(F("MQTT: SUBSCRIBE packet was sent!"));
+    machineState = mqttSendPublishPacket;
+  }
+  else
+  if(machineState == mqttWaitSendPublishPacketDone)
+  {
+//    DBGLN(F("MQTT: PUBLISH packet was sent!"));
+    // отсылали пакет публикации
+     machineState = mqttSendPublishPacket;
+  }
+  else
+  {
+//      DBG(F("MQTT: OnClientDataAvailable - UNHANDLED MACHINE STATE: "));
+//      DBGLN(machineState);
+
+      // тут разбираем, что пришло
+      processIncomingPacket(currentClient);
+  }
+    
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::OnClientDataWritten(CoreTransportClient& client, int errorCode)
+{
+  if(&client != currentClient) // не наш клиент
+    return;
+  
+  timer = millis();
+   
+  if(errorCode != CT_ERROR_NONE)
+  {
+    DBGLN(F("MQTT: Can't write to client!"));
+    clearReportsQueue();
+    currentClient = NULL;
+    machineState = mqttWaitReconnect;
+
+    return;
+  }
+  
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::OnClientConnect(CoreTransportClient& client, bool connected, int errorCode)
+{
+  if(&client != currentClient) // не наш клиент
+    return;
+
+//  DBG(F("MQTT: OnClientConnect, connected = "));
+//  DBGLN(connected);
+
+  if(!connected)
+  {
+    // клиент не подсоединился, сбрасываем текущего клиента и вываливаемся в ожидание переподсоединения.
+    DBGLN(F("MQTT: Can't connect to broker, try to reconnect..."));
+    clearReportsQueue();
+    currentClient = NULL;
+    machineState = mqttWaitReconnect;
+    timer = millis();    
+  }
+  else
+  {
+    // клиент подсоединён, переходим на отсыл пакета с авторизацией
+    machineState = mqttSendConnectPacket;
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::convertAnswerToJSON(const String& answer, String* resultBuffer)
+{
+  // тут мы должны сформировать объект JSON из ответа, для этого надо разбить ответ по разделителям, и для каждого параметра создать именованное поле
+  // в анонимном JSON-объекте
+  // прикинем, сколько нам памяти надо резервировать, чтобы вместиться
+  int neededJsonLen = 3; // {} - под скобки и завершающий ноль
+  // считаем кол-во параметров ответа
+  int jsonParamsCount=1; // всегда есть один ответ
+  int answerLen = answer.length();
+  
+  for(int j=0;j<answerLen;j++)
+  {
+    if(answer[j] == CORE_COMMAND_PARAM_DELIMITER) // разделитель
+      jsonParamsCount++;
+  }
+  // у нас есть количество параметров, под каждый параметр нужно минимум 6 символов ("p":""), плюс длина числа, которое будет как имя
+  // параметра, плюс длина самого параметра, плюс запятые между параметрами
+  int paramNameCharsCount = jsonParamsCount > 9 ? 2 : 1;
+
+   neededJsonLen += (6 + paramNameCharsCount)*jsonParamsCount + (jsonParamsCount-1) + answer.length();
+
+   // теперь можем резервировать память
+   resultBuffer->reserve(neededJsonLen);
+
+   // теперь формируем наш JSON-объект
+   *resultBuffer = '{'; // начали объект
+
+    if(answerLen > 0)
+    {
+       int currentParamNumber = 1;
+
+       *resultBuffer += F("\"p");
+       *resultBuffer += currentParamNumber;
+       *resultBuffer += F("\":\"");
+       
+       for(int j=0;j<answerLen;j++)
+       {
+         if(answer[j] == CORE_COMMAND_PARAM_DELIMITER)
+         {
+           // достигли нового параметра, закрываем предыдущий и формируем новый
+           currentParamNumber++;
+           *resultBuffer += F("\",\"p");
+           *resultBuffer += currentParamNumber;
+           *resultBuffer += F("\":\"");
+         }
+         else
+         {
+            char ch = answer[j];
+            
+            if(ch == '"' || ch == '\\')
+              *resultBuffer += '\\'; // экранируем двойные кавычки и обратный слеш
+              
+            *resultBuffer += ch;
+         }
+       } // for
+
+       // закрываем последний параметр
+       *resultBuffer += '"';
+    } // answerLen > 0
+
+   *resultBuffer += '}'; // закончили объект
+
+}
+//--------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::update()
+{
+  if(!MQTTSettings.enabled || MQTTSettings.workMode == mqttDisabled || !currentTransport) // выключены
+    return;  
+  
+  switch(machineState)
+  {
+    
+      case mqttWaitClient:
+      {
+        if(currentTransport->ready())
+        {
+            currentClient = currentTransport->getFreeClient();
+            if(currentClient)
+            {
+              DBGLN(F("MQTT: Catch free client!"));
+              DBG(F("MQTT: connect to "));
+              DBG(MQTTSettings.serverAddress);
+              DBG(":");
+              DBGLN(MQTTSettings.serverPort);
+
+              currentClient->connect(MQTTSettings.serverAddress.c_str(), MQTTSettings.serverPort);
+              machineState = mqttWaitConnection; 
+              timer = millis();
+            }
+        } // if(currentTransport->ready())
+      }
+      break; // mqttWaitClient
+
+      case mqttWaitConnection:
+      {
+        if(millis() - timer > 20000)
+        {
+          DBGLN(F("MQTT: unable to connect within 20 seconds, try to reconnect..."));
+          // долго ждали, переподсоединяемся
+          clearReportsQueue();
+          currentClient = NULL;
+          machineState = mqttWaitReconnect;
+          timer = millis();
+        }
+      }
+      break; // mqttWaitConnection
+
+      case mqttWaitReconnect:
+      {
+        if(millis() - timer > 10000)
+        {
+          DBGLN(F("MQTT: start reconnect!"));
+          clearReportsQueue();
+          currentClient = NULL;
+          machineState = mqttWaitClient;
+        }
+      }
+      break; // mqttWaitReconnect
+
+      case mqttSendConnectPacket:
+      {
+        if(currentClient)
+        {
+          DBGLN(F("MQTT: start send connect packet!"));
+  
+          String mqttBuffer;
+          int mqttBufferLength;
+          
+          constructConnectPacket(mqttBuffer,mqttBufferLength,
+            MQTTSettings.clientID.c_str() // client id
+          , MQTTSettings.userName.length() ? MQTTSettings.userName.c_str() : NULL // user
+          , MQTTSettings.password.length() ? MQTTSettings.password.c_str() : NULL // pass
+          , NULL // will topic
+          , 0 // willQoS
+          , 0 // willRetain
+          , NULL // will message
+          );
+
+          // переключаемся на ожидание результата отсылки пакета
+          machineState = mqttWaitSendConnectPacketDone;
+          
+          // сформировали пакет CONNECT, теперь отсылаем его брокеру
+          currentClient->write((uint8_t*) mqttBuffer.c_str(),mqttBufferLength);
+
+        //   DBGLN(F("MQTT: CONNECT packet written!"));
+          
+          timer = millis();
+        }  // if(currentClient)
+        else
+        {
+          DBGLN(F("MQTT: No client in construct CONNECT packet mode!"));
+          machineState = mqttWaitReconnect;
+          timer = millis();          
+        } // no client
+        
+      }
+      break; // mqttSendConnectPacket
+
+      case mqttSendSubscribePacket:
+      {
+        DBGLN(F("MQTT: Subscribe to topics!"));
+
+        if(currentClient)
+        {
+          String mqttBuffer;
+          int mqttBufferLength;
+            
+          // конструируем пакет подписки
+          String topic = MQTTSettings.clientID;
+          topic +=  F("/#");
+          constructSubscribePacket(mqttBuffer,mqttBufferLength, topic.c_str());
+  
+          // переключаемся на ожидание результата отсылки пакета
+          machineState = mqttWaitSendSubscribePacketDone;
+          
+          // сформировали пакет SUBSCRIBE, теперь отсылаем его брокеру
+          currentClient->write((uint8_t*) mqttBuffer.c_str(),mqttBufferLength);
+          timer = millis();
+        }
+        else
+        {
+          DBGLN(F("MQTT: No client in construct SUBSCRIBE packet mode!"));
+          machineState = mqttWaitReconnect;
+          timer = millis();          
+        } // no client
+      
+      }
+      break; // mqttSendSubscribePacket
+
+      case mqttSendPublishPacket:
+      {
+        // тут мы находимся в процессе публикации, поэтому можем проверять - есть ли топики для репорта
+        bool hasReportTopics = reportQueue.size() > 0;
+        
+        unsigned long interval = MQTTSettings.intervalBetweenTopics;
+        if(hasReportTopics || millis() - timer > interval)
+        {
+          DBGLN(F("MQTT: SEND NEXT TOPIC!"));
+
+          if(currentClient)
+          {
+            String mqttBuffer;
+            int mqttBufferLength;
+  
+            // пока просто потестируем
+            String topicName, data;
+
+            if(hasReportTopics)
+            {
+              // у нас есть топик для репорта
+              topicName =  MQTTSettings.clientID + F("/REPORT");
+
+              // удаляем перевод строки
+              reportQueue[0]->trim();
+
+              #ifdef MQTT_REPORT_AS_JSON
+                // сперва убираем =, и заменяем его на |
+                reportQueue[0]->replace("=", String(CORE_COMMAND_PARAM_DELIMITER));
+                // и конвертируем в JSON
+                convertAnswerToJSON(*(reportQueue[0]),&data);
+              #else
+                data = *(reportQueue[0]);            
+              #endif
+
+              // тут удаляем из очереди первое вхождение отчёта
+              if(reportQueue.size() < 2)
+                clearReportsQueue();
+              else
+              {
+                  delete reportQueue[0];
+                  for(size_t k=1;k<reportQueue.size();k++)
+                  {
+                    reportQueue[k-1] = reportQueue[k];
+                  }
+                  reportQueue.pop();
+              }
+            }
+            else
+            {
+              // обычный режим работы, отсылаем показания с хранилища
+                if(CoreDataStore.size())
+                {
+                  // есть данные в хранилище, получаем их
+                  CoreStoredData dataStored = CoreDataStore.get(currentStoreNumber);
+
+                  CoreTextFormatProvider textFormatter;
+                  data = textFormatter.format(dataStored,0,false);
+                  topicName = MQTTSettings.clientID + "/" + dataStored.sensor->getName();
+
+                  currentStoreNumber++;
+                  if(currentStoreNumber >= CoreDataStore.size())
+                    currentStoreNumber = 0;
+                } // if
+            }
+
+              if(data.length() && topicName.length())
+              {
+                 // конструируем пакет публикации
+                 constructPublishPacket(mqttBuffer,mqttBufferLength,topicName.c_str(), data.c_str()); 
+      
+                // переключаемся на ожидание результата отсылки пакета
+                machineState = mqttWaitSendPublishPacketDone;
+              
+                // сформировали пакет PUBLISH, теперь отсылаем его брокеру
+                currentClient->write((uint8_t*) mqttBuffer.c_str(),mqttBufferLength);
+                timer = millis();
+              }
+          }
+          else
+          {
+            DBGLN(F("MQTT: No client in construct PUBLISH packet mode!"));
+            machineState = mqttWaitReconnect;
+            timer = millis();          
+          } // no client          
+           
+        }
+      }
+      break; // mqttSendPublishPacket
+
+      case mqttWaitSendConnectPacketDone:
+      case mqttWaitSendSubscribePacketDone:
+      case mqttWaitSendPublishPacketDone:
+      {
+        if(millis() - timer > 20000)
+        {
+          DBGLN(F("MQTT: wait for send results timeout, reconnect!"));
+          // долго ждали результата записи в клиента, переподсоединяемся
+          clearReportsQueue();
+          currentClient = NULL;
+          machineState = mqttWaitReconnect;
+          timer = millis();
+        }        
+      }
+      break;
+      
+    
+  } // switch
+
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::clearReportsQueue()
+{
+  for(size_t i=0;i<reportQueue.size();i++)
+  {
+    delete reportQueue[i];
+  }
+
+  reportQueue.empty();
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::constructPublishPacket(String& mqttBuffer,int& mqttBufferLength, const char* topic, const char* payload)
+{
+
+  MQTTBuffer byteBuffer; // наш буфер из байт, в котором будет содержаться пакет
+
+  // тут формируем пакет
+
+  // кодируем топик
+  encode(byteBuffer,topic);
+
+  // теперь пишем данные топика
+  int sz = strlen(payload);
+  const char* readPtr = payload;
+  for(int i=0;i<sz;i++)
+  {
+    byteBuffer.push_back(*readPtr++);
+  }   
+
+  size_t payloadSize = byteBuffer.size();
+
+  MQTTBuffer fixedHeader;
+  
+  constructFixedHeader(MQTT_PUBLISH_COMMAND,fixedHeader,payloadSize);
+
+  writePacket(fixedHeader,byteBuffer,mqttBuffer,mqttBufferLength);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::constructSubscribePacket(String& mqttBuffer,int& mqttBufferLength, const char* topic)
+{
+ MQTTBuffer byteBuffer; // наш буфер из байт, в котором будет содержаться пакет
+
+  // тут формируем пакет подписки
+
+  // сначала записываем ID сообщения
+  mqttMessageId++;
+  
+  if(!mqttMessageId)
+    mqttMessageId = 1;
+    
+  byteBuffer.push_back((mqttMessageId >> 8));
+  byteBuffer.push_back((mqttMessageId & 0xFF));
+
+  // кодируем топик, на который подписываемся
+  encode(byteBuffer,topic);
+
+  // теперь пишем байт QoS
+  byteBuffer.push_back(1);
+
+  size_t payloadSize = byteBuffer.size();
+
+  MQTTBuffer fixedHeader;
+  
+  constructFixedHeader(MQTT_SUBSCRIBE_COMMAND | MQTT_QOS1, fixedHeader, payloadSize);
+
+  writePacket(fixedHeader,byteBuffer,mqttBuffer,mqttBufferLength);  
+}
+//--------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::constructConnectPacket(String& mqttBuffer,int& mqttBufferLength,const char* id, const char* user, const char* pass
+,const char* willTopic,uint8_t willQoS, uint8_t willRetain, const char* willMessage)
+{
+  mqttBuffer = "";
+
+  MQTTBuffer byteBuffer; // наш буфер из байт, в котором будет содержаться пакет
+
+  // теперь формируем переменный заголовок
+
+  // переменный заголовок, для команды CONNECT
+  byteBuffer.push_back(0);
+  byteBuffer.push_back(6); // длина версии протокола MQTT
+  byteBuffer.push_back('M');
+  byteBuffer.push_back('Q');
+  byteBuffer.push_back('I');
+  byteBuffer.push_back('s');
+  byteBuffer.push_back('d');
+  byteBuffer.push_back('p');
+
+  byteBuffer.push_back(3); // версия протокола - 3
+
+  // теперь рассчитываем флаги
+  byte flags = 0;
+
+  if(willTopic)
+    flags = 0x06 | (willQoS << 3) | (willRetain << 5);
+  else
+    flags = 0x02;
+
+  if(user) // есть имя пользователя
+    flags |= (1 << 7);
+
+  if(pass) // есть пароль
+    flags |= (1 << 6);
+  
+   byteBuffer.push_back(flags);
+
+   // теперь смотрим настройки keep-alive
+   int keepAlive = 60; // 60 секунд
+   byteBuffer.push_back((keepAlive >> 8));
+   byteBuffer.push_back((keepAlive & 0xFF));
+
+   // теперь записываем payload, для этого каждую строку надо закодировать
+   encode(byteBuffer,id);
+   encode(byteBuffer,willTopic);
+   encode(byteBuffer,willMessage);
+   encode(byteBuffer,user);
+   encode(byteBuffer,pass);
+
+   // теперь мы имеем буфер переменной длины, нам надо подсчитать его длину, сворфировать фиксированный заголовок,
+   // и сохранить всё в буфере
+   size_t payloadSize = byteBuffer.size();
+   MQTTBuffer fixedHeader;
+   constructFixedHeader(MQTT_CONNECT_COMMAND,fixedHeader,payloadSize);
+
+   writePacket(fixedHeader,byteBuffer,mqttBuffer,mqttBufferLength);
+
+
+   // всё, пакет сформирован
+    
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::writePacket(MQTTBuffer& fixedHeader, MQTTBuffer& payload, String& mqttBuffer,int& mqttBufferLength)
+{
+  mqttBuffer = "";
+  
+// запомнили, сколько байт надо послать в ESP
+   mqttBufferLength = fixedHeader.size() + payload.size();
+
+   // теперь записываем это в строку, перед этим зарезервировав память, и заполнив строку пробелами
+   mqttBuffer.reserve(mqttBufferLength);
+   for(int i=0;i<mqttBufferLength;i++)
+    mqttBuffer += ' ';
+
+  // теперь можем копировать данные в строку побайтово
+  int writePos = 0;
+
+  // пишем фиксированный заголовок
+  for(size_t i=0;i<fixedHeader.size();i++)
+  {
+    mqttBuffer[writePos++] = fixedHeader[i];
+  }
+  
+  // и переменный
+  for(size_t i=0;i<payload.size();i++)
+  {
+    mqttBuffer[writePos++] = payload[i];
+  }  
+}
+//--------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::constructFixedHeader(byte command, MQTTBuffer& fixedHeader, size_t payloadSize)
+{
+    fixedHeader.push_back(command); // пишем тип команды
+  
+    uint8_t remainingLength[4];
+    uint8_t digit;
+    uint8_t written = 0;
+    uint16_t len = payloadSize;
+    
+    do 
+    {
+        digit = len % 128;
+        len = len / 128;
+        if (len > 0) 
+        {
+            digit |= 0x80;
+        }
+        
+        remainingLength[written++] = digit;
+        
+    } while(len > 0);
+
+    // мы записали written символов, как длину переменного заголовка - теперь пишем эти байты в фиксированный
+    
+    for(uint8_t i=0;i<written;i++)
+    {
+      fixedHeader.push_back(remainingLength[i]);
+    }
+
+}
+//--------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::encode(MQTTBuffer& buff,const char* str)
+{
+  if(!str)
+    return;
+
+    size_t sz = buff.size(); // запоминаем текущий размер
+
+    // записываем нули, как длину строки, потом мы это поправим
+    buff.push_back(0);
+    buff.push_back(0);
+
+    const char* ptr = str;
+    int strLen = 0;
+    while(*ptr)
+    {
+      buff.push_back(*ptr++);
+      strLen++;
+    }
+
+    // теперь записываем актуальную длину
+    buff[sz] = (strLen >> 8);
+    buff[sz+1] = (strLen & 0xFF);
+    
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreMQTT::begin()
+{
+  // попросили начать работу
+  // для начала - освободим клиента
+  currentClient = NULL;
+  machineState = mqttWaitClient;
+  currentTransport = NULL;
+  mqttMessageId = 0;
+  currentStoreNumber = 0;
+
+    switch(MQTTSettings.workMode)
+    {
+      case mqttDisabled:
+      break;
+
+      case mqttThroughESP:
+        #ifdef CORE_ESP_TRANSPORT_ENABLED
+          currentTransport = &ESP;
+        #endif
+      break;
+    }
+
+  // подписываемся на события клиентов
+  if(currentTransport)
+    currentTransport->subscribe(this);  
+    
+  // ну и запомним, когда вызвали начало работы
+  timer = millis();
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_MQTT_TRANSPORT_ENABLED
 
