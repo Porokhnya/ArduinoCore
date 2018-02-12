@@ -16,6 +16,8 @@ class CoreTransportClient;
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern "C" {
   void ON_LORA_RECEIVE(uint8_t* packet, int packetSize);
+  void ON_INCOMING_CALL(const String& phoneNumber, bool isKnownNumber, bool& shouldHangUp);
+  void ON_SMS_RECEIVED(const String& phoneNumber,const String& message, bool isKnownNumber);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 // типы пакетов, гоняющихся по транспортам
@@ -216,7 +218,8 @@ class CoreTransportClient
 
   void connect(const char* ip, uint16_t port);
   void disconnect();
-  bool write(uint8_t* buff, size_t sz, bool takeBufferOwnership=false);
+  
+  bool write(uint8_t* buff, size_t sz, bool takeBufferOwnership=false);  
 
   bool busy(); // проверяет, занят ли клиент чем-либо  
 
@@ -636,6 +639,7 @@ typedef enum
 {
   mqttDisabled, // выключено
   mqttThroughESP, // через ESP
+  mqttThroughSIM800, // через SIM800
   
 } MQTTWorkMode;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -750,5 +754,240 @@ private:
 extern CoreMQTT MQTT;
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_MQTT_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_SIM800_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<String*> GSMKnownNumbersList;
+//--------------------------------------------------------------------------------------------------------------------------------------
+struct SIM800TransportSettingsClass
+{
+  bool enabled;
+      
+  uint8_t UARTSpeed;          // скорость работы с SIM800 (1 - 9600, 2 - 19200, 4 - 38400, 6 - 57600, 12 - 115200)
+  uint8_t SerialNumber;       // номер Serial, который используется для работы с SIM800 (1 - Serial1, 2 - Serial2, 3 - Serial 3)
 
+  bool    UseRebootPin;       // использовать или нет пин управления питанием?
+  uint8_t RebootPin;          // номер пина для пересброса питания SIM800
+  uint8_t PowerOnLevel;       // уровень для включения питания (1 - HIGH, 0 - LOW)
+  
+  uint8_t HangTimeout;        // кол-во секунд, по истечении которых модем считается зависшим (не пришёл ответ на команду)
+  uint8_t HangPowerOffTime;   // сколько секунд держать питание выключенным при перезагрузке SIM800, если он завис
+
+  bool UsePowerKey;           // использовать ли пин POWERKEY для включения питания SIM800?
+  uint8_t PowerKeyPin;        // номер пина для управления входом POWERKEY
+  uint16_t PowerKeyPulseDuration; // длительность импульса, мс
+  uint8_t PowerKeyOnLevel;    // уровень для включения питания на POWERKEY
+  uint16_t PowerKeyInitTime; // сколько миллисекунд ждать после подачи питания до подачи импульса POWERKEY
+
+  String APN; // адрес APN для GPRS
+  String APNUser; // имя пользователя для GPRS
+  String APNPassword; // пароль для GPRS
+
+  GSMKnownNumbersList KnownNumbers; // список известных номеров телефонов
+
+  void clearKnownNumbers()
+  {
+    for(size_t i=0;i<KnownNumbers.size();i++)
+    {
+      delete KnownNumbers[i];
+    }
+    KnownNumbers.empty();
+  }
+
+  void addKnownNumber(const char* num)
+  {
+    String* s = new String(num);
+    KnownNumbers.push_back(s);
+  }
+
+  void reset()
+  {
+    enabled = false;
+    clearKnownNumbers();
+  }
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern SIM800TransportSettingsClass SIM800TransportSettings;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  bool ready                : 1; // флаг готовности
+  bool isModuleRegistered   : 1; // флаг регистрации в сети
+  bool isAnyAnswerReceived  : 1; // флаг, что мы получили хотя бы один ответ от модема
+  bool waitForDataWelcome   : 1; // флаг, что ждём приглашения на отсыл данных
+  bool onIdleTimer          : 1; // флаг, что мы в режиме простоя
+  bool gprsAvailable        : 1; //
+  bool pduInNextLine        : 1; //
+  
+} CoreSIM800TransportFlags;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  smaNone, // ничего не делаем
+  smaCheckReady, // надо получить ready от модуля
+  smaEchoOff, // выключаем эхо
+  smaDisableCellBroadcastMessages, 
+  smaAON, 
+  smaPDUEncoding,
+  smaUCS2Encoding,
+  smaSMSSettings,
+  smaWaitReg,
+  smaCheckModemHang, // проверяем на зависание модема 
+  smaCIPHEAD,
+  smaCIPMODE,
+  smaCIPMUX,
+  smaCIICR, // activate GPRS connection
+  smaCIFSR, // check GPRS connection
+  smaCSTT, // setup GPRS
+  smaHangUp, // кидаем трубку
+  smaCIPSTART, // начинаем коннектиться к адресу
+  smaCIPSEND,
+  smaWaitSendDone,
+  smaCIPCLOSE,
+  smaCMGS,
+  smaWaitSMSSendDone,
+  smaWaitForSMSClearance,
+  
+} SIM800Commands;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<SIM800Commands> SIM800CommandsList;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  sim800Idle,        // состояние "ничего не делаем"
+  sim800WaitAnswer,  // состояние "ждём ответа на команду, посланную SIM800"
+  sim800Reboot,      // состояние "SIM800 в процессе перезагрузки"
+  sim800WaitInit,    // ждём инициализации после подачи питания
+  sim800WaitBootBegin, // отправляем первую команду AT, чтобы модем знал, что с ним общаются
+  sim800WaitBoot,    // ждём в порту строчки "Call Ready или SMS Ready"
+  
+} SIM800MachineState;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  gsmNone,
+  gsmOK,             // OK
+  gsmError,          // ERROR
+  gsmFail,           // FAIL
+  gsmSendOk,         // SEND OK
+  gsmSendFail,       // SEND FAIL
+  gsmConnectOk,
+  gsmConnectFail,
+  gsmAlreadyConnect,
+  gsmCloseOk,
+  
+} SIM800KnownAnswer;
+//--------------------------------------------------------------------------------------------------------------------------------------
+#define SIM800_MAX_CLIENTS 5
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  
+  sim800DisconnectAction, // запрошено отсоединение клиента
+  sim800ConnectAction, // запрошено подсоединение клиента
+  sim800WriteAction, // запрошена запись из клиента в SIM800
+  
+} SIM800ClientAction;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  SIM800ClientAction action; // действие, которое надо выполнить с клиентом
+  CoreTransportClient* client; // ссылка на клиента
+  char* ip; // IP для подсоединения
+  uint16_t port; // порт для подсоединения
+   
+} SIM800ClientQueueData; // данные по клиенту в очереди
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<SIM800ClientQueueData> SIM800ClientsQueue; // очередь клиентов на совершение какой-либо исходящей операции (коннект, дисконнект, запись)
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  bool isFlash;
+  String* phone;
+  String* message;
+  
+} SIM800OutgoingSMS;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<SIM800OutgoingSMS> SIM800OutgoingSMSList;
+//--------------------------------------------------------------------------------------------------------------------------------------
+class CoreSIM800Transport : public CoreTransport
+{
+  public:
+    CoreSIM800Transport();
+
+    virtual void update(); // обновляем состояние транспорта
+    virtual void begin(); // начинаем работу
+
+    virtual bool ready(); // проверяем на готовность к работе
+
+   // подписка на события клиентов
+   virtual void subscribe(IClientEventsSubscriber* subscriber);
+   
+   // отписка от событий клиентов
+   virtual void unsubscribe(IClientEventsSubscriber* subscriber);
+   
+    virtual CoreTransportClient* getFreeClient(); // возвращает свободного клиента (не законнекченного и не занятого делами)
+
+    bool sendSMS(const String& phoneNumber, const String& message, bool isFlash);
+
+  protected:
+
+    virtual void beginWrite(CoreTransportClient& client); // начинаем писать в транспорт с клиента
+    virtual void beginConnect(CoreTransportClient& client, const char* ip, uint16_t port); // начинаем коннектиться к адресу
+    virtual void beginDisconnect(CoreTransportClient& client); // начинаем отсоединение от адреса
+
+  private:
+
+      SIM800OutgoingSMSList outgoingSMSList;
+      String* smsToSend;
+      void sendQueuedSMS();
+
+      void restart();
+
+      void processIPD();
+      void processCMT(const String& cmtInfo);
+      void processIncomingCall(const String& call);
+
+      bool isKnownAnswer(const String& line, SIM800KnownAnswer& result);
+
+      CoreSIM800TransportFlags flags; // флаги состояния
+      SIM800MachineState machineState; // состояние конечного автомата
+
+      SIM800Commands currentCommand;
+      SIM800CommandsList initCommandsQueue; // очередь команд на инициализацию
+      
+      unsigned long timer; // общий таймер
+      unsigned long idleTime; // время, которое нам надо подождать, ничего не делая
+      
+      void clearInitCommands();
+      void createInitCommands(bool addResetCommand);
+      
+      void sendCommand(const String& command, bool addNewLine=true);
+      void sendCommand(SIM800Commands command);
+      
+      Stream* workStream; // поток, с которым мы работаем (читаем/пишем в/из него)
+
+      String* sim800ReceiveBuff;
+
+      int gprsCheckingAttempts;
+
+      // пул клиентов
+      CoreTransportClient* clients[SIM800_MAX_CLIENTS];
+
+      void clearClientsQueue(bool raiseEvents);
+
+      SIM800ClientsQueue clientsQueue; // очередь действий с клиентами
+
+      bool isClientInQueue(CoreTransportClient* client, SIM800ClientAction action); // тестирует - не в очереди ли уже клиент?
+      void addClientToQueue(CoreTransportClient* client, SIM800ClientAction action, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
+      void removeClientFromQueue(CoreTransportClient* client); // удаляет клиента из очереди  
+      
+      void initClients();
+    
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern CoreSIM800Transport SIM800;
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_SIM800_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
 #endif

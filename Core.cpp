@@ -389,6 +389,36 @@ uint8_t CoreConfigIterator::read()
    return 0xFF;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreConfigIterator::readString(String& result)
+{
+    while(1)
+    {
+      char ch = read();
+      writeOut(ch);
+      
+      if(ch == '\0')
+        break;
+        
+      if(!outStream)
+        result += ch;            
+    }
+    
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreConfigIterator::skipString()
+{
+  char ch;
+  
+  while(1)
+  {
+    ch = read();
+    writeOut(ch);
+
+    if(ch == '\0')
+      break;
+  }  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreConfigIterator::readRecord()
 {
   uint8_t recordType = read();
@@ -414,52 +444,20 @@ bool CoreConfigIterator::readRecord()
   {
     case SensorRecord: // данные по датчику
     {
-
       // читаем имя датчика
-      char ch = '\0';
-      String sensorName;
-      do
-      {
-        ch = read();
-        if(ch != '\0')
-        {
-          if(!writeOut(ch))
-          {
-            sensorName += ch;
-          }
-        }
-        else
-          writeOut(ch);
-          
-      } while(ch != '\0');
+        String sensorName;
+        readString(sensorName);
       
         // тут читаем тип датчика
         uint8_t b = read();
         writeOut(b);
-      
-        #ifdef _CORE_DEBUG
-        if(!outStream)
-        {
-         // DBG(F("Type of sensor: "));
-        //  DBGLN(b);
-        }
-        #endif
-      
+        
         CoreSensorType type = (CoreSensorType) b;
       
         // читаем длину данных, сохранённых датчиком
         uint8_t dataLen = read();
-
         writeOut(dataLen);
 
-        #ifdef _CORE_DEBUG
-          if(!outStream)
-          {      
-             //   DBG(F("Stored data len: "));
-            //    DBGLN(dataLen);
-          }
-        #endif
-                
         // есть информация по датчику, читаем её
         uint8_t* record = new uint8_t[dataLen];
         for(uint8_t i=0;i<dataLen;i++)
@@ -483,8 +481,6 @@ bool CoreConfigIterator::readRecord()
       if(!writeOut(b))
       {
         Core.FractDelimiter = b;
-      //  DBG(F("FractDelimiter: "));
-       // DBGLN(Core.FractDelimiter);
       }
     }
     return true; // FractDelimiterRecord
@@ -495,8 +491,6 @@ bool CoreConfigIterator::readRecord()
       if(!writeOut(b))
       {
         Core.DeviceID = b;
-       // DBG(F("DeviceID: "));
-       // DBGLN(Core.DeviceID);
       }
       
     }
@@ -508,8 +502,6 @@ bool CoreConfigIterator::readRecord()
       if(!writeOut(b))
       {
         Core.ClusterID = b;
-       // DBG(F("ClusterID: "));
-       // DBGLN(Core.ClusterID);
       }
       
     }
@@ -566,8 +558,6 @@ bool CoreConfigIterator::readRecord()
 
     case SignalRecord:
     {
-      //DBGLN(F("SignalRecord"));
-
       uint8_t recordLength = read();
       
       if(writeOut(recordLength))
@@ -599,8 +589,6 @@ bool CoreConfigIterator::readRecord()
       if(!writeOut(b))
       {
         Core.TemperatureUnit = b;
-      //  DBG(F("TemperatureUnit: "));
-      //  DBGLN(Core.TemperatureUnit);
       }
     }
     return true; // TemperatureUnitRecord
@@ -612,11 +600,215 @@ bool CoreConfigIterator::readRecord()
       {
         Core.SensorsUpdateInterval = b;
         Core.SensorsUpdateInterval *= 1000; // переводим в миллисекунды
-      //  DBG(F("SensorsUpdateInterval: "));
-      //  DBGLN(Core.SensorsUpdateInterval);      
       }
     }
     return true; // SensorsUpdateIntervalRecord
+
+    case SIM800SettingsRecord: // данные о настройках SIM800
+    {
+      #ifdef CORE_SIM800_TRANSPORT_ENABLED
+        // читаем запись
+        SIM800TransportSettings.enabled = true;
+
+        // скорость UART
+        uint8_t b = read();
+        bool inSaveMode = !writeOut(b);
+        if(inSaveMode)
+          SIM800TransportSettings.UARTSpeed = b;
+
+        // номер UART
+        b = read();
+        if(inSaveMode)
+          SIM800TransportSettings.SerialNumber = b;
+        else
+          writeOut(b);
+
+        // UseRebootPin
+        b = read();
+        if(inSaveMode)
+          SIM800TransportSettings.UseRebootPin = b;
+        else
+          writeOut(b);
+
+        // RebootPin
+        b = read();
+        if(inSaveMode)
+          SIM800TransportSettings.RebootPin = b;
+        else
+          writeOut(b);
+
+        // PowerOnLevel
+        b = read();
+        if(inSaveMode)
+          SIM800TransportSettings.PowerOnLevel = b;
+        else
+          writeOut(b);
+
+        // HangTimeout
+        b = read();
+        if(inSaveMode)
+          SIM800TransportSettings.HangTimeout = b;
+        else
+          writeOut(b);
+
+        // HangPowerOffTime
+        b = read();
+        if(inSaveMode)
+          SIM800TransportSettings.HangPowerOffTime = b;
+        else
+          writeOut(b);
+
+        // UsePowerKey
+        b = read();
+        if(inSaveMode)
+          SIM800TransportSettings.UsePowerKey = b;
+        else
+          writeOut(b);
+
+        // PowerKeyPin
+        b = read();
+        if(inSaveMode)
+          SIM800TransportSettings.PowerKeyPin = b;
+        else
+          writeOut(b);
+
+          // PowerKeyPulseDuration
+          if(inSaveMode)
+          {
+            byte* writePtr = (byte*)&(SIM800TransportSettings.PowerKeyPulseDuration);
+            *writePtr++ = read();
+            *writePtr = read();
+          }
+          else
+          {
+            writeOut(read());
+            writeOut(read());
+          }          
+
+        // PowerKeyOnLevel
+        b = read();
+        if(inSaveMode)
+          SIM800TransportSettings.PowerKeyOnLevel = b;
+        else
+          writeOut(b);
+
+          // PowerKeyInitTime
+          if(inSaveMode)
+          {
+            byte* writePtr = (byte*)&(SIM800TransportSettings.PowerKeyInitTime);
+            *writePtr++ = read();
+            *writePtr = read();
+          }
+          else
+          {
+            writeOut(read());
+            writeOut(read());
+          }          
+
+          // APN
+          if(inSaveMode)
+            SIM800TransportSettings.APN = "";
+
+          readString(SIM800TransportSettings.APN);
+
+          // APNUser
+          if(inSaveMode)
+            SIM800TransportSettings.APNUser = "";
+            
+          readString(SIM800TransportSettings.APNUser);
+
+          // APNPassword
+          if(inSaveMode)
+            SIM800TransportSettings.APNPassword = "";
+
+          readString(SIM800TransportSettings.APNPassword);
+      
+          //тут чтение известных номеров
+          // читаем кол-во номеров
+          b = read();
+          writeOut(b);
+          
+          if(inSaveMode)
+          {
+            SIM800TransportSettings.clearKnownNumbers();
+             for(byte i=0;i<b;i++)
+             {
+               String s;
+               readString(s);
+               SIM800TransportSettings.addKnownNumber(s.c_str());
+             }
+          }
+          else
+          {
+            // тут просто попросили отдать данные в поток
+            for(byte i=0;i<b;i++)
+            {
+              skipString();
+            }
+          }
+        
+      #else
+      
+        // пропускаем всю запись
+        //UARTSpeed
+        writeOut(read());
+
+        // SerialNumber
+        writeOut(read());
+        
+        // UseRebootPin        
+        writeOut(read());
+
+        // RebootPin
+        writeOut(read());
+
+        // PowerOnLevel
+        writeOut(read());
+
+        // HangTimeout
+        writeOut(read());
+
+        // HangPowerOffTime
+        writeOut(read());
+
+        // UsePowerKey
+        writeOut(read());
+
+        // PowerKeyPin
+        writeOut(read());
+
+        // PowerKeyPulseDuration
+        writeOut(read());
+        writeOut(read());
+
+        // PowerKeyOnLevel
+        writeOut(read());
+
+        // PowerKeyInitTime
+        writeOut(read());
+        writeOut(read());
+
+        // APN
+        skipString();
+
+        // APNUser
+        skipString();
+
+        // APNPassword
+        skipString();
+
+        // known numbers
+        byte cnt = read();
+        writeOut(cnt);
+
+        for(byte i=0;i<cnt;i++)
+        {
+          skipString();
+        }
+        
+      #endif // CORE_SIM800_TRANSPORT_ENABLED
+    }
+    return true; // SIM800SettingsRecord
 
 
     case MQTTSettingsRecord: // данные о настройках MQTT
@@ -637,33 +829,13 @@ bool CoreConfigIterator::readRecord()
           if(inSaveMode)
             MQTTSettings.clientID = "";
 
-          while(1)
-          {
-            char ch = read();
-            writeOut(ch);
-            
-            if(ch == '\0')
-              break;
-              
-            if(inSaveMode)
-              MQTTSettings.clientID += ch;            
-          }
+          readString(MQTTSettings.clientID);      
 
           // читаем адрес сервера
           if(inSaveMode)
             MQTTSettings.serverAddress = "";
 
-          while(1)
-          {
-            char ch = read();
-            writeOut(ch);
-            
-            if(ch == '\0')
-              break;
-              
-            if(inSaveMode)
-              MQTTSettings.serverAddress += ch;            
-          }
+          readString(MQTTSettings.serverAddress);        
 
           // читаем порт сервера
           if(inSaveMode)
@@ -682,33 +854,13 @@ bool CoreConfigIterator::readRecord()
           if(inSaveMode)
             MQTTSettings.userName = "";
 
-          while(1)
-          {
-            char ch = read();
-            writeOut(ch);
-            
-            if(ch == '\0')
-              break;
-              
-            if(inSaveMode)
-              MQTTSettings.userName += ch;            
-          }
+          readString(MQTTSettings.userName);
 
           // читаем пароль
           if(inSaveMode)
             MQTTSettings.password = "";
-            
-          while(1)
-          {
-            char ch = read();
-            writeOut(ch);
-            
-            if(ch == '\0')
-              break;
-              
-            if(inSaveMode)
-              MQTTSettings.password += ch;            
-          }
+
+          readString(MQTTSettings.password);
 
           // читаем интервал обновления топиков
           if(inSaveMode)
@@ -725,54 +877,24 @@ bool CoreConfigIterator::readRecord()
       
       #else
 
-        char ch;
-
-         // тут пропускаем все настройки MQTT
-         writeOut(read()); // пропускаем режим работы
+          // тут пропускаем все настройки MQTT
+          writeOut(read()); // пропускаем режим работы
           
           // пропускаем ID клиента
-          while(1)
-          {
-            ch = read();
-            writeOut(ch);
-
-            if(ch == '\0')
-              break;
-          }
+          skipString();
 
           // пропускаем адрес сервера
-          while(1)
-          {
-            ch = read();
-            writeOut(ch);
-
-            if(ch == '\0')
-              break;
-          }
+          skipString();
 
           // пропускаем порт
           writeOut(read());
           writeOut(read());
 
           // пропускаем имя пользователя
-          while(1)
-          {
-            ch = read();
-            writeOut(ch);
-
-            if(ch == '\0')
-              break;
-          }
+          skipString();
 
           // пропускаем пароль
-          while(1)
-          {
-            ch = read();
-            writeOut(ch);
-
-            if(ch == '\0')
-              break;
-          }
+          skipString();
 
           // пропускаем интервал обновлений топиков
           writeOut(read());
@@ -786,8 +908,6 @@ bool CoreConfigIterator::readRecord()
     case ESPSettingsRecord: // данные о настройках ESP
     {
       
-      char symbol = '\0';
-
       // имя точки доступа (набор байт, заканчивающийся нулевым байтом)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
       
@@ -796,78 +916,29 @@ bool CoreConfigIterator::readRecord()
         // сохраняем
         if(!outStream)
           ESPTransportSettings.APName = "";
-          
-        do
-        {
-          symbol = read();
-          if(symbol != '\0')
-          {
-            if(!writeOut(symbol))
-              ESPTransportSettings.APName += symbol;
-          }
-          else
-            writeOut(symbol);
-            
-        } while(symbol != '\0');
 
-        #ifdef _CORE_DEBUG
-          if(!outStream)
-          {
-            //    DBG(F("AP Name: "));
-            //    DBGLN(ESPTransportSettings.APName);
-          }
-        #endif  
-        
+        readString(ESPTransportSettings.APName);
+                  
       #else
         // пропускаем
-        do
-        {
-          symbol = read();
-          writeOut(symbol);
-        } while(symbol != '\0');
+        skipString();
         
       #endif // CORE_ESP_TRANSPORT_ENABLED
-
 
       // пароль точки доступа (набор байт, заканчивающийся нулевым байтом)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
         if(!outStream)
           ESPTransportSettings.APPassword = "";
-          
-        do
-        {
-          symbol = read();
-          if(symbol != '\0')
-          {
-            if(!writeOut(symbol))
-              ESPTransportSettings.APPassword += symbol;
-              
-          }
-          else
-            writeOut(symbol);
-            
-        } while(symbol != '\0');
 
-        #ifdef _CORE_DEBUG
-          if(!outStream)
-          {
-           //     DBG(F("AP Password: "));
-            //    DBGLN(ESPTransportSettings.APPassword);
-          }
-        #endif  
+        readString(ESPTransportSettings.APPassword);
         
       #else
         // пропускаем
-        do
-        {
-          symbol = read();
-          writeOut(symbol);
-        } while(symbol != '\0');
+       skipString();
         
-      #endif // CORE_ESP_TRANSPORT_ENABLED      
-
-
+      #endif // CORE_ESP_TRANSPORT_ENABLED
+      
       // флаг - коннектиться ли к роутеру
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         uint8_t b = read();
@@ -883,74 +954,26 @@ bool CoreConfigIterator::readRecord()
         // сохраняем
         if(!outStream)
           ESPTransportSettings.RouterID = "";
-          
-        do
-        {
-          symbol = read();
-          if(symbol != '\0')
-          {
-            if(!writeOut(symbol))
-              ESPTransportSettings.RouterID += symbol;
-              
-          }
-          else
-            writeOut(symbol);
-            
-        } while(symbol != '\0');
 
-        #ifdef _CORE_DEBUG
-          if(!outStream)
-          {
-            //    DBG(F("Router SSID: "));
-           //     DBGLN(ESPTransportSettings.RouterID);
-          }
-        #endif  
-        
+        readString(ESPTransportSettings.RouterID);
+
       #else
         // пропускаем
-        do
-        {
-          symbol = read();
-          writeOut(symbol);
-          
-        } while(symbol != '\0');
+       skipString();
         
       #endif // CORE_ESP_TRANSPORT_ENABLED            
-
 
       // пароль роутера (набор байт, заканчивающийся нулевым байтом)
       #ifdef CORE_ESP_TRANSPORT_ENABLED
         // сохраняем
         if(!outStream)
           ESPTransportSettings.RouterPassword = "";
-        do
-        {
-          symbol = read();
-          if(symbol != '\0')
-          {
-            if(!writeOut(symbol))
-              ESPTransportSettings.RouterPassword += symbol;
-          }
-          else
-            writeOut(symbol);
-        } while(symbol != '\0');
 
-          #ifdef _CORE_DEBUG
-            if(!outStream)
-            {
-             //     DBG(F("Router Password: "));
-            //      DBGLN(ESPTransportSettings.RouterPassword);
-            }
-          #endif  
-        
+        readString(ESPTransportSettings.RouterPassword);
+                
       #else
         // пропускаем
-        do
-        {
-          symbol = read();
-          writeOut(symbol);
-          
-        } while(symbol != '\0');
+        skipString();
         
       #endif // CORE_ESP_TRANSPORT_ENABLED          
 
@@ -1050,9 +1073,7 @@ bool CoreConfigIterator::readRecord()
 
     case RS485SettingsRecord: // данные о настройках RS485
     {
-
-      
-      
+    
       #ifdef CORE_RS485_TRANSPORT_ENABLED
 
         RS485Settings.enabled = true;
@@ -1083,50 +1104,6 @@ bool CoreConfigIterator::readRecord()
       #endif
     }
     return true;
-/*
-    case RS485IncomingPacketRecord:
-    {
-      #ifdef CORE_RS485_TRANSPORT_ENABLED
-      
-         uint8_t headerLen = read();
-         writeOut(headerLen);
-         
-         uint8_t* header = new uint8_t[headerLen];
-         
-          for(uint8_t k=0;k<headerLen;k++)
-          {
-            header[k] = read();
-            writeOut(header[k]);
-          }
-          
-          uint8_t packetLen = read();
-          uint8_t packetID = read();
-
-          writeOut(packetLen);
-          writeOut(packetID);
-
-          if(!outStream)
-            RS485.addKnownPacketHeader(header,headerLen,packetLen,packetID);
-
-          delete [] header;
-      #else
-      
-        uint8_t headerLen = read();
-        writeOut(headerLen);
-        
-        for(uint8_t k=0;k<headerLen;k++)
-        {
-          writeOut(read());
-        }
-
-       writeOut(read());
-       writeOut(read());
-       
-      #endif
-      
-    }
-    return true;
-    */
 
     case LoRaSettingsRecord:
     {
@@ -1379,7 +1356,10 @@ void CoreClass::reset()
     MQTTSettings.reset();
     MQTT.reset();
   #endif
-  
+
+  #ifdef CORE_SIM800_TRANSPORT_ENABLED
+    SIM800TransportSettings.reset();
+  #endif
   
   // очищаем сигналы
   sensorTimers.empty();
@@ -1562,6 +1542,7 @@ bool CoreClass::setDATETIME(const char* param)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::setCurrentDateTime(uint8_t day, uint8_t month, uint16_t year, uint8_t hour, uint8_t minute, uint8_t second)
 {
+  #ifdef CORE_DS3231_ENABLED
    // вычисляем день недели
     int dow;
     uint8_t mArr[12] = {6,2,2,5,0,3,5,1,4,6,2,4};
@@ -1584,7 +1565,9 @@ void CoreClass::setCurrentDateTime(uint8_t day, uint8_t month, uint16_t year, ui
       // теперь каждому девайсу устанавливаем время
       CoreSensorDS3231* sensor = (CoreSensorDS3231*) rtcSensors[i];
       sensor->setTime(second, minute, hour, dow, day, month, year);
-    }     
+    }
+    
+    #endif // CORE_DS3231_ENABLED     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::getFEATURES(const char* commandPassed, Stream* pStream)
@@ -1643,6 +1626,16 @@ bool CoreClass::getFEATURES(const char* commandPassed, Stream* pStream)
     pStream->print(F("MQTT")); 
   #endif
 
+  #ifdef CORE_SIM800_TRANSPORT_ENABLED
+    if(written)
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+      
+    written++;
+    pStream->print(F("SIM800")); 
+  #endif
+
+  
+
   pStream->println();
 
   return true;
@@ -1693,12 +1686,14 @@ bool CoreClass::getSTORAGE(const char* commandPassed, Stream* pStream)
    pStream->print(byteToHexString(dt.sensor->getType()));
 
    // выводим тип показаний датчика
+  #ifdef CORE_USERDATA_SENSOR_ENABLED 
    if(dt.sensor->isUserDataSensor())
    {
       CoreUserDataSensor* uds = (CoreUserDataSensor*) dt.sensor;
       pStream->print(byteToHexString(uds->getUserDataType()));
    }
    else
+  #endif 
    {
     pStream->print(byteToHexString(CoreSensor::getDataType(dt.sensor->getType())));
    }
@@ -2318,7 +2313,7 @@ bool CoreClass::getPIN(const char* commandPassed, const CommandParser& parser, S
   pStream->print(CORE_COMMAND_PARAM_DELIMITER);
   pStream->print(pinNumber);
   pStream->print(CORE_COMMAND_PARAM_DELIMITER);
-  pStream->println(pinState ? F("HIGH") : F("LOW"));   
+  pStream->println(pinState ? F("ON") : F("OFF"));   
 
   return true;
 }
@@ -2723,6 +2718,10 @@ void CoreClass::begin()
     ESP.begin();
   #endif
 
+  #ifdef CORE_SIM800_TRANSPORT_ENABLED
+    SIM800.begin();
+  #endif
+
   #ifdef CORE_LORA_TRANSPORT_ENABLED
 
   LoraDispatcher.begin();
@@ -2738,6 +2737,7 @@ void CoreClass::begin()
     MQTT.begin();
   #endif
 
+
   ON_CORE_BEGIN();
 
   printVersion(Serial);
@@ -2749,6 +2749,10 @@ void CoreClass::yieldCritical()
   
   #ifdef CORE_ESP_TRANSPORT_ENABLED
     ESP.update();
+  #endif
+
+  #ifdef CORE_SIM800_TRANSPORT_ENABLED
+    SIM800.update();
   #endif  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -2776,24 +2780,23 @@ void CoreClass::update()
     RS485.update();
   #endif
 
-
   #ifdef CORE_ESP_TRANSPORT_ENABLED
     ESP.update();
   #endif
 
+  #ifdef CORE_SIM800_TRANSPORT_ENABLED
+    SIM800.update();
+  #endif
 
   #ifdef CORE_LORA_TRANSPORT_ENABLED
     LoraDispatcher.update();    
   #endif // CORE_LORA_TRANSPORT_ENABLED  
 
-
   updateTimers(); // обновляем таймеры
-
 
   #ifdef CORE_SIGNALS_ENABLED
     Signals.update();
   #endif
-
 
   #ifdef CORE_MQTT_TRANSPORT_ENABLED
     MQTT.update();
@@ -3141,8 +3144,10 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
 
     if(dataStored.sensor->isUserDataSensor())
     {
-      CoreUserDataSensor* uds = (CoreUserDataSensor*) dataStored.sensor;
-      typeOfData = uds->getUserDataType();
+      #ifdef CORE_USERDATA_SENSOR_ENABLED
+        CoreUserDataSensor* uds = (CoreUserDataSensor*) dataStored.sensor;
+        typeOfData = uds->getUserDataType();
+      #endif
     }
 
     switch(typeOfData)
@@ -3173,18 +3178,18 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
       case DigitalPort: // это состояние цифрового порта?
       {
         DigitalPortData dpd = dataStored;
-        result = dpd.Pin;
-        result += ':';
-        result += dpd.Value == LOW ? F("LOW") : F("HIGH");
+       // result = dpd.Pin;
+      //  result += ':';
+        result = dpd.Value == LOW ? F("OFF") : F("ON");
       }
       break;
 
       case AnalogPort: // это состояние аналогового порта?
       {
         AnalogPortData apd = dataStored;
-        result = apd.Pin;
-        result += ':';
-        result += apd.Value;
+       // result = apd.Pin;
+       // result += ':';
+        result = apd.Value;
       }
       break;      
 

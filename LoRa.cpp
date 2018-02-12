@@ -885,6 +885,8 @@ void LoraDispatcherClass::parseSensorDataPacket(CoreTransportPacket* packet)
     sensorName += *namePtr++;
   }
 
+  #ifdef CORE_USERDATA_SENSOR_ENABLED
+  
   CoreUserDataSensor* newSensor = (CoreUserDataSensor*) Core.Sensors()->get(sensorName);
   
   if(!newSensor)
@@ -914,6 +916,8 @@ void LoraDispatcherClass::parseSensorDataPacket(CoreTransportPacket* packet)
     DBGLN(F("LoRa: Userdata sensor added!"));                          
     
   } // if(newSensor)
+  
+  #endif // CORE_USERDATA_SENSOR_ENABLED
 
    //тут необходимо посылать клиенту квитанцию, что данные получены.
    // если клиент не получит квитанцию об обработке данных мастером - 

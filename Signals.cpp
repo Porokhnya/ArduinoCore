@@ -532,11 +532,13 @@ bool SignalHandler::compare(const String& sensorName, SignalOperands operand, ui
     CoreSensorType st = dataStored.sensor->getType();
     CoreDataType typeOfData = CoreSensor::getDataType(st);
 
+    #ifdef CORE_USERDATA_SENSOR_ENABLED
     if(dataStored.sensor->isUserDataSensor())
     {
       CoreUserDataSensor* uds = (CoreUserDataSensor*) dataStored.sensor;
       typeOfData = uds->getUserDataType();
     }
+    #endif
 
     switch(typeOfData)
     {

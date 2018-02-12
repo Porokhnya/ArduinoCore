@@ -95,8 +95,9 @@ typedef enum
   SignalRecord = 11, // запись о сигнале
   WatchdogRecord = 12, // запись настроек ватчдога
   MQTTSettingsRecord = 13, // настройки MQTT
+  SIM800SettingsRecord = 14, // настройки SIM800
 
-  DummyLastRecord = 14 // последняя запись, для проверки вхождения в диапазон
+  DummyLastRecord = 15 // последняя запись, для проверки вхождения в диапазон
   
 } CoreConfigRecordType;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -129,6 +130,9 @@ class CoreConfigIterator
     uint8_t read();
     bool readRecord();
     void applySensorRecord(const String& sensorName, CoreSensorType type,uint8_t* record);
+
+    void readString(String& result);
+    void skipString();
     
     Stream* outStream;
     bool asHexString;

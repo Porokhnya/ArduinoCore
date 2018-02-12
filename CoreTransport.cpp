@@ -3,9 +3,13 @@
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern "C" {
 static void __nolora(uint8_t* b, int dummy){}
+static void __noincomingcall(const String& phoneNumber, bool isKnownNumber, bool& shouldHangUp) {}
+static void __nosmsreceived(const String& phoneNumber, const String& message, bool isKnownNumber) {}
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_LORA_RECEIVE(uint8_t*, int) __attribute__ ((weak, alias("__nolora")));
+void ON_INCOMING_CALL(const String& phoneNumber, bool isKnownNumber, bool& shouldHangUp) __attribute__ ((weak, alias("__noincomingcall")));
+void ON_SMS_RECEIVED(const String& phoneNumber,const String& message, bool isKnownNumber) __attribute__ ((weak, alias("__nosmsreceived")));
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_RS485_TRANSPORT_ENABLED
 CoreRS485Settings RS485Settings;
@@ -58,10 +62,12 @@ void CoreTransportClient::setID(uint8_t id)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransportClient::setConnected(bool flag, int errorCode)
 {
-  isConnected = flag;
-
-  // постим подписчикам событие
-  raiseEvent(etConnect,errorCode);
+  if(isConnected != flag)
+  {
+    isConnected = flag;
+    // постим подписчикам событие
+    raiseEvent(etConnect,errorCode);
+  }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransportClient::setBusy(bool flag)
@@ -845,6 +851,8 @@ void CoreRS485::updateMasterMode()
                               {
                                 sensorName += *namePtr++;
                               }
+
+                              #ifdef CORE_USERDATA_SENSOR_ENABLED
       
                               CoreUserDataSensor* newSensor = (CoreUserDataSensor*) Core.Sensors()->get(sensorName);
                               
@@ -876,7 +884,9 @@ void CoreRS485::updateMasterMode()
                                 
                                 DBGLN(F("RS485: Userdata sensor added!"));                          
                                 
-                              } // if(newSensor)   
+                              } // if(newSensor)
+
+                              #endif // CORE_USERDATA_SENSOR_ENABLED
 
                             } // if(hasSensorOnSlave)
                             else
@@ -1670,15 +1680,14 @@ void CoreESPTransport::processIPD()
     } // if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
     
 
-  DBGLN(F("ESP: +IPD parsed."));  
+ // DBGLN(F("ESP: +IPD parsed."));  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::update()
 {
   if(!ESPTransportSettings.enabled)
     return;
-
-  
+ 
   if(!workStream)
     return;
 
@@ -1686,13 +1695,14 @@ void CoreESPTransport::update()
   {
       if(millis() - timer > idleTime)
       {
-        DBGLN(F("ESP: idle done!"));
+        //DBGLN(F("ESP: idle done!"));
         flags.onIdleTimer = false;
       }
   } 
 
-  if(flags.onIdleTimer) // мы в режиме простоя
-    return;
+  // Здесь проблема - мы не можем игнорировать входящие команды, мы не должны только обновлять очередь!
+  //if(flags.onIdleTimer) // мы в режиме простоя
+//    return;
 
   // флаг, что есть ответ от ESP, выставляется по признаку наличия хоть чего-то в буфере приёма
   bool hasAnswer = workStream->available() > 0;
@@ -1713,9 +1723,9 @@ void CoreESPTransport::update()
      if(wiFiReceiveBuff->startsWith(F("+IPD")) && wiFiReceiveBuff->indexOf(":") != -1)
      {
        // DBGLN(F("ESP: +IPD detected, parse!"));
-        
+       
         processIPD();
-        
+                
         hasAnswerLine = false; // говорим, что нет у нас строки с ответом, ибо нечего проверять ответ на +IPD - мы разобрали его сами
         delete wiFiReceiveBuff;
         wiFiReceiveBuff = new String();
@@ -1786,7 +1796,9 @@ void CoreESPTransport::update()
 
     // при разборе ответа тут будет лежать тип ответа, чтобы часто не сравнивать со строкой
     ESPKnownAnswer knownAnswer = kaNone;
-  
+
+  if(!flags.onIdleTimer) // только если мы не в режиме простоя
+  {
     // анализируем состояние конечного автомата, чтобы понять, что делать
     switch(machineState)
     {
@@ -1817,9 +1829,11 @@ void CoreESPTransport::update()
                     case actionDisconnect:
                     {
                       // хочет отсоединиться
+                      /*
                       DBG(F("ESP: client #"));
                       DBG(clientID);
                       DBGLN(F(" wants to disconnect..."));
+                      */
 
                       currentCommand = cmdCIPCLOSE;
                       String cmd = F("AT+CIPCLOSE=");
@@ -1832,9 +1846,11 @@ void CoreESPTransport::update()
                     case actionConnect:
                     {
                       // хочет подсоединиться
+                      /*
                       DBG(F("ESP: client #"));
                       DBG(clientID);
                       DBGLN(F(" want to connect..."));
+                      */
 
                       currentCommand = cmdCIPSTART;
                       String comm = F("AT+CIPSTART=");
@@ -1846,8 +1862,6 @@ void CoreESPTransport::update()
               
                       // и отсылаем её
                       sendCommand(comm);
-                     
-                      
                     }
                     break; // actionConnect
 
@@ -1888,7 +1902,7 @@ void CoreESPTransport::update()
                 static unsigned long hangTimer = 0;
                 if(millis() - hangTimer > 30000)
                 {
-                  DBGLN(F("ESP: want to check modem availability..."));
+                 // DBGLN(F("ESP: want to check modem availability..."));
                   hangTimer = millis();
                   sendCommand(cmdCheckModemHang);
                   
@@ -2251,7 +2265,11 @@ void CoreESPTransport::update()
           if(millis() - timer > powerOffTime)
           {
             DBGLN(F("ESP: turn power ON!"));
-            digitalWrite(ESPTransportSettings.RebootPin,ESPTransportSettings.PowerOnLevel);
+            if(ESPTransportSettings.Flags.UseRebootPin)
+            {
+              pinMode(ESPTransportSettings.RebootPin,OUTPUT);
+              digitalWrite(ESPTransportSettings.RebootPin,ESPTransportSettings.PowerOnLevel);
+            }
 
             machineState = espWaitInit;
             timer = millis();
@@ -2273,6 +2291,8 @@ void CoreESPTransport::update()
         break;
       
     } // switch
+
+  } // if(!flags.onIdleTimer)
 
 
     // тут просто анализируем ответ от ESP, если он есть, на предмет того - соединён ли клиент, отсоединён ли клиент и т.п.
@@ -2367,7 +2387,6 @@ void CoreESPTransport::update()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::begin()
 {
-  
   workStream = NULL;
 
   if(!ESPTransportSettings.enabled)
@@ -2376,17 +2395,14 @@ void CoreESPTransport::begin()
   if(ESPTransportSettings.SerialNumber == 0 || ESPTransportSettings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
     return;
 
-  DBG(F("ESP: begin, serial is: "));
-  DBGLN(ESPTransportSettings.SerialNumber);
+//  DBG(F("ESP: begin, serial is: "));
+//  DBGLN(ESPTransportSettings.SerialNumber);
   
   initClients();
-
-
 
   #ifdef CORE_ESP_WEB_SERVER
     subscribe(&CoreESPWebServer);
   #endif  
-
 
   HardwareSerial* hs = NULL;
 
@@ -2468,8 +2484,7 @@ void CoreESPTransport::createInitCommands(bool addResetCommand)
   // очищаем очередь команд
   clearInitCommands();
 
-  
-  DBGLN(F("ESP: Create init queue..."));
+//  DBGLN(F("ESP: Create init queue..."));
   
   if(ESPTransportSettings.Flags.ConnectToRouter) // коннектимся к роутеру
     initCommandsQueue.push_back(cmdCWJAP); // коннектимся к роутеру совсем в конце
@@ -2489,15 +2504,15 @@ void CoreESPTransport::createInitCommands(bool addResetCommand)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::clearInitCommands()
 {
-  DBGLN(F("ESP: Clear init queue..."));  
+ // DBGLN(F("ESP: Clear init queue..."));  
 
   initCommandsQueue.empty();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::clearClientsQueue(bool raiseEvents)
 {
-  DBG(F("ESP: Clear clients queue: "));
-  DBGLN(clientsQueue.size());
+//  DBG(F("ESP: Clear clients queue: "));
+//  DBGLN(clientsQueue.size());
   
   // тут попросили освободить очередь клиентов.
   // для этого нам надо выставить каждому клиенту флаг того, что он свободен,
@@ -2510,10 +2525,9 @@ void CoreESPTransport::clearClientsQueue(bool raiseEvents)
         {
           switch(dt.action)
           {
-
             case actionDisconnect:
                 // при дисконнекте всегда считаем, что ошибок нет
-                setClientConnected(*(dt.client),false,CT_ERROR_NONE); 
+                setClientConnected(*(dt.client),false,CT_ERROR_NONE);
             break;
   
             case actionConnect:
@@ -2535,7 +2549,16 @@ void CoreESPTransport::clearClientsQueue(bool raiseEvents)
 
   clientsQueue.empty();
 
-  DBGLN(F("ESP: clients queue cleared."));
+  // помимо этого - надо принудительно всем клиентам выставить статус "Отсоединён"
+  for(int i=0;i<ESP_MAX_CLIENTS;i++)
+  {
+    setClientConnected(*(clients[i]),false,CT_ERROR_NONE); 
+    setClientBusy(*(clients[i]),false);
+  }  
+
+//  DBGLN(F("ESP: clients queue cleared."));
+
+
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -2608,6 +2631,8 @@ void CoreESPTransport::initClients()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::subscribe(IClientEventsSubscriber* subscriber)
 {
+  initClients();
+  
   for(int i=0;i<ESP_MAX_CLIENTS;i++)
   {
     subscribeClient(*(clients[i]),subscriber);
@@ -2616,6 +2641,8 @@ void CoreESPTransport::subscribe(IClientEventsSubscriber* subscriber)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::unsubscribe(IClientEventsSubscriber* subscriber)
 {
+  initClients();
+  
   for(int i=0;i<ESP_MAX_CLIENTS;i++)
   {
     unsubscribeClient(*(clients[i]),subscriber);
@@ -2652,12 +2679,12 @@ void CoreESPTransport::beginWrite(CoreTransportClient& client)
   // добавляем клиента в очередь на запись
   addClientToQueue(&client, actionWrite);
 
-
+/*
   DBG(F("ESP: Client #"));
   DBG(client.getID());
   DBG(F(" has data size: "));
   DBGLN(client.getDataSize());
-
+*/
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с записью в поток с этого клиента
   
 }
@@ -2706,8 +2733,6 @@ bool CoreESPTransport::ready()
 {
   return flags.ready && flags.isAnyAnswerReceived; // если мы полностью инициализировали ESP - значит, можем работать
 }
-//--------------------------------------------------------------------------------------------------------------------------------------
-#endif // CORE_ESP_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_ESP_WEB_SERVER
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -3291,6 +3316,8 @@ void CoreESPWebServerClass::removePendingQuery(CoreWebServerQuery* query)
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_ESP_WEB_SERVER
 //--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_ESP_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_MQTT_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreMQTTSettings MQTTSettings;
@@ -3310,8 +3337,7 @@ CoreMQTT::CoreMQTT()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreMQTT::reset()
 {
-  // тут сброс - вызывается, когда конфиг перезагружается
-
+  // тут сброс - вызывается, когда конфиг перезагружается  
   // освобождаем клиента
   currentClient = NULL;
   timer = 0;
@@ -3513,6 +3539,7 @@ void CoreMQTT::processIncomingPacket(CoreTransportClient* client)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreMQTT::pushToReportQueue(String* toReport)
 {
+  
   String* newReport = new String();
   *newReport = *toReport;
 
@@ -3564,6 +3591,7 @@ void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreMQTT::OnClientDataWritten(CoreTransportClient& client, int errorCode)
 {
+  
   if(&client != currentClient) // не наш клиент
     return;
   
@@ -3674,9 +3702,10 @@ void CoreMQTT::convertAnswerToJSON(const String& answer, String* resultBuffer)
 //--------------------------------------------------------------------------------------------------------------------------------
 bool CoreMQTT::publish(const char* topicName, const char* payload)
 {
+  
   if(!MQTTSettings.enabled || MQTTSettings.workMode == mqttDisabled || !currentTransport || !currentClient || !topicName) // выключены
     return false; 
-
+    
   MQTTPublishQueue pq;
   int tnLen = strlen(topicName);
   pq.topic = new char[tnLen+1];
@@ -3700,7 +3729,7 @@ bool CoreMQTT::publish(const char* topicName, const char* payload)
 void CoreMQTT::update()
 {
   if(!MQTTSettings.enabled || MQTTSettings.workMode == mqttDisabled || !currentTransport) // выключены
-    return;  
+    return; 
   
   switch(machineState)
   {
@@ -4003,7 +4032,6 @@ void CoreMQTT::clearReportsQueue()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreMQTT::constructPublishPacket(String& mqttBuffer,int& mqttBufferLength, const char* topic, const char* payload)
 {
-
   MQTTBuffer byteBuffer; // наш буфер из байт, в котором будет содержаться пакет
 
   // тут формируем пакет
@@ -4031,7 +4059,7 @@ void CoreMQTT::constructPublishPacket(String& mqttBuffer,int& mqttBufferLength, 
 //--------------------------------------------------------------------------------------------------------------------------------
 void CoreMQTT::constructSubscribePacket(String& mqttBuffer,int& mqttBufferLength, const char* topic)
 {
- MQTTBuffer byteBuffer; // наш буфер из байт, в котором будет содержаться пакет
+  MQTTBuffer byteBuffer; // наш буфер из байт, в котором будет содержаться пакет
 
   // тут формируем пакет подписки
 
@@ -4225,15 +4253,1806 @@ void CoreMQTT::begin()
           currentTransport = &ESP;
         #endif
       break;
+
+      case mqttThroughSIM800:
+      #ifdef CORE_SIM800_TRANSPORT_ENABLED
+          currentTransport = &SIM800;
+      #endif
+      break;
     }
 
   // подписываемся на события клиентов
   if(currentTransport)
+  {
     currentTransport->subscribe(this);  
+  }
     
   // ну и запомним, когда вызвали начало работы
   timer = millis();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_MQTT_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_SIM800_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#include "CorePDU.h"
+//--------------------------------------------------------------------------------------------------------------------------------------
+SIM800TransportSettingsClass SIM800TransportSettings;
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreSIM800Transport SIM800;
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreSIM800Transport::CoreSIM800Transport() : CoreTransport()
+{
+  for(int i=0;i<SIM800_MAX_CLIENTS;i++)
+    clients[i] = NULL;
+
+  sim800ReceiveBuff = new String();
+  smsToSend = new String();
+
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::sendCommand(const String& command, bool addNewLine)
+{
+  DBG(F("SIM800: ==>> "));
+  DBGLN(command);
+  
+  workStream->write(command.c_str(),command.length());
+  
+  if(addNewLine)
+  {
+    workStream->println();
+  }  
+
+  machineState = sim800WaitAnswer; // говорим, что надо ждать ответа от SIM800
+  // запоминаем время отсылки последней команды
+  timer = millis();
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::sendCommand(SIM800Commands command)
+{
+  currentCommand = command;
+  
+  // тут посылаем команду в ESP
+  switch(command)
+  {
+    case smaNone:
+    case smaCIPSTART:
+    case smaCIPSEND:
+    case smaWaitSendDone:
+    case smaCIPCLOSE:
+    case smaCMGS:
+    case smaWaitForSMSClearance:
+    case smaWaitSMSSendDone:
+    break;
+
+    case smaCheckReady:
+    {
+      DBGLN(F("SIM800: Check for modem READY..."));
+      sendCommand(F("AT+CPAS"));
+    }
+    break;
+
+    case smaCIPHEAD:
+    {
+      DBGLN(F("SIM800: Set IPD setting..."));
+      sendCommand(F("AT+CIPHEAD=1"));      
+    }
+    break;
+
+    case smaCIICR:
+    {
+      DBGLN(F("SIM800: Activate GPRS connection..."));
+      sendCommand(F("AT+CIICR"));            
+    }
+    break;
+
+    case smaCIFSR:
+    {
+      sendCommand(F("AT+CIFSR"));      
+    }
+    break;
+
+    case smaCSTT:
+    {
+      DBGLN(F("SIM800: Setup GPRS connection..."));
+      
+      String comm = F("AT+CSTT=\"");
+      comm += SIM800TransportSettings.APN;
+      comm += F("\",\"");
+      comm += SIM800TransportSettings.APNUser;
+      comm += F("\",\"");
+      comm += SIM800TransportSettings.APNPassword;
+      comm += F("\"");
+
+      sendCommand(comm);
+    }
+    break;
+
+    case smaCIPMODE:
+    {
+      DBGLN(F("SIM800: Set CIPMODE..."));
+      sendCommand(F("AT+CIPMODE=0"));            
+    }
+    break;
+
+    case smaCIPMUX:
+    {
+      DBGLN(F("SIM800: Set CIPMUX..."));
+      sendCommand(F("AT+CIPMUX=1"));            
+    }
+    break;
+
+    case smaEchoOff:
+    {
+      DBGLN(F("SIM800: echo OFF..."));
+      sendCommand(F("ATE0"));
+    }
+    break;
+
+    case smaDisableCellBroadcastMessages:
+    {
+      DBGLN(F("SIM800: disable cell broadcast messagess..."));
+      sendCommand(F("AT+CSCB=1"));
+    }
+    break;
+
+    case smaAON:
+    {
+        DBGLN(F("SIM800: Turn AON ON..."));      
+        sendCommand(F("AT+CLIP=1"));  
+    }
+    break;
+
+    case smaPDUEncoding:
+    {
+      DBGLN(F("SIM800: Set PDU format..."));
+      sendCommand(F("AT+CMGF=0"));
+    }
+    break;
+
+    case smaUCS2Encoding:
+    {
+      DBGLN(F("SIM800: Set UCS2 format..."));
+      sendCommand(F("AT+CSCS=\"UCS2\""));
+    }
+    break;
+
+    case smaSMSSettings:
+    {
+      DBGLN(F("SIM800: Set SMS output mode..."));
+      sendCommand(F("AT+CNMI=2,2"));
+    }
+    break;
+
+    case smaWaitReg:
+    {
+      DBGLN(F("SIM800: Check registration status..."));
+      sendCommand(F("AT+CREG?"));
+    }
+    break;
+
+    case smaCheckModemHang:
+    {
+      DBGLN(F("SIM800: Check if modem available..."));      
+      sendCommand(F("AT"));
+    }
+    break;
+
+    case smaHangUp:
+    {
+      DBGLN(F("SIM800: Hang up..."));      
+      sendCommand(F("ATH"));      
+    }
+    break;
+    
+  } // switch
+
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreSIM800Transport::isKnownAnswer(const String& line, SIM800KnownAnswer& result)
+{
+  result = gsmNone;
+  
+  if(line == F("OK"))
+  {
+    result = gsmOK;
+    return true;
+  }
+  if(line == F("ERROR"))
+  {
+    result = gsmError;
+    return true;
+  }
+  if(line == F("FAIL"))
+  {
+    result = gsmFail;
+    return true;
+  }
+  if(line.endsWith(F("SEND OK")))
+  {
+    result = gsmSendOk;
+    return true;
+  }
+  if(line.endsWith(F("SEND FAIL")))
+  {
+    result = gsmSendFail;
+    return true;
+  }
+  if(line.endsWith(F("CONNECT OK")))
+  {
+    result = gsmConnectOk;
+    return true;
+  }
+  if(line.endsWith(F("CONNECT FAIL")))
+  {
+    result = gsmConnectFail;
+    return true;
+  }
+  if(line.endsWith(F("ALREADY CONNECT")))
+  {
+    result = gsmAlreadyConnect;
+    return true;
+  }
+  if(line.endsWith(F("CLOSE OK")))
+  {
+    result = gsmCloseOk;
+    return true;
+  }
+  
+
+  
+  return false;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::processIPD()
+{
+  DBG(F("SIM800: start parse +RECEIVE, received="));
+  DBGLN(*sim800ReceiveBuff);
+
+  // здесь в sim800ReceiveBuff лежит только команда вида +RECEIVE,<id>,<len>:
+  // все данные надо вычитывать из потока
+        
+    int idx = sim800ReceiveBuff->indexOf(F(",")); // ищем первую запятую после +IPD
+    const char* ptr = sim800ReceiveBuff->c_str();
+    ptr += idx+1;
+    // перешли за запятую, парсим ID клиента
+    String connectedClientID = F("");
+    while(*ptr != ',')
+    {
+      connectedClientID += (char) *ptr;
+      ptr++;
+    }
+    ptr++; // за запятую
+    String dataLen;
+    while(*ptr != ':')
+    {
+      dataLen += (char) *ptr;
+      ptr++; // перешли на начало данных
+    }
+
+    // получили ID клиента и длину его данных, которые - пока в потоке, и надо их быстро попакетно вычитать
+    int clientID = connectedClientID.toInt();
+    size_t lengthOfData = dataLen.toInt();
+    
+    if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
+    {
+
+     /* 
+      DBG(F("SIM800: data for client  #"));
+      DBG(clientID);
+      DBG(F("; len="));
+      DBGLN(lengthOfData);
+      */
+       CoreTransportClient* client = clients[clientID];
+
+       // у нас есть lengthOfData с данными для клиента, нам надо побить это на пакеты длиной N байт,
+       // и последовательно вызывать событие прихода данных. Это нужно для того, чтобы не переполнить оперативку,
+       // поскольку у нас её - не вагон.
+
+      // пусть у нас будет максимум 512 байт на пакет
+      const int MAX_PACKET_SIZE = 512;
+      
+      // если длина всех данных меньше 512 - просто тупо все сразу вычитаем
+       uint16_t packetSize = min(MAX_PACKET_SIZE,lengthOfData);
+
+        // теперь выделяем буфер под данные
+        uint8_t* buff = new uint8_t[packetSize];
+
+        // у нас есть буфер, в него надо скопировать данные из потока
+        uint8_t* writePtr = buff;
+        
+        size_t packetWritten = 0; // записано в пакет
+        size_t totalWritten = 0; // всего записано
+
+            while(totalWritten < lengthOfData) // пока не запишем все данные с клиента
+            {
+                if(workStream->available())
+                {   
+                  *writePtr++ = (uint8_t) workStream->read();
+                  packetWritten++;
+                  totalWritten++;
+                }
+
+                if(packetWritten >= packetSize)
+                {
+                  // скопировали один пакет
+                  // передаём клиенту буфер, он сам его освободит, когда надо
+                  setClientData(*client,buff,packetWritten);
+    
+                  // сообщаем подписчикам, что данные для клиента получены
+                  notifyClientDataAvailable(*client, totalWritten >= lengthOfData);
+    
+                   
+                  // пересчитываем длину пакета, вдруг там мало осталось, и незачем выделять под несколько байт огромный буфер
+                  packetSize =  min(MAX_PACKET_SIZE, lengthOfData - totalWritten);
+                  buff = new uint8_t[packetSize];
+                  writePtr = buff; // на начало буфера
+                  packetWritten = 0;
+                }
+              
+            } // while
+
+            // проверяем - есть ли остаток?
+            if(packetWritten > 0)
+            {
+              // после прохода цикла есть остаток данных, уведомляем клиента
+             // передаём клиенту буфер, он сам его освободит, когда надо
+              setClientData(*client,buff,packetWritten);
+
+              // сообщаем подписчикам, что данные для клиента получены
+              notifyClientDataAvailable(*client, totalWritten >= lengthOfData);
+
+            }
+            else
+            {
+                // нет остатка, чистим буфер
+                delete [] buff;
+            }
+                  
+       
+    } // if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
+    
+
+  DBGLN(F("SIM800: +RECEIVE parsed."));  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::processIncomingCall(const String& line)
+{
+ // приходит строка вида
+  // +CLIP: "79182900063",145,,,"",0
+  
+   // входящий звонок, проверяем, приняли ли мы конец строки?
+    String ring = line.substring(8); // пропускаем команду +CLIP:, пробел и открывающую кавычку "
+
+    int idx = ring.indexOf("\"");
+    if(idx != -1)
+      ring = ring.substring(0,idx);
+
+    if(ring.length() && ring[0] != '+')
+      ring = String(F("+")) + ring;
+
+  // ищем - есть ли у нас этот номер среди известных
+  bool isKnownNumber = false;
+
+  for(size_t i=0;i<SIM800TransportSettings.KnownNumbers.size();i++)
+  {
+    if(SIM800TransportSettings.KnownNumbers[i]->startsWith(ring))
+    {
+      isKnownNumber = true;
+      break;
+    }
+  }
+
+  bool shouldHangUp = false;
+  
+  // вызываем событие
+  ON_INCOMING_CALL(ring,isKnownNumber,shouldHangUp);
+  
+ // добавляем команду "положить трубку" - она выполнится первой, поскольку очередь инициализации у нас имеет приоритет
+  if(shouldHangUp)
+    initCommandsQueue.push_back(smaHangUp);  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::processCMT(const String& pdu)
+{
+  if(pdu.length())
+  {
+    
+    PDUIncomingMessage sms = PDU.Decode(pdu);
+
+    if(sms.IsDecodingSucceed)
+    {
+      // СМС пришло, вызываем событие
+      bool anyKnownNumbersFound = false;
+        for(size_t i=0;i<SIM800TransportSettings.KnownNumbers.size();i++)
+        {
+          if(SIM800TransportSettings.KnownNumbers[i]->startsWith(sms.SenderNumber))
+          {
+            anyKnownNumbersFound = true;
+            break;
+          }
+        }
+      ON_SMS_RECEIVED(sms.SenderNumber,sms.Message, anyKnownNumbersFound);
+    }
+
+    
+  } // if(pdu.length())
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::sendQueuedSMS()
+{
+  if(!outgoingSMSList.size())
+    return;
+
+  delete smsToSend;
+  smsToSend = new String();
+  
+  int messageLength = 0;
+
+  SIM800OutgoingSMS* sms = &(outgoingSMSList[0]);  
+ 
+  PDUOutgoingMessage encodedMessage = PDU.Encode(*(sms->phone),*(sms->message),sms->isFlash, smsToSend);
+  messageLength = encodedMessage.MessageLength;
+  
+/*
+  ///////////////////////////////////////////////////
+  *smsToSend = "0001000B919781920060F30008080074006500730074";
+  messageLength = 21;
+  ///////////////////////////////////////////////////
+*/
+    
+  delete sms->phone;
+  delete sms->message;
+
+  if(outgoingSMSList.size() < 2)
+  {
+    outgoingSMSList.empty();
+  }
+  else
+  {
+    for(size_t i=1;i<outgoingSMSList.size();i++)
+    {
+      outgoingSMSList[i-1] = outgoingSMSList[i];
+    }
+    outgoingSMSList.pop();
+  }
+    
+  // тут отсылаем СМС
+  String command = F("AT+CMGS=");
+  command += String(messageLength);
+
+  flags.waitForDataWelcome = true;
+  sendCommand(command);
+  currentCommand = smaCMGS;
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::update()
+{
+  if(!SIM800TransportSettings.enabled || !workStream)
+    return;
+ 
+  if(flags.onIdleTimer) // попросили подождать определённое время, в течение которого просто ничего не надо делать
+  {
+      if(millis() - timer > idleTime)
+      {
+        DBGLN(F("SIM800: idle done!"));
+        flags.onIdleTimer = false;
+      }
+  } 
+
+
+  // флаг, что есть ответ от ESP, выставляется по признаку наличия хоть чего-то в буфере приёма
+  bool hasAnswer = workStream->available() > 0;
+
+  // выставляем флаг, что мы хотя бы раз получили хоть чего-то от ESP
+  flags.isAnyAnswerReceived = flags.isAnyAnswerReceived || hasAnswer;
+
+  bool hasAnswerLine = false; // флаг, что мы получили строку ответа от модема
+
+  char ch;
+  while(workStream->available())
+  {
+    // здесь мы должны детектировать - пришло IPD или нет.
+    // если пришли данные - мы должны вычитать их длину, и уже после этого - отправить данные клиенту,
+    // напрямую читая из потока. Это нужно, потому что данные могут быть бинарными, и мы никогда в них не дождёмся
+    // перевода строки.
+
+     if(sim800ReceiveBuff->startsWith(F("+RECEIVE")) && sim800ReceiveBuff->indexOf(":") != -1)
+     {
+        DBGLN(F("SIM800: +RECEIVE detected, parse!"));
+       
+        processIPD();
+                
+        delete sim800ReceiveBuff;
+        sim800ReceiveBuff = new String();
+        timer = millis();        
+        
+        return;
+     }
+
+    ch = workStream->read();
+    
+    if(ch == '\r') // ненужный нам символ
+      continue;
+    else
+    if(ch == '\n')
+    {   
+        hasAnswerLine = sim800ReceiveBuff->length(); // выставляем флаг, что у нас есть строка ответа от ESP  
+        break; // выходим из цикла, остальное дочитаем позже, если это потребуется кому-либо
+    }
+    else
+    {     
+        if(flags.waitForDataWelcome && ch == '>') // ждём команду >  (на ввод данных)
+        {
+          flags.waitForDataWelcome = false;
+          *sim800ReceiveBuff = F(">");
+          hasAnswerLine = true;
+          break; // выходим из цикла, получили приглашение на ввод данных
+        }
+        else
+        {
+          *sim800ReceiveBuff += ch;
+                         
+          if(sim800ReceiveBuff->length() > 2500) // буфер слишком длинный
+          {
+            DBGLN(F("SIM800: incoming data too long, skip it!"));
+            delete sim800ReceiveBuff;
+            sim800ReceiveBuff = new String();
+          }
+        }
+    } // any char except '\r' and '\n' 
+    
+  } // while(workStream->available())
+
+
+  if(hasAnswer)
+  {
+     timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
+  }
+
+      if(hasAnswerLine && sim800ReceiveBuff->length())
+      {
+
+        if(flags.pduInNextLine) // в прошлой строке пришло +CMT, поэтому в текущей - содержится PDU
+        {
+            flags.pduInNextLine = false;
+
+            // разбираем, чего там пришло
+            processCMT(*sim800ReceiveBuff);
+          
+            delete sim800ReceiveBuff;
+            sim800ReceiveBuff = new String();
+            timer = millis();
+            return;
+          
+        }
+        
+        /*
+        // выводим то, что получено, для теста
+        DBG(F("SIM800: <<==(c:"));
+        DBG(currentCommand);
+        DBG(F(", m:"));        
+        DBG(machineState);
+        DBG(F(", l:"));
+        DBG(sim800ReceiveBuff->length());
+        DBG(F("): "));
+        DBGLN(*sim800ReceiveBuff);
+        */
+
+        DBG(F("<<== "));
+        DBGLN(*sim800ReceiveBuff);
+
+        if(sim800ReceiveBuff->startsWith(F("+CLIP:")))
+        {
+          DBGLN(F("SIM800: +CLIP detected, parse!"));
+         
+          processIncomingCall(*sim800ReceiveBuff);
+                            
+          delete sim800ReceiveBuff;
+          sim800ReceiveBuff = new String();
+          
+          timer = millis();        
+          return; // поскольку мы сами отработали входящий звонок - выходим
+        }
+        else
+        if(sim800ReceiveBuff->startsWith(F("+CMT:")))
+          {
+            flags.pduInNextLine = true;
+            hasAnswerLine = false;
+            delete sim800ReceiveBuff;
+            sim800ReceiveBuff = new String();            
+          }
+        
+      }
+
+   if(hasAnswerLine && sim800ReceiveBuff->startsWith(F("AT+")))
+   {
+    // это эхо, игнорируем
+      *sim800ReceiveBuff = "";
+      hasAnswerLine = false;
+   }
+
+    // при разборе ответа тут будет лежать тип ответа, чтобы часто не сравнивать со строкой
+    SIM800KnownAnswer knownAnswer = gsmNone;
+
+    if(!flags.onIdleTimer)
+    {
+    // анализируем состояние конечного автомата, чтобы понять, что делать
+    switch(machineState)
+    {
+        case sim800Idle: // ничего не делаем, можем работать с очередью команд и клиентами
+        {            
+            // смотрим - если есть хоть одна команда в очереди инициализации - значит, мы в процессе инициализации, иначе - можно работать с очередью клиентов
+            if(initCommandsQueue.size())
+            {
+                DBGLN(F("SIM800: process next init command..."));
+                currentCommand = initCommandsQueue[initCommandsQueue.size()-1];
+                initCommandsQueue.pop();
+                sendCommand(currentCommand);
+            } // if
+            else
+            {
+              // в очереди команд инициализации ничего нет, значит, можем выставить флаг, что мы готовы к работе с клиентами
+              flags.ready = true;
+
+              if(outgoingSMSList.size())
+              {
+                sendQueuedSMS();
+              }
+              else
+              if(clientsQueue.size())
+              {
+                  // получаем первого клиента в очереди
+                  SIM800ClientQueueData dt = clientsQueue[0];
+                  int clientID = dt.client->getID();
+                  
+                  // смотрим, чего он хочет от нас
+                  switch(dt.action)
+                  {
+                    case sim800DisconnectAction:
+                    {
+                      // хочет отсоединиться
+                      /*
+                      DBG(F("SIM800: client #"));
+                      DBG(clientID);
+                      DBGLN(F(" wants to disconnect..."));
+                      */
+                      currentCommand = smaCIPCLOSE;
+                      String cmd = F("AT+CIPCLOSE=");
+                      cmd += clientID;
+                      sendCommand(cmd);                      
+                      
+                    }
+                    break; // sim800DisconnectAction
+
+                    case sim800ConnectAction:
+                    {
+                      // хочет подсоединиться
+                      /*
+                      DBG(F("SIM800: client #"));
+                      DBG(clientID);
+                      DBGLN(F(" want to connect..."));
+                      */
+                      currentCommand = smaCIPSTART;
+                      String comm = F("AT+CIPSTART=");
+                      comm += clientID;
+                      comm += F(",\"TCP\",\"");
+                      comm += dt.ip;
+                      comm += F("\",");
+                      comm += dt.port;
+              
+                      // и отсылаем её
+                      sendCommand(comm);
+                      
+                    }
+                    break; // sim800ConnectAction
+
+                    case sim800WriteAction:
+                    {
+                      // хочет отослать данные
+                      /*
+                      DBG(F("SIM800: client #"));
+                      DBG(clientID);
+                      DBG(F(" has data="));
+                      DBG(dt.client->getDataSize());
+                      DBGLN(F(" and wants to send it..."));
+                      */
+                      currentCommand = smaCIPSEND;
+
+                      String command = F("AT+CIPSEND=");
+                      command += clientID;
+                      command += F(",");
+                      command += dt.client->getDataSize();
+                      flags.waitForDataWelcome = true; // выставляем флаг, что мы ждём >
+                      
+                      sendCommand(command);                      
+                    }
+                    break; // sim800WriteAction
+                  } // switch
+              }
+              else
+              {
+                timer = millis(); // обновляем таймер в режиме ожидания, поскольку мы не ждём ответа на команды
+
+                static unsigned long hangTimer = 0;
+                if(millis() - hangTimer > 30000)
+                {
+                  DBGLN(F("SIM800: want to check modem availability..."));
+                  hangTimer = millis();
+                  sendCommand(smaCheckModemHang);
+                  
+                } // if
+                
+              } // else
+            } // else inited
+        }
+        break; // sim800Idle
+
+        case sim800WaitAnswer: // ждём ответа от модема на посланную ранее команду (функция sendCommand переводит конечный автомат в эту ветку)
+        {
+          // команда, которую послали - лежит в currentCommand, время, когда её послали - лежит в timer.
+              if(hasAnswerLine)
+              {                
+                // есть строка ответа от модема, можем её анализировать, в зависимости от посланной команды (лежит в currentCommand)
+                switch(currentCommand)
+                {
+                  case smaNone:
+                  {
+                    // ничего не делаем
+                    DBGLN(F("SIM800: NO COMMAND!!!!"));
+                  }
+                  break; // cmdNone
+
+                  case smaWaitSMSSendDone:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      DBGLN(F("SIM800: SMS was sent."));
+                      sendCommand(F("AT+CMGD=1,4"));
+                      currentCommand = smaWaitForSMSClearance;
+                    }                       
+                  }
+                  break; // smaWaitSMSSendDone
+
+                  case smaWaitForSMSClearance:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      DBGLN(F("SIM800: SMS cleared."));
+                      machineState = sim800Idle;
+                    }                       
+                    
+                  }
+                  break; // smaWaitForSMSClearance
+
+                  case smaCMGS:
+                  {
+                    // отсылаем SMS
+                    
+                          if(*sim800ReceiveBuff == F(">")) 
+                          {
+                            
+                            // дождались приглашения, можно посылать    
+                            DBGLN(F("SIM800: Welcome received, continue sending..."));
+
+                            sendCommand(*smsToSend,false);
+                            workStream->write(0x1A); // посылаем символ окончания посыла
+
+                            delete smsToSend;
+                            smsToSend = new String();
+
+                            currentCommand = smaWaitSMSSendDone;
+                          } 
+                          else 
+                          {
+                  
+                            DBG(F("SIM800: BAD ANWER TO SMS COMMAND: WANT '>', RECEIVED: "));
+                            DBGLN(*sim800ReceiveBuff);
+
+                            delete smsToSend;
+                            smsToSend = new String();
+                            
+                            // пришло не то, что ждали - просто игнорируем отсыл СМС
+                             machineState = sim800Idle;
+                              
+                          }
+                  }
+                  break; // smaCMGS
+
+                  case smaCIPCLOSE:
+                  {
+                    // отсоединялись
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      if(clientsQueue.size())
+                      {
+                        DBGLN(F("SIM800: Client disconnected."));
+                        // клиент отсоединён, ставим ему соответствующий флаг, освобождаем его и удаляем из очереди
+                        SIM800ClientQueueData dt = clientsQueue[0];
+
+                        CoreTransportClient* thisClient = dt.client;
+                        removeClientFromQueue(thisClient);
+
+                        setClientBusy(*thisClient,false);
+                        setClientConnected(*thisClient,false,CT_ERROR_NONE);
+                        
+                      } // if(clientsQueue.size()) 
+                      
+                        machineState = sim800Idle; // переходим к следующей команде
+                    }
+                  }
+                  break; // smaCIPCLOSE
+
+                  case smaCIPSTART:
+                  {
+                    // соединялись
+                        if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                        {
+                          if(knownAnswer == gsmConnectOk)
+                          {
+                            // законнектились удачно
+                            if(clientsQueue.size())
+                            {
+                               DBGLN(F("SIM800: Client connected."));
+                               SIM800ClientQueueData dt = clientsQueue[0];
+                               
+                               CoreTransportClient* thisClient = dt.client;
+                               removeClientFromQueue(dt.client);
+                               
+                               setClientConnected(*thisClient,true,CT_ERROR_NONE);
+                               setClientBusy(*thisClient,false);
+                            }
+                            machineState = sim800Idle; // переходим к следующей команде
+                          } // gsmConnectOk
+                          else if(knownAnswer == gsmConnectFail)
+                          {
+                            // ошибка соединения
+                            if(clientsQueue.size())
+                            {
+                               DBGLN(F("SIM800: Client connect ERROR!"));
+                               SIM800ClientQueueData dt = clientsQueue[0];
+
+                               CoreTransportClient* thisClient = dt.client;
+                               removeClientFromQueue(thisClient);
+                               
+                               setClientBusy(*thisClient,false);
+                               setClientConnected(*thisClient,false,CT_ERROR_CANT_CONNECT);
+                            }
+                            machineState = sim800Idle; // переходим к следующей команде
+                          } // gsmConnectFail
+                        } // isKnownAnswer                   
+                    
+                  }
+                  break; // cmdCIPSTART
+
+
+                  case smaWaitSendDone:
+                  {
+                    // дожидаемся конца отсыла данных от клиента в SIM800
+                      
+                      if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                      {
+                        if(knownAnswer == gsmSendOk)
+                        {
+                          // send ok
+                          if(clientsQueue.size())
+                          {
+                             DBGLN(F("SIM800: data was sent."));
+                             SIM800ClientQueueData dt = clientsQueue[0];
+                             
+                             CoreTransportClient* thisClient = dt.client;
+                             removeClientFromQueue(thisClient);
+
+                             setClientBusy(*thisClient,false);
+
+                             // очищаем данные у клиента
+                             setClientData(*thisClient,NULL,0);
+
+                             notifyClientDataWritten(*thisClient,CT_ERROR_NONE);
+                          }                     
+                        } // send ok
+                        else
+                        {
+                          // send fail
+                          if(clientsQueue.size())
+                          {
+                             DBGLN(F("SIM800: send data fail!"));
+                             SIM800ClientQueueData dt = clientsQueue[0];
+
+                             CoreTransportClient* thisClient = dt.client;
+                             removeClientFromQueue(thisClient);
+                             
+                             setClientBusy(*thisClient,false);
+                             
+                             // очищаем данные у клиента
+                             setClientData(*thisClient,NULL,0);
+                             
+                             notifyClientDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
+                          }                     
+                        } // else send fail
+  
+                        machineState = sim800Idle; // переходим к следующей команде
+                        
+                      } // if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                       
+
+                  }
+                  break; // smaWaitSendDone
+
+                  case smaCIPSEND:
+                  {
+                    // тут отсылали запрос на запись данных с клиента
+                    if(*sim800ReceiveBuff == F(">"))
+                    {
+                       // дождались приглашения, можем писать в ESP
+                       // тут пишем напрямую
+                       if(clientsQueue.size())
+                       {
+                          // говорим, что ждём окончания отсыла данных
+                          currentCommand = smaWaitSendDone;                          
+                          SIM800ClientQueueData dt = clientsQueue[0];
+
+                          DBGLN(F("SIM800: > received, start write from client to SIM800..."));
+                          
+                          workStream->write(dt.client->getData(),dt.client->getDataSize());
+
+                          // очищаем данные у клиента сразу после отсыла
+                          setClientData(*(dt.client),NULL,0);
+                       }
+                    } // if
+                    else
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      if(knownAnswer == gsmError || knownAnswer == gsmSendFail)
+                      {
+                           // всё плохо, не получилось ничего записать
+                          if(clientsQueue.size())
+                          {
+                             DBGLN(F("SIM800: Client write ERROR!"));
+                             SIM800ClientQueueData dt = clientsQueue[0];
+    
+                             CoreTransportClient* thisClient = dt.client;
+                             removeClientFromQueue(thisClient);
+    
+                             setClientBusy(*thisClient,false);
+                             
+                             // очищаем данные у клиента
+                             setClientData(*thisClient,NULL,0);
+    
+                             notifyClientDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
+                            
+                          }
+                          
+                        machineState = sim800Idle; // переходим к следующей команде
+                      }                                           
+              
+                    } // else can't write
+                    
+                  }
+                  break; // smaCIPSEND
+                 
+                  case smaCheckReady: // ждём готовности модема, ответ на команду AT+CPAS?
+                  {
+                      if( sim800ReceiveBuff->startsWith( F("+CPAS:") ) ) 
+                      {
+                          // это ответ на команду AT+CPAS, можем его разбирать
+                          if(*sim800ReceiveBuff == F("+CPAS: 0")) 
+                          {
+                            // модем готов, можем убирать команду из очереди и переходить к следующей
+                            DBGLN(F("SIM800: Modem ready."));
+                            machineState = sim800Idle; // и переходим на следующую
+                        }
+                        else 
+                        {
+                           DBGLN(F("SIM800: Modem NOT ready, try again later..."));
+                           idleTime = 2000; // повторим через 2 секунды
+                           flags.onIdleTimer = true;
+                           // добавляем ещё раз эту команду
+                           initCommandsQueue.push_back(smaCheckReady);
+                           machineState = sim800Idle; // и пошлём ещё раз команду проверки готовности           
+                        }
+                      }                    
+                  }
+                  break; // cmdWantReady
+
+
+                  case smaHangUp:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      DBGLN(F("SIM800: Call dropped."));
+                      machineState = sim800Idle; // переходим к следующей команде
+                    }                    
+                  }
+                  break; // smaHangUp
+
+                  case smaCIPHEAD:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      DBGLN(F("SIM800: CIPHEAD command processed."));
+                      machineState = sim800Idle; // переходим к следующей команде
+                    }
+                  }
+                  break; // smaCIPHEAD
+
+                  case smaCIICR:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      DBGLN(F("SIM800: CIICR command processed."));
+                      machineState = sim800Idle; // переходим к следующей команде
+
+                      if(knownAnswer == gsmOK)
+                      {
+                        // тут можем добавлять новые команды для GPRS
+                        idleTime = 1000; // обработаем ответ через 1 секунд
+                        flags.onIdleTimer = true;                           
+                        DBGLN(F("SIM800: start checking GPRS connection..."));
+                        initCommandsQueue.push_back(smaCIFSR);
+                        gprsCheckingAttempts = 0;
+                      }
+                    }
+                  }
+                  break; // smaCIICR
+
+                  case smaCIFSR:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      // если мы здесь - мы не получили IP-адреса, т.к. ответ - один из известных
+                      
+                      if(knownAnswer == gsmOK)
+                      {
+
+                        // Тут пробуем чуть позже ещё раз эту команду
+                        if(++gprsCheckingAttempts <=5)
+                        {
+                          DBGLN(F("SIM800: try to get GPRS IP address a little bit later..."));
+                          
+                          idleTime = 5000; // обработаем ответ через 5 секунд
+                          flags.onIdleTimer = true;
+                          initCommandsQueue.push_back(smaCIFSR);
+                          machineState = sim800Idle; // переходим к следующей команде  
+                        }
+                        else
+                        {
+                          DBGLN(F("SIM800: Unable to get GPRS IP address!"));
+                          // всё, исчерпали лимит на попытки получить IP-адрес
+                          machineState = sim800Idle; // переходим к следующей команде
+                          flags.gprsAvailable = false;
+                        }
+                      }
+                      else
+                      {
+                        DBGLN(F("SIM800: GPRS connection fail!"));
+                        flags.gprsAvailable = false;
+                        machineState = sim800Idle; // переходим к следующей команде
+                      }
+                    } // isKnownAnswer
+                    else
+                    if(sim800ReceiveBuff->length() && sim800ReceiveBuff->indexOf(".") != -1)
+                    {
+                      DBG(F("SIM800: GPRS IP address found - "));
+                      DBGLN(*sim800ReceiveBuff);
+                      flags.gprsAvailable = true;
+                      machineState = sim800Idle; // переходим к следующей команде          
+                    }
+                  }
+                  break; // smaCIFSR
+
+                  case smaCSTT:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      DBGLN(F("SIM800: CSTT command processed."));
+                      machineState = sim800Idle; // переходим к следующей команде
+
+                      if(knownAnswer == gsmOK)
+                      {
+                        // тут можем добавлять новые команды для GPRS
+                        DBGLN(F("SIM800: start GPRS connection..."));
+                        initCommandsQueue.push_back(smaCIICR);
+                      }
+                      else
+                      {
+                        DBGLN(F("SIM800: Can't start GPRS connection!"));
+                      }
+                    }                    
+                  }
+                  break; // smaCSTT
+
+                  case smaCIPMODE:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      DBGLN(F("SIM800: CIPMODE command processed."));
+                      machineState = sim800Idle; // переходим к следующей команде
+                    }
+                  }
+                  break; // smaCIPMODE
+                  
+                  case smaCIPMUX:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      DBGLN(F("SIM800: CIPMUX command processed."));
+                      machineState = sim800Idle; // переходим к следующей команде
+                    }
+                  }
+                  break; // smaCIPMUX
+
+
+                  case smaEchoOff:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      if(gsmOK == knownAnswer)
+                      {
+                        DBGLN(F("SIM800: Echo OFF command processed."));
+                      }
+                      else
+                      {
+                        DBGLN(F("SIM800: Echo OFF command FAIL!"));
+                      }
+                      machineState = sim800Idle; // переходим к следующей команде
+                    }
+                  }
+                  break; // smaEchoOff
+
+                  case smaDisableCellBroadcastMessages:
+                  {                    
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      if(gsmOK == knownAnswer)
+                      {
+                        DBGLN(F("SIM800: Broadcast SMS disabled."));
+                      }
+                      else
+                      {
+                        DBGLN(F("SIM800: Broadcast SMS command FAIL!"));
+                      }
+                      machineState = sim800Idle; // переходим к следующей команде
+                    }
+                  }
+                  break; // smaDisableCellBroadcastMessages
+
+                  case smaAON:
+                  {                    
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      if(gsmOK == knownAnswer)
+                      {
+                        DBGLN(F("SIM800: AON is ON."));
+                      }
+                      else
+                      {
+                        DBGLN(F("SIM800: AON command FAIL!"));
+                      }
+                      machineState = sim800Idle; // переходим к следующей команде
+                    }
+                  }
+                  break; // smaAON
+
+                  case smaPDUEncoding:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      if(gsmOK == knownAnswer)
+                      {
+                        DBGLN(F("SIM800: PDU format is set."));
+                      }
+                      else
+                      {
+                        DBGLN(F("SIM800: PDU format command FAIL!"));
+                      }
+                      machineState = sim800Idle; // переходим к следующей команде
+                    }                    
+                  }
+                  break; // smaPDUEncoding
+
+                  case smaUCS2Encoding:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      if(gsmOK == knownAnswer)
+                      {
+                        DBGLN(F("SIM800: UCS2 encoding is set."));
+                      }
+                      else
+                      {
+                        DBGLN(F("SIM800: UCS2 encoding command FAIL!"));
+                      }
+                      machineState = sim800Idle; // переходим к следующей команде
+                    }                                        
+                  }
+                  break; // smaUCS2Encoding
+
+                  case smaSMSSettings:
+                  {
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      if(gsmOK == knownAnswer)
+                      {
+                        DBGLN(F("SIM800: SMS settings is set."));
+                      }
+                      else
+                      {
+                        DBGLN(F("SIM800: SMS settings command FAIL!"));
+                      }
+                      machineState = sim800Idle; // переходим к следующей команде
+                    }                                        
+                  }
+                  break; // smaSMSSettings
+
+                  case smaWaitReg:
+                  {
+                     if(sim800ReceiveBuff->indexOf(F("+CREG: 0,1")) != -1)
+                        {
+                          // зарегистрированы в GSM-сети
+                             flags.isModuleRegistered = true;
+                             DBGLN(F("SIM800: Modem registered in GSM!"));
+                             machineState = sim800Idle;
+                        } // if
+                        else
+                        {
+                          // ещё не зарегистрированы
+                            flags.isModuleRegistered = false;
+                            idleTime = 5000; // повторим через 5 секунд
+                            flags.onIdleTimer = true;
+                            // добавляем ещё раз эту команду
+                            initCommandsQueue.push_back(smaWaitReg);
+                            machineState = sim800Idle;
+                        } // else                    
+                  }
+                  break; // smaWaitReg
+                  case smaCheckModemHang:
+                  {                    
+                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    {
+                      DBGLN(F("SIM800: modem answered and available."));
+                      machineState = sim800Idle; // переходим к следующей команде
+                      
+                    } // if(isKnownAnswer
+
+                  }
+                  break; // smaCheckModemHang
+                                    
+                } // switch
+
+                
+              } // if(hasAnswerLine)
+              
+         
+        }
+        break; // sim800WaitAnswer
+
+        case sim800Reboot:
+        {
+          // ждём перезагрузки модема
+          unsigned long powerOffTime = SIM800TransportSettings.HangPowerOffTime;
+          powerOffTime *= 1000;
+
+          if(!SIM800TransportSettings.UseRebootPin)
+            powerOffTime = 0;
+          
+          if(millis() - timer > powerOffTime)
+          {
+            if(SIM800TransportSettings.UseRebootPin)
+            {
+              DBGLN(F("SIM800: turn power ON!"));
+              digitalWrite(SIM800TransportSettings.RebootPin,SIM800TransportSettings.PowerOnLevel);
+            }
+
+            if(SIM800TransportSettings.UsePowerKey)
+            {
+                digitalWrite(SIM800TransportSettings.PowerKeyPin,!SIM800TransportSettings.PowerKeyOnLevel);
+            }
+
+            machineState = sim800WaitInit;
+            timer = millis();
+            
+          } // if
+        }
+        break; // smaReboot
+
+        case sim800WaitInit:
+        {
+          unsigned long waitTime = SIM800TransportSettings.PowerKeyInitTime;
+
+          if(!SIM800TransportSettings.UsePowerKey)
+            waitTime = 0;
+            
+          if(millis() - timer > waitTime)
+          { 
+            DBGLN(F("SIM800: Power ON completed!"));
+            
+              if(SIM800TransportSettings.UsePowerKey)
+              {
+                DBGLN(F("SIM800: use POWERKEY!"));
+                                
+                digitalWrite(SIM800TransportSettings.PowerKeyPin,SIM800TransportSettings.PowerKeyOnLevel);
+                delay(SIM800TransportSettings.PowerKeyPulseDuration);        
+                digitalWrite(SIM800TransportSettings.PowerKeyPin,!SIM800TransportSettings.PowerKeyOnLevel);
+            
+                idleTime = SIM800TransportSettings.HangPowerOffTime; // подождём чуть-чуть...
+                idleTime *= 1000;
+                flags.onIdleTimer = true;
+                
+              }              
+
+            // теперь ждём загрузки модема
+           
+            machineState = sim800WaitBootBegin;
+            timer = millis();
+                
+            DBGLN(F("SIM800: inited after reboot!"));
+          } // 
+        }
+        break; // sim800WaitInit
+
+        case sim800WaitBootBegin:
+        {
+          sendCommand("AT");
+          machineState = sim800WaitBoot;          
+        }
+        break; // sim800WaitBootBegin
+
+        case sim800WaitBoot:
+        {
+          if(hasAnswerLine)
+          {
+            if(*sim800ReceiveBuff == F("Call Ready") || *sim800ReceiveBuff == F("SMS Ready"))
+            {
+              DBGLN(F("SIM800: BOOT FOUND, INIT!"));
+              restart();
+            }
+          }
+             
+        }
+        break; // sim800WaitBoot
+      
+      } // switch
+
+    } // if(!flags.onIdleTimer)
+
+
+    // тут просто анализируем ответ от SIM800, если он есть, на предмет того - соединён ли клиент, отсоединён ли клиент и т.п.
+    if(hasAnswerLine)
+    {
+      
+       // смотрим, подсоединился ли клиент?
+       int idx = sim800ReceiveBuff->indexOf(F(",CONNECT OK"));
+       if(idx != -1)
+       {
+          // клиент подсоединился
+          String s = sim800ReceiveBuff->substring(0,idx);
+          int clientID = s.toInt();
+          if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
+          {
+            DBG(F("SIM800: client connected - #"));
+            DBGLN(clientID);
+
+            // выставляем клиенту флаг, что он подсоединён
+            CoreTransportClient* client = clients[clientID];
+            
+            setClientBusy(*client,false);
+            setClientConnected(*client,true,CT_ERROR_NONE);
+          }
+       } // if
+
+       idx = sim800ReceiveBuff->indexOf(F(",CLOSED"));
+       bool isConnectFail = sim800ReceiveBuff->endsWith(F("CONNECT FAIL"));
+       if(idx != -1 || isConnectFail)
+       {
+        // клиент отсоединился
+          String s = sim800ReceiveBuff->substring(0,idx);
+          int clientID = s.toInt();
+          if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
+          {
+            DBG(F("SIM800: client disconnected - #"));
+            DBGLN(clientID);
+
+            // выставляем клиенту флаг, что он отсоединён
+            CoreTransportClient* client = clients[clientID];
+            
+            setClientBusy(*client,false);
+            setClientConnected(*client,false,CT_ERROR_NONE);
+          }        
+        
+       } // if(idx != -1)
+       
+
+      // не забываем чистить за собой
+        delete sim800ReceiveBuff;
+        sim800ReceiveBuff = new String();   
+           
+    } // if(hasAnswerLine)
+
+    if(!hasAnswer) // проверяем на зависание
+    {
+
+      // нет ответа от ESP, проверяем, зависла ли она?
+      unsigned long hangTime = SIM800TransportSettings.HangTimeout;
+      hangTime *= 1000;
+
+      if(millis() - timer > hangTime)
+      {
+        DBGLN(F("SIM800: modem not answering, reboot!"));
+
+        if(SIM800TransportSettings.UseRebootPin)
+        {
+          // есть пин, который надо использовать при зависании
+          digitalWrite(SIM800TransportSettings.RebootPin,!SIM800TransportSettings.PowerOnLevel);
+        }
+
+        machineState = sim800Reboot;
+        timer = millis();
+        
+      } // if   
+         
+    } // if(!hasAnswer) 
+    
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::begin()
+{
+  workStream = NULL;
+
+  if(!SIM800TransportSettings.enabled)
+    return;
+  
+  if(SIM800TransportSettings.SerialNumber == 0 || SIM800TransportSettings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
+    return;
+  
+  initClients();
+
+  HardwareSerial* hs = NULL;
+
+  #if (TARGET_BOARD == MEGA_BOARD) || (TARGET_BOARD == DUE_BOARD)
+  
+  switch(SIM800TransportSettings.SerialNumber)
+  {
+    case 0:
+      hs = &Serial;
+    break;
+
+    case 1:
+      hs = &Serial1;
+    break;
+
+    case 2:
+      hs = &Serial2;
+    break;
+
+    case 3:
+      hs = &Serial3;
+    break;
+
+  } // switch
+  #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)
+    hs = &Serial;
+  #elif TARGET_BOARD == ESP_BOARD
+    #error "NOT IMPLEMENTED!!!"
+  #else
+    #error "Unknown target board!"
+  #endif    
+
+
+  workStream = hs;
+  unsigned long uspeed = SIM800TransportSettings.UARTSpeed;
+  uspeed *= 9600;
+  
+  hs->begin(uspeed);
+
+  restart();
+
+  if(SIM800TransportSettings.UseRebootPin)
+  {
+    DBGLN(F("SIM800: power OFF!"));
+    // есть пин, который надо использовать при зависании
+    pinMode(SIM800TransportSettings.RebootPin,OUTPUT);
+    digitalWrite(SIM800TransportSettings.RebootPin,!SIM800TransportSettings.PowerOnLevel);
+  }
+
+  if(SIM800TransportSettings.UsePowerKey)
+  {      
+      pinMode(SIM800TransportSettings.PowerKeyPin,OUTPUT);
+  }
+
+  machineState = sim800Reboot;
+
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreSIM800Transport::sendSMS(const String& phoneNumber, const String& message, bool isFlash)
+{
+  if(!ready())
+    return false;
+    
+    SIM800OutgoingSMS queuedSMS;
+    
+    queuedSMS.isFlash = isFlash;   
+    queuedSMS.phone = new String(phoneNumber.c_str());    
+    queuedSMS.message = new String(message.c_str());    
+
+    outgoingSMSList.push_back(queuedSMS);
+
+  return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::restart()
+{
+  delete sim800ReceiveBuff;
+  sim800ReceiveBuff = new String();
+
+  delete smsToSend;
+  smsToSend = new String();
+
+  // очищаем очередь клиентов, заодно им рассылаем события
+  clearClientsQueue(true);  
+
+  // т.к. мы ничего не инициализировали - говорим, что мы не готовы предоставлять клиентов
+  flags.ready = false;
+  flags.isAnyAnswerReceived = false;
+  flags.waitForDataWelcome = false;
+  flags.onIdleTimer = false;
+  flags.isModuleRegistered = false;
+  flags.gprsAvailable = false;
+  
+  timer = millis();
+
+  currentCommand = smaNone;
+  machineState = sim800Idle;
+
+  // инициализируем очередь командами по умолчанию
+ createInitCommands(true);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::createInitCommands(bool addResetCommand)
+{  
+  // очищаем очередь команд
+  clearInitCommands();
+
+  // если указаны параметры APN - при старте поднимаем GPRS
+  if(SIM800TransportSettings.APN.length())
+  {
+    initCommandsQueue.push_back(smaCSTT);
+  }
+  
+  initCommandsQueue.push_back(smaCIPMUX);
+  initCommandsQueue.push_back(smaCIPMODE);
+  initCommandsQueue.push_back(smaWaitReg); // ждём регистрации
+  
+  initCommandsQueue.push_back(smaCIPHEAD);
+  initCommandsQueue.push_back(smaSMSSettings); // настройки вывода SMS
+  initCommandsQueue.push_back(smaUCS2Encoding); // кодировка сообщений
+  initCommandsQueue.push_back(smaPDUEncoding); // формат сообщений
+  initCommandsQueue.push_back(smaAON); // включение АОН
+  initCommandsQueue.push_back(smaDisableCellBroadcastMessages); // выключение броадкастовых SMS
+  initCommandsQueue.push_back(smaCheckReady); // проверка готовности    
+  initCommandsQueue.push_back(smaEchoOff); // выключение эха
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::clearInitCommands()
+{
+  initCommandsQueue.empty();
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::clearClientsQueue(bool raiseEvents)
+{
+  
+  // тут попросили освободить очередь клиентов.
+  // для этого нам надо выставить каждому клиенту флаг того, что он свободен,
+  // плюс - сообщить, что текущее действие над ним не удалось.  
+
+    for(size_t i=0;i<clientsQueue.size();i++)
+    {
+        SIM800ClientQueueData dt = clientsQueue[i];
+        if(raiseEvents)
+        {
+          switch(dt.action)
+          {
+
+            case sim800DisconnectAction:
+                // при дисконнекте всегда считаем, что ошибок нет
+                setClientConnected(*(dt.client),false,CT_ERROR_NONE); 
+            break;
+  
+            case sim800ConnectAction:
+                // если было запрошено соединение клиента с адресом - говорим, что соединиться не можем
+                setClientConnected(*(dt.client),false,CT_ERROR_CANT_CONNECT);
+            break;
+  
+            case sim800WriteAction:
+              // если попросили записать данные - надо сообщить подписчикам, что не можем записать данные
+              notifyClientDataWritten(*(dt.client),CT_ERROR_CANT_WRITE);
+            break;
+          } // switch
+          
+        } // if(raiseEvents)
+
+        // освобождаем клиента
+        setClientBusy(*(dt.client),false);
+    } // for
+
+  clientsQueue.empty();
+
+  // помимо этого - надо принудительно всем клиентам выставить статус "Отсоединён"
+   for(int i=0;i<SIM800_MAX_CLIENTS;i++)
+  {
+    setClientConnected(*(clients[i]),false,CT_ERROR_NONE); 
+    setClientBusy(*(clients[i]),false);
+  }  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreSIM800Transport::isClientInQueue(CoreTransportClient* client, SIM800ClientAction action)
+{
+  for(size_t i=0;i<clientsQueue.size();i++)
+  {
+    if(clientsQueue[i].client == client && clientsQueue[i].action == action)
+      return true;
+  }
+
+  return false;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::addClientToQueue(CoreTransportClient* client, SIM800ClientAction action, const char* ip, uint16_t port)
+{
+  if(isClientInQueue(client, action))
+  {
+    DBGLN(F("SIM800: Client already in queue!"));
+    return;
+  }
+
+    SIM800ClientQueueData dt;
+    dt.client = client;
+    dt.action = action;
+    
+    dt.ip = NULL;
+    if(ip)
+    {
+      dt.ip = new char[strlen(ip)+1];
+      strcpy(dt.ip,ip);
+    }
+    dt.port = port;
+
+    clientsQueue.push_back(dt);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::removeClientFromQueue(CoreTransportClient* client)
+{
+  for(size_t i=0;i<clientsQueue.size();i++)
+  {
+    if(clientsQueue[i].client == client)
+    {
+      delete [] clientsQueue[i].ip;
+      
+        for(size_t j=i+1;j<clientsQueue.size();j++)
+        {
+          clientsQueue[j-1] = clientsQueue[j];
+        }
+        
+        clientsQueue.pop();
+        break;
+    } // if
+    
+  } // for
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::initClients()
+{
+  for(int i=0;i<SIM800_MAX_CLIENTS;i++)
+  {
+    if(clients[i])
+      continue;
+      
+    CoreTransportClient* client = CoreTransportClient::Create(this);
+    setClientID(*client,i);
+    clients[i] = client;
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::subscribe(IClientEventsSubscriber* subscriber)
+{
+  initClients();
+  for(int i=0;i<SIM800_MAX_CLIENTS;i++)
+  {
+    subscribeClient(*(clients[i]),subscriber);
+  }  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::unsubscribe(IClientEventsSubscriber* subscriber)
+{
+  initClients();
+  for(int i=0;i<SIM800_MAX_CLIENTS;i++)
+  {
+    unsubscribeClient(*(clients[i]),subscriber);
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreTransportClient* CoreSIM800Transport::getFreeClient()
+{
+  if(!ready() || !flags.gprsAvailable) // если ещё не готовы к работе - ничего не возвращаем
+    return NULL;
+  
+  for(int i=0;i<SIM800_MAX_CLIENTS;i++)
+  {
+    if(!clients[i]->connected() && !clients[i]->busy()) // возвращаем первого неподсоединённого и незанятого чем-либо клиента
+      return clients[i];
+  }
+
+  return NULL;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::beginWrite(CoreTransportClient& client)
+{
+  if(!client.connected())
+  {
+    DBGLN(F("SIM800: client not connected!"));
+    return;
+  }
+
+  //говорим, что клиент занят
+  setClientBusy(client,true);
+  
+  // добавляем клиента в очередь на запись
+  addClientToQueue(&client, sim800WriteAction);
+
+
+  DBG(F("SIM800: Client #"));
+  DBG(client.getID());
+  DBG(F(" has data size: "));
+  DBGLN(client.getDataSize());
+
+  // клиент добавлен, теперь при обновлении транспорта мы начнём работать с записью в поток с этого клиента
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::beginConnect(CoreTransportClient& client, const char* ip, uint16_t port)
+{
+  if(client.connected())
+  {
+    DBGLN(F("SIM800: client already connected!"));
+    return;
+  }
+
+  //говорим, что клиент занят
+  setClientBusy(client,true);
+
+  // добавляем клиента в очередь на соединение
+  addClientToQueue(&client, sim800ConnectAction, ip, port);
+
+  // клиент добавлен, теперь при обновлении транспорта мы начнём работать с соединением клиента
+
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::beginDisconnect(CoreTransportClient& client)
+{
+  if(!client.connected())
+  {
+//    DBGLN(F("SIM800: client not connected!"));
+    return;
+  }
+
+  //говорим, что клиент занят
+  setClientBusy(client,true);
+
+  // добавляем клиента в очередь на соединение
+  addClientToQueue(&client, sim800DisconnectAction);
+
+  // клиент добавлен, теперь при обновлении транспорта мы начнём работать с отсоединением клиента
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreSIM800Transport::ready()
+{
+  return flags.ready && flags.isAnyAnswerReceived && flags.isModuleRegistered; // если мы полностью инициализировали SIM800 - значит, можем работать
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_SIM800_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+
 
