@@ -1997,10 +1997,12 @@ void CoreESPTransport::update()
 
                   case cmdWaitSendDone:
                   {
+                    /*
                     // дожидаемся конца отсыла данных от клиента в ESP
                     bool closingUnexpectedly = wiFiReceiveBuff->indexOf(F(",CLOSED")) != -1;
                     
                     if(closingUnexpectedly)
+                    
                     {
                         // соединение было закрыто сервером
                       if(clientsQueue.size())
@@ -2022,6 +2024,7 @@ void CoreESPTransport::update()
                         machineState = espIdle; // переходим к следующей команде
                     } // if(closingUnexpectedly)
                     else
+                    */
                     {
                       // connection not reset
                       
@@ -3551,7 +3554,7 @@ void CoreMQTT::pushToReportQueue(String* toReport)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
 {
-  if(&client != currentClient) // не наш клиент
+  if(!currentClient || &client != currentClient) // не наш клиент
     return;
 
   timer = millis();
@@ -3592,7 +3595,7 @@ void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
 void CoreMQTT::OnClientDataWritten(CoreTransportClient& client, int errorCode)
 {
   
-  if(&client != currentClient) // не наш клиент
+  if(!currentClient || &client != currentClient) // не наш клиент
     return;
   
   timer = millis();
@@ -3613,7 +3616,7 @@ void CoreMQTT::OnClientDataWritten(CoreTransportClient& client, int errorCode)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreMQTT::OnClientConnect(CoreTransportClient& client, bool connected, int errorCode)
 {
-  if(&client != currentClient) // не наш клиент
+  if(!currentClient || &client != currentClient) // не наш клиент
     return;
 
 //  DBG(F("MQTT: OnClientConnect, connected = "));
@@ -6226,9 +6229,29 @@ void CoreThingSpeak::update()
       break;
 
       case tsWriteMode:
-      break;
-
       case tsReadMode:
+      {
+        // в этих двух режимах проверяем - возможно, мы ооочень долго пишем/читаем
+        unsigned long needed = 60000;
+
+        if(millis() - timer > needed)
+        {
+          // Тут ждали больше, чем надо!!!
+            DBGLN(F("TS: TOO LONG WAITING DURING READ OR WRITE OPERATIONS!"));
+          
+            timer = millis();
+            
+            if(currentClient && currentClient->connected())
+            {
+              machineState = tsDisconnectMode;
+              currentClient->disconnect();
+            }
+            else
+            {
+              machineState = tsWaitingInterval;
+            }
+        }
+      }
       break;
       
     } // switch
@@ -6279,6 +6302,17 @@ void CoreThingSpeak::OnClientConnect(CoreTransportClient& client, bool connected
       DBGLN(F("TS: connected to ThingSpeak, start sending data..."));
       sendData();
     }
+  }
+  else if(machineState == tsReadMode || machineState == tsWriteMode)
+  {
+    if(!connected)
+    {
+      // error!
+      DBGLN(F("TS: disconnected during read/write mode!"));
+      currentClient = NULL;
+      machineState = tsWaitingInterval;
+      timer = millis();
+    }    
   }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -6380,6 +6414,8 @@ void CoreThingSpeak::sendData()
 
    // запрос сформирован, отсылаем его в клиент
    currentClient->write((uint8_t*)httpQuery.c_str(),httpQuery.length());
+
+   timer = millis();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreThingSpeak::initSubstitutions()
@@ -6401,6 +6437,7 @@ void CoreThingSpeak::OnClientDataWritten(CoreTransportClient& client, int errorC
       // ошибка записи в клиент
       DBGLN(F("TS: CLIENT WRITE ERROR, disconnecting..."));
       machineState = tsDisconnectMode;
+      timer = millis();
       currentClient->disconnect();
       return;
   }
@@ -6417,6 +6454,7 @@ void CoreThingSpeak::OnClientDataAvailable(CoreTransportClient& client, bool isD
   {
     DBGLN(F("TS: all data received, disconnect client..."));
     machineState = tsDisconnectMode;
+    timer = millis();
     currentClient->disconnect();
   }
 }
