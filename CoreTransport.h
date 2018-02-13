@@ -1063,9 +1063,10 @@ class CoreSIM800Transport : public CoreTransport
 
       SIM800ClientsQueue clientsQueue; // очередь действий с клиентами
 
+      CoreTransportClient* getClientFromQueue(int clientID, SIM800ClientAction action);
       bool isClientInQueue(CoreTransportClient* client, SIM800ClientAction action); // тестирует - не в очереди ли уже клиент?
       void addClientToQueue(CoreTransportClient* client, SIM800ClientAction action, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
-      void removeClientFromQueue(CoreTransportClient* client); // удаляет клиента из очереди  
+      void removeClientFromQueue(CoreTransportClient* client,SIM800ClientAction action); // удаляет клиента из очереди  
       
       void initClients();
     

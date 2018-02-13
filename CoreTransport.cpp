@@ -62,6 +62,15 @@ void CoreTransportClient::setID(uint8_t id)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransportClient::setConnected(bool flag, int errorCode)
 {
+  // если была ошибка - по-любому постим событие с ошибкой
+  if(errorCode != CT_ERROR_NONE)
+  {
+     isConnected = flag;
+     raiseEvent(etConnect,errorCode);
+     return;
+  }
+
+  // здесь нет ошибки, постим событие, только если изменился флаг
   if(isConnected != flag)
   {
     isConnected = flag;
@@ -1978,7 +1987,9 @@ void CoreESPTransport::update()
                             // ошибка соединения
                             if(clientsQueue.size())
                             {
-                               DBGLN(F("ESP: Client connect ERROR!"));
+                               DBG(F("ESP: Client connect ERROR, received: "));
+                               DBGLN(*wiFiReceiveBuff);
+                               
                                ESPClientQueueData dt = clientsQueue[0];
 
                                CoreTransportClient* thisClient = dt.client;
@@ -1997,36 +2008,7 @@ void CoreESPTransport::update()
 
                   case cmdWaitSendDone:
                   {
-                    /*
-                    // дожидаемся конца отсыла данных от клиента в ESP
-                    bool closingUnexpectedly = wiFiReceiveBuff->indexOf(F(",CLOSED")) != -1;
-                    
-                    if(closingUnexpectedly)
-                    
-                    {
-                        // соединение было закрыто сервером
-                      if(clientsQueue.size())
-                      {
-                         DBGLN(F("ESP: client connection closed unexpectedly!"));
-                         ESPClientQueueData dt = clientsQueue[0];
-
-                         CoreTransportClient* thisClient = dt.client;
-                         removeClientFromQueue(thisClient);
-                         
-                         setClientBusy(*thisClient,false);
-
-                          // очищаем данные у клиента
-                          setClientData(*thisClient,NULL,0);
-                       
-                         notifyClientDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
-                      }                     
-                        
-                        machineState = espIdle; // переходим к следующей команде
-                    } // if(closingUnexpectedly)
-                    else
-                    */
-                    {
-                      // connection not reset
+                    // дожидаемся результата отсыла данных
                       
                       if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
                       {
@@ -2073,7 +2055,7 @@ void CoreESPTransport::update()
                         
                       } // if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
                        
-                    } // else connection not reset
+
                   }
                   break; // cmdWaitSendDone
 
@@ -3744,7 +3726,8 @@ void CoreMQTT::update()
             currentClient = currentTransport->getFreeClient();
             if(currentClient)
             {
-              DBGLN(F("MQTT: Catch free client!"));
+              DBG(F("MQTT: Catch free client #"));
+              DBGLN(currentClient->getID());
               DBG(F("MQTT: connect to "));
               DBG(MQTTSettings.serverAddress);
               DBG(":");
@@ -3760,9 +3743,16 @@ void CoreMQTT::update()
 
       case mqttWaitConnection:
       {
-        if(millis() - timer > 20000)
+        unsigned long toWait = 20000;
+        if(MQTTSettings.workMode == workModeThroughSIM800)
+          toWait = 80000; // максимальное время ответа для SIM800 - 75 секунд
+        
+        if(millis() - timer > toWait)
         {
-          DBGLN(F("MQTT: unable to connect within 20 seconds, try to reconnect..."));
+          DBG(F("MQTT: unable to connect within "));
+          DBG(toWait/1000);
+          DBGLN(F(" seconds, try to reconnect..."));
+          
           // долго ждали, переподсоединяемся
           clearReportsQueue();
           clearPublishQueue();
@@ -5069,14 +5059,17 @@ void CoreSIM800Transport::update()
                     // отсоединялись
                     if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
                     {
+                      int clientID = sim800ReceiveBuff->toInt();
+                      
                       if(clientsQueue.size())
                       {
                         DBGLN(F("SIM800: Client disconnected."));
                         // клиент отсоединён, ставим ему соответствующий флаг, освобождаем его и удаляем из очереди
-                        SIM800ClientQueueData dt = clientsQueue[0];
-
-                        CoreTransportClient* thisClient = dt.client;
-                        removeClientFromQueue(thisClient);
+                       CoreTransportClient* thisClient = getClientFromQueue(clientID,sim800DisconnectAction);
+                       if(!thisClient)
+                        thisClient = clients[clientID];
+                       
+                       removeClientFromQueue(thisClient, sim800DisconnectAction);
 
                         setClientBusy(*thisClient,false);
                         setClientConnected(*thisClient,false,CT_ERROR_NONE);
@@ -5091,21 +5084,26 @@ void CoreSIM800Transport::update()
                   case smaCIPSTART:
                   {
                     // соединялись
+                    
                         if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
                         {
+                          int clientID = sim800ReceiveBuff->toInt();
+                                                                                                        
                           if(knownAnswer == gsmConnectOk)
                           {
                             // законнектились удачно
                             if(clientsQueue.size())
                             {
                                DBGLN(F("SIM800: Client connected."));
-                               SIM800ClientQueueData dt = clientsQueue[0];
                                
-                               CoreTransportClient* thisClient = dt.client;
-                               removeClientFromQueue(dt.client);
+                               CoreTransportClient* thisClient = getClientFromQueue(clientID,sim800ConnectAction);
+                               if(!thisClient)
+                                thisClient = clients[clientID];
                                
-                               setClientConnected(*thisClient,true,CT_ERROR_NONE);
+                               removeClientFromQueue(thisClient, sim800ConnectAction);
+                               
                                setClientBusy(*thisClient,false);
+                               setClientConnected(*thisClient,true,CT_ERROR_NONE);
                             }
                             machineState = sim800Idle; // переходим к следующей команде
                           } // gsmConnectOk
@@ -5115,10 +5113,12 @@ void CoreSIM800Transport::update()
                             if(clientsQueue.size())
                             {
                                DBGLN(F("SIM800: Client connect ERROR!"));
-                               SIM800ClientQueueData dt = clientsQueue[0];
-
-                               CoreTransportClient* thisClient = dt.client;
-                               removeClientFromQueue(thisClient);
+                               
+                               CoreTransportClient* thisClient = getClientFromQueue(clientID,sim800ConnectAction);
+                               if(!thisClient)
+                                thisClient = clients[clientID];
+                               
+                               removeClientFromQueue(thisClient, sim800ConnectAction);
                                
                                setClientBusy(*thisClient,false);
                                setClientConnected(*thisClient,false,CT_ERROR_CANT_CONNECT);
@@ -5137,16 +5137,19 @@ void CoreSIM800Transport::update()
                       
                       if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
                       {
+                        int clientID = sim800ReceiveBuff->toInt();
+                                                
                         if(knownAnswer == gsmSendOk)
                         {
                           // send ok
                           if(clientsQueue.size())
                           {
                              DBGLN(F("SIM800: data was sent."));
-                             SIM800ClientQueueData dt = clientsQueue[0];
+                             CoreTransportClient* thisClient = getClientFromQueue(clientID,sim800WriteAction);
+                             if(!thisClient)
+                              thisClient = clients[clientID];
                              
-                             CoreTransportClient* thisClient = dt.client;
-                             removeClientFromQueue(thisClient);
+                             removeClientFromQueue(thisClient, sim800WriteAction);
 
                              setClientBusy(*thisClient,false);
 
@@ -5162,10 +5165,12 @@ void CoreSIM800Transport::update()
                           if(clientsQueue.size())
                           {
                              DBGLN(F("SIM800: send data fail!"));
-                             SIM800ClientQueueData dt = clientsQueue[0];
-
-                             CoreTransportClient* thisClient = dt.client;
-                             removeClientFromQueue(thisClient);
+                             
+                             CoreTransportClient* thisClient = getClientFromQueue(clientID,sim800WriteAction);
+                             if(!thisClient)
+                              thisClient = clients[clientID];
+                             
+                             removeClientFromQueue(thisClient, sim800WriteAction);
                              
                              setClientBusy(*thisClient,false);
                              
@@ -5217,7 +5222,7 @@ void CoreSIM800Transport::update()
                              SIM800ClientQueueData dt = clientsQueue[0];
     
                              CoreTransportClient* thisClient = dt.client;
-                             removeClientFromQueue(thisClient);
+                             removeClientFromQueue(thisClient,sim800WriteAction);
     
                              setClientBusy(*thisClient,false);
                              
@@ -5891,6 +5896,17 @@ void CoreSIM800Transport::clearClientsQueue(bool raiseEvents)
   }  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+CoreTransportClient* CoreSIM800Transport::getClientFromQueue(int clientID, SIM800ClientAction action)
+{
+   for(size_t i=0;i<clientsQueue.size();i++)
+  {
+    if(clientsQueue[i].client->getID() == clientID && clientsQueue[i].action == action)
+      return clientsQueue[i].client;
+  } 
+
+  return NULL;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSIM800Transport::isClientInQueue(CoreTransportClient* client, SIM800ClientAction action)
 {
   for(size_t i=0;i<clientsQueue.size();i++)
@@ -5925,11 +5941,11 @@ void CoreSIM800Transport::addClientToQueue(CoreTransportClient* client, SIM800Cl
     clientsQueue.push_back(dt);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreSIM800Transport::removeClientFromQueue(CoreTransportClient* client)
+void CoreSIM800Transport::removeClientFromQueue(CoreTransportClient* client, SIM800ClientAction action)
 {
   for(size_t i=0;i<clientsQueue.size();i++)
   {
-    if(clientsQueue[i].client == client)
+    if(clientsQueue[i].client == client && clientsQueue[i].action == action)
     {
       delete [] clientsQueue[i].ip;
       
@@ -6218,26 +6234,26 @@ void CoreThingSpeak::update()
         // начинаем коннектиться к ThingSpeak
         currentClient->connect("api.thingspeak.com",80);
         machineState = tsConnectMode;
+        timer = millis();
         
       }
       break; // tsStartConnect
 
-      case tsConnectMode:
-      break;
       
       case tsDisconnectMode:
-      break;
-
+      case tsConnectMode:
       case tsWriteMode:
       case tsReadMode:
       {
-        // в этих двух режимах проверяем - возможно, мы ооочень долго пишем/читаем
+        // в этих режимах проверяем - возможно, мы ооочень долго пишем/читаем/коннектимся/дисконнектимся
         unsigned long needed = 60000;
+        if(ThingSpeakSettings.workMode == workModeThroughSIM800)
+          needed = 80000; // максимальное время ответа от SIM800 - 75 секунд
 
         if(millis() - timer > needed)
         {
           // Тут ждали больше, чем надо!!!
-            DBGLN(F("TS: TOO LONG WAITING DURING READ OR WRITE OPERATIONS!"));
+            DBGLN(F("TS: TOO LONG WAITING DURING READ/WRITE/CONNECT/DISCONNECT OPERATIONS!"));
           
             timer = millis();
             
@@ -6266,6 +6282,7 @@ void CoreThingSpeak::OnClientConnect(CoreTransportClient& client, bool connected
 
   if(errorCode != CT_ERROR_NONE)
   {
+      // ошибка соединения - по-любому переходим в режим ожидания интервала
       DBGLN(F("TS: OnClientConnect - ERROR detected!"));
       currentClient = NULL;
       machineState = tsWaitingInterval;
@@ -6414,7 +6431,6 @@ void CoreThingSpeak::sendData()
 
    // запрос сформирован, отсылаем его в клиент
    currentClient->write((uint8_t*)httpQuery.c_str(),httpQuery.length());
-
    timer = millis();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
