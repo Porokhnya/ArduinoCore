@@ -96,8 +96,9 @@ typedef enum
   WatchdogRecord = 12, // запись настроек ватчдога
   MQTTSettingsRecord = 13, // настройки MQTT
   SIM800SettingsRecord = 14, // настройки SIM800
+  ThingSpeakSettingsRecord = 15, // настройки ThingSpeak
 
-  DummyLastRecord = 15 // последняя запись, для проверки вхождения в диапазон
+  DummyLastRecord = 16 // последняя запись, для проверки вхождения в диапазон
   
 } CoreConfigRecordType;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -398,6 +399,7 @@ class CoreDataFormatProvider
  public:
    CoreDataFormatProvider() {};
    virtual String format(const CoreStoredData& data, size_t sensorIndex, bool showUnits) = 0;
+   virtual Vector<String*> formatComposite(const CoreStoredData& data, size_t sensorIndex, bool showUnits) = 0;
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 class CoreTextFormatProvider : public CoreDataFormatProvider // выводим показания как простой текст
@@ -405,6 +407,7 @@ class CoreTextFormatProvider : public CoreDataFormatProvider // выводим �
   public:
     CoreTextFormatProvider();
     virtual String format(const CoreStoredData& data, size_t sensorIndex, bool showUnits);
+    virtual Vector<String*> formatComposite(const CoreStoredData& data, size_t sensorIndex, bool showUnits);
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern CoreDataStoreClass CoreDataStore; // хранилище данных с датчиков

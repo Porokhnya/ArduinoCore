@@ -604,6 +604,85 @@ bool CoreConfigIterator::readRecord()
     }
     return true; // SensorsUpdateIntervalRecord
 
+    case ThingSpeakSettingsRecord: // данные о настройках ThingSpeak
+    {
+      #ifdef CORE_THINGSPEAK_TRANSPORT_ENABLED
+      
+        // читаем запись
+        ThingSpeakSettings.enabled = true;
+          
+        uint8_t b = read();
+        bool inSaveMode = !writeOut(b);
+        
+        if(inSaveMode)
+          ThingSpeakSettings.workMode = (TransportClientWorkMode) b;
+
+         if(inSaveMode)
+            ThingSpeakSettings.apiKey = "";
+
+          readString(ThingSpeakSettings.apiKey);
+
+          if(inSaveMode)
+          {
+            byte* writePtr = (byte*)&(ThingSpeakSettings.updateInterval);
+            *writePtr++ = read();
+            *writePtr = read();
+          }
+          else
+          {
+            writeOut(read());
+            writeOut(read());
+          }          
+
+          b = read();
+          writeOut(b);
+          
+          if(inSaveMode)
+          {
+            ThingSpeakSettings.clearSensors();
+            
+             for(byte i=0;i<b;i++)
+             {
+               String s;
+               readString(s);
+               ThingSpeakSettings.addSensor(s.c_str());
+             }
+          }
+          else
+          {
+            // тут просто попросили отдать данные в поток
+            for(byte i=0;i<b;i++)
+            {
+              skipString();
+            }
+          }
+          
+          
+      #else
+          // пропускаем запись
+
+        // workMode
+        writeOut(read());
+
+        // apiKey
+        skipString();
+
+        // updateInterval
+        writeOut(read());
+        writeOut(read());
+
+        // sensors
+        byte cnt = read();
+        writeOut(cnt);
+
+        for(byte i=0;i<cnt;i++)
+        {
+          skipString();
+        }
+      #endif 
+    }
+    return true; // ThingSpeakSettingsRecord
+
     case SIM800SettingsRecord: // данные о настройках SIM800
     {
       #ifdef CORE_SIM800_TRANSPORT_ENABLED
@@ -823,7 +902,7 @@ bool CoreConfigIterator::readRecord()
           bool inSaveMode = !writeOut(b);
           
           if(inSaveMode)
-            MQTTSettings.workMode = (MQTTWorkMode) b;
+            MQTTSettings.workMode = (TransportClientWorkMode) b;
 
           // читаем ID клиента
           if(inSaveMode)
@@ -1357,6 +1436,11 @@ void CoreClass::reset()
     MQTT.reset();
   #endif
 
+  #ifdef CORE_THINGSPEAK_TRANSPORT_ENABLED
+    ThingSpeakSettings.reset();
+    ThingSpeak.reset();
+  #endif
+
   #ifdef CORE_SIM800_TRANSPORT_ENABLED
     SIM800TransportSettings.reset();
   #endif
@@ -1633,8 +1717,14 @@ bool CoreClass::getFEATURES(const char* commandPassed, Stream* pStream)
     written++;
     pStream->print(F("SIM800")); 
   #endif
-
-  
+ 
+  #ifdef CORE_THINGSPEAK_TRANSPORT_ENABLED
+    if(written)
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+      
+    written++;
+    pStream->print(F("TS")); 
+  #endif
 
   pStream->println();
 
@@ -2737,6 +2827,10 @@ void CoreClass::begin()
     MQTT.begin();
   #endif
 
+  #ifdef CORE_THINGSPEAK_TRANSPORT_ENABLED
+    ThingSpeak.begin();
+  #endif
+
 
   ON_CORE_BEGIN();
 
@@ -2800,6 +2894,10 @@ void CoreClass::update()
 
   #ifdef CORE_MQTT_TRANSPORT_ENABLED
     MQTT.update();
+  #endif
+
+  #ifdef CORE_THINGSPEAK_TRANSPORT_ENABLED
+    ThingSpeak.update();
   #endif
 
   
@@ -3132,6 +3230,121 @@ CoreTextFormatProvider::CoreTextFormatProvider() : CoreDataFormatProvider()
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+Vector<String*> CoreTextFormatProvider::formatComposite(const CoreStoredData& dataStored, size_t sensorIndex, bool showUnits)
+{
+  Vector<String*> result;
+
+  if(!dataStored.hasData())
+    return result;
+
+    // получаем тип данных, который хранит железка определённого вида
+    CoreSensorType st = dataStored.sensor->getType();
+    CoreDataType typeOfData = CoreSensor::getDataType(st);
+
+    if(dataStored.sensor->isUserDataSensor())
+    {
+      #ifdef CORE_USERDATA_SENSOR_ENABLED
+        CoreUserDataSensor* uds = (CoreUserDataSensor*) dataStored.sensor;
+        typeOfData = uds->getUserDataType();
+      #endif
+    }
+
+switch(typeOfData)
+    {
+      case UnknownType:
+      break;
+
+      case Temperature: // это температура?
+      {
+         // приводим к температуре
+        TemperatureData tdt = dataStored;
+        String* t = new String();
+        *t = tdt;
+        
+        if(showUnits)
+          *t += CoreSensor::getUnit(typeOfData);
+
+          result.push_back(t);
+      }
+      break;
+      
+      case Luminosity: // это освещённость?
+      {
+        // приводим к освещённости
+        LuminosityData lum = dataStored;
+        String* t = new String(lum.Value);
+        if(showUnits)
+          *t += CoreSensor::getUnit(typeOfData);
+
+          result.push_back(t);
+      }
+      break;
+
+      case DigitalPort: // это состояние цифрового порта?
+      {
+        DigitalPortData dpd = dataStored;
+        result.push_back(new String(dpd.Value == LOW ? F("OFF") : F("ON")));
+      }
+      break;
+
+      case AnalogPort: // это состояние аналогового порта?
+      {
+        AnalogPortData apd = dataStored;
+        result.push_back(new String(apd.Value));
+      }
+      break;      
+
+      case Humidity: // это влажность (пара температура/влажность)
+      {
+        HumidityData hData = dataStored;
+        
+        String* t = new String(hData.Temperature);
+        
+        if(showUnits)
+          *t += CoreSensor::getUnit(Temperature);
+
+        result.push_back(t);
+                
+        t = new String(hData.Humidity);
+        
+        if(showUnits)
+          *t += CoreSensor::getUnit(Humidity);
+
+        result.push_back(t);
+      }
+      break;
+
+      case DateTime: // это дата/время?
+      {
+        // приводим к дате/времени
+       DateTimeData dtt = dataStored;
+       String* t = new String(dtt);
+        if(showUnits)
+          *t += CoreSensor::getUnit(typeOfData);
+
+        result.push_back(t);
+      }
+      break;
+
+      case UserData: // пользовательские данные
+      {          
+          String* t = new String();
+          for(uint8_t i=0;i<dataStored.dataSize;i++)
+          {
+            *t += Core.byteToHexString(dataStored.data[i]);
+            *t += ' ';
+          }
+
+          result.push_back(t);      
+      }
+      break;
+
+      //TODO: тут другие типы показаний!!!
+    }        
+
+  return result;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t sensorIndex, bool showUnits)
 {
  String result = "-"; // нет данных с датчика
@@ -3178,8 +3391,6 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
       case DigitalPort: // это состояние цифрового порта?
       {
         DigitalPortData dpd = dataStored;
-       // result = dpd.Pin;
-      //  result += ':';
         result = dpd.Value == LOW ? F("OFF") : F("ON");
       }
       break;
@@ -3187,8 +3398,6 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
       case AnalogPort: // это состояние аналогового порта?
       {
         AnalogPortData apd = dataStored;
-       // result = apd.Pin;
-       // result += ':';
         result = apd.Value;
       }
       break;      

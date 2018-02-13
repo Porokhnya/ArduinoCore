@@ -158,6 +158,26 @@ void loop()
     }
   #endif // CORE_MQTT_TRANSPORT_ENABLED
 
+
+  // просим отправить на ThingSpeak наше значение в одно из полей канала
+  #ifdef CORE_THINGSPEAK_TRANSPORT_ENABLED
+    static unsigned long thingSpeakMillis = 0;
+    if(millis() - thingSpeakMillis > 5000)
+    {
+      static int thingspeakData = 0;
+      thingspeakData = random(50,500);
+
+      // просим опубликовать наше рандомное число в поле номер 3. Допустимые диапазоны полей - 1-8.
+      // при очередной публикации в ThingSpeak это рандомное число там появится.
+      ThingSpeak.publish(3,String(thingspeakData));
+
+      // ну и попросим опубликовать данные о свободной памяти контроллера в поле номер 4
+      ThingSpeak.publish(4,String(Core.getFreeMemory()));
+      
+      thingSpeakMillis = millis();
+    }
+  #endif // CORE_THINGSPEAK_TRANSPORT_ENABLED
+
 /*
   if(Signals[12])
   {

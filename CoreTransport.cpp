@@ -3703,7 +3703,7 @@ void CoreMQTT::convertAnswerToJSON(const String& answer, String* resultBuffer)
 bool CoreMQTT::publish(const char* topicName, const char* payload)
 {
   
-  if(!MQTTSettings.enabled || MQTTSettings.workMode == mqttDisabled || !currentTransport || !currentClient || !topicName) // выключены
+  if(!MQTTSettings.enabled || MQTTSettings.workMode == workModeDisabled || !currentTransport || !currentClient || !topicName) // выключены
     return false; 
     
   MQTTPublishQueue pq;
@@ -3728,7 +3728,7 @@ bool CoreMQTT::publish(const char* topicName, const char* payload)
 //--------------------------------------------------------------------------------------------------------------------------------
 void CoreMQTT::update()
 {
-  if(!MQTTSettings.enabled || MQTTSettings.workMode == mqttDisabled || !currentTransport) // выключены
+  if(!MQTTSettings.enabled || MQTTSettings.workMode == workModeDisabled || !currentTransport) // выключены
     return; 
   
   switch(machineState)
@@ -4245,16 +4245,16 @@ void CoreMQTT::begin()
 
     switch(MQTTSettings.workMode)
     {
-      case mqttDisabled:
+      case workModeDisabled:
       break;
 
-      case mqttThroughESP:
+      case workModeThroughESP:
         #ifdef CORE_ESP_TRANSPORT_ENABLED
           currentTransport = &ESP;
         #endif
       break;
 
-      case mqttThroughSIM800:
+      case workModeThroughSIM800:
       #ifdef CORE_SIM800_TRANSPORT_ENABLED
           currentTransport = &SIM800;
       #endif
@@ -6054,5 +6054,442 @@ bool CoreSIM800Transport::ready()
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_SIM800_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_THINGSPEAK_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreThingSpeakSettings ThingSpeakSettings;
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreThingSpeak ThingSpeak;
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreThingSpeak::CoreThingSpeak()
+{
+  currentClient = NULL;
+  currentTransport = NULL;
+  timer = 0;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreThingSpeak::begin()
+{
+  DBGLN(F("TS: begin."));
+  
+  // попросили начать работу
+  currentClient = NULL;
+  currentTransport = NULL;
+  initSubstitutions();
+
+    switch(ThingSpeakSettings.workMode)
+    {
+      case workModeDisabled:
+      break;
+
+      case workModeThroughESP:
+        #ifdef CORE_ESP_TRANSPORT_ENABLED
+          currentTransport = &ESP;
+        #endif
+      break;
+
+      case workModeThroughSIM800:
+      #ifdef CORE_SIM800_TRANSPORT_ENABLED
+          currentTransport = &SIM800;
+      #endif
+      break;
+    }
+
+  // подписываемся на события клиентов
+  if(currentTransport)
+  {
+    currentTransport->subscribe(this);  
+  }
+    
+  // ну и запомним, когда вызвали начало работы
+  timer = millis();
+  machineState = tsWaitingInterval;
+  onIdleTimer = false;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreThingSpeak::reset()
+{
+  DBGLN(F("TS: reset."));
+  
+  currentClient = NULL;
+  currentTransport = NULL;
+
+  initSubstitutions();
+
+  machineState = tsWaitingInterval;
+  onIdleTimer = false;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreThingSpeak::update()
+{
+  if(ThingSpeakSettings.workMode == workModeDisabled || !currentTransport || !ThingSpeakSettings.sensors.size() || !ThingSpeakSettings.apiKey.length())
+    return;
+
+  if(onIdleTimer)
+  {
+    if(millis() - timer > idleInterval)
+    {
+      onIdleTimer = false;
+    }
+  }
+
+  if(onIdleTimer)
+    return;
+
+    switch(machineState)
+    {
+      case tsWaitingInterval:
+      {
+        // ждём момента начала отсыла данных
+          unsigned long now = millis();
+
+          // интервал обновления у нас - в секундах
+          unsigned long needed = ThingSpeakSettings.updateInterval;
+          needed *= 1000;
+        
+          if(now - timer > needed)
+          {
+              DBGLN(F("TS: WANT TO SEND DATA TO ThingSpeak!"));
+
+              if(!currentTransport->ready())
+              {
+                // транспорт не готов работать, надо подождать какое-то время, прежде чем попытаться опять постучаться в транспорт
+                DBGLN(F("TS: Transport not ready, try again later..."));
+                
+                onIdleTimer = true;
+                idleInterval = 5000;
+                timer = millis();
+
+                machineState = tsWaitingTransport;
+                
+              } // if
+              else
+              {
+                // транспорт готов к работе, можем начинать
+                machineState = tsCatchClient;
+              } // else
+                    
+          } // if        
+      }
+      break; // tsWaitingInterval
+
+      case tsWaitingTransport:
+      {
+        // тут ещё раз проверяем - готов ли транспорт?
+        if(currentTransport->ready())
+        {
+          DBGLN(F("TS: Transport ready, start catching client..."));
+          machineState = tsCatchClient;
+        }
+        else
+        {
+          // не готов ещё транспорт
+          onIdleTimer = true;
+          idleInterval = 5000;
+          timer = millis();
+        }
+      }
+      break; // tsWaitingTransport
+
+      case tsCatchClient:
+      {
+        // пытаемся подловить свободного клиента у транспорта
+        currentClient = currentTransport->getFreeClient();
+        if(currentClient)
+        {
+          DBGLN(F("TS: Free client acquired, connecting to ThingSpeak..."));
+          machineState = tsStartConnect;
+        }
+        else
+        {
+          DBGLN(F("TS: No free client, try again later..."));
+          onIdleTimer = true;
+          idleInterval = 5000;
+          timer = millis();
+          
+        }
+      }
+      break; // tsCatchClient
+
+      case tsStartConnect:
+      {
+        // начинаем коннектиться к ThingSpeak
+        currentClient->connect("api.thingspeak.com",80);
+        machineState = tsConnectMode;
+        
+      }
+      break; // tsStartConnect
+
+      case tsConnectMode:
+      break;
+      
+      case tsDisconnectMode:
+      break;
+
+      case tsWriteMode:
+      break;
+
+      case tsReadMode:
+      break;
+      
+    } // switch
 
 
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreThingSpeak::OnClientConnect(CoreTransportClient& client, bool connected, int errorCode)
+{
+  if(!currentClient || currentClient != &client) // не наш клиент
+    return;
+
+  if(errorCode != CT_ERROR_NONE)
+  {
+      DBGLN(F("TS: OnClientConnect - ERROR detected!"));
+      currentClient = NULL;
+      machineState = tsWaitingInterval;
+      timer = millis();
+
+      return;
+  }
+
+  if(machineState == tsDisconnectMode)
+  {
+    // отсоединялись
+    if(!connected)
+    {
+      // отсоединились
+      DBGLN(F("TS: work cicle done, switch to wait..."));
+      currentClient = NULL;
+      machineState = tsWaitingInterval;
+      timer = millis();
+    }
+  }
+  else if(machineState == tsConnectMode)
+  {
+    if(!connected)
+    {
+      // error!
+      DBGLN(F("TS: unable to connect to ThingSpeak!"));
+      currentClient = NULL;
+      machineState = tsWaitingInterval;
+      timer = millis();
+    }
+    else
+    {
+      // connected
+      DBGLN(F("TS: connected to ThingSpeak, start sending data..."));
+      sendData();
+    }
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreThingSpeak::publish(int fieldNumber,const String& data)
+{
+  if(fieldNumber < 1)
+    fieldNumber = 1;
+
+  if(fieldNumber > 8)
+    fieldNumber = 8;
+
+   substitutions[fieldNumber-1].active = true;
+   substitutions[fieldNumber-1].data = data;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreThingSpeak::sendData()
+{
+  DBGLN(F("TS: collect data for ThingSpeak..."));
+  // переключаемся в ветку отсыла данных
+  machineState = tsWriteMode;
+
+   // собираем данные с датчиков
+   int currentFieldNumber = 1;
+
+   CoreTextFormatProvider textFormatter;
+   String httpQuery = F("GET /update?headers=false&api_key=");
+   httpQuery += ThingSpeakSettings.apiKey;
+
+   for(size_t i=0;i<ThingSpeakSettings.sensors.size();i++)
+   {
+      String* sensorName = ThingSpeakSettings.sensors[i];
+      CoreStoredData dataStored = CoreDataStore.get(*sensorName);
+
+      if(dataStored.hasData())
+      {
+            // есть данные с датчика, можно их отформатировать в строку
+            // используем композитный форматтер, чтобы отделить температуру от влажности в сборных датчиках
+            Vector<String*> formattedData = textFormatter.formatComposite(dataStored,0,false);
+            
+            for(size_t k=0;k<formattedData.size();k++,currentFieldNumber++)
+            {
+                httpQuery += F("&field");
+                httpQuery += currentFieldNumber;
+                httpQuery += '=';
+    
+                String compositeData = *(formattedData[k]);
+    
+                if(substitutions[currentFieldNumber-1].active)
+                {
+                  compositeData = substitutions[currentFieldNumber-1].data;
+                  substitutions[currentFieldNumber-1].active = false;
+                }
+        
+                // ThingSpeak просит float с точкой, поэтому заменяем запятую на точку
+                compositeData.replace(',','.');
+                httpQuery += encodeURI(compositeData);
+    
+                if(currentFieldNumber > 8)
+                  break;
+            } // for
+
+            // не забываем чистить память
+            for(size_t k=0;k<formattedData.size();k++)
+            {
+              delete formattedData[k];
+            }
+        
+      } // if(dataStored.hasData())
+      else
+        currentFieldNumber++;
+
+        if(currentFieldNumber > 8)
+          break;
+    
+   } // for
+
+    if(currentFieldNumber <=8)
+    {
+      // ещё остались свободные слоты
+      for(int i=currentFieldNumber;i<=8;i++)
+      {
+        if(substitutions[i-1].active)
+        {
+          substitutions[i-1].active = false;
+          String compositeData = substitutions[i-1].data;
+
+          httpQuery += F("&field");
+          httpQuery += i;
+          httpQuery += '=';
+          
+          compositeData.replace(',','.');
+          httpQuery += encodeURI(compositeData);
+        }
+      }
+    }
+
+   // тут собрали все данные для ThingSpeak, теперь можно формировать запрос
+   httpQuery += F(" HTTP/1.1\r\nHost: api.thingspeak.com\r\n\r\n");
+
+   // запрос сформирован, отсылаем его в клиент
+   currentClient->write((uint8_t*)httpQuery.c_str(),httpQuery.length());
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreThingSpeak::initSubstitutions()
+{
+  for(int i=0;i<8;i++)
+  {
+    substitutions[i].active = false;
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreThingSpeak::OnClientDataWritten(CoreTransportClient& client, int errorCode)
+{
+  if(!currentClient || currentClient != &client)
+    return;
+
+  // писали данные в клиента - проверяем
+  if(errorCode != CT_ERROR_NONE)
+  {
+      // ошибка записи в клиент
+      DBGLN(F("TS: CLIENT WRITE ERROR, disconnecting..."));
+      machineState = tsDisconnectMode;
+      currentClient->disconnect();
+      return;
+  }
+  DBGLN(F("TS: Client data written, wait for results..."));
+  machineState = tsReadMode;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreThingSpeak::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
+{
+  if(!currentClient || currentClient != &client)
+    return;
+
+  if(isDone)
+  {
+    DBGLN(F("TS: all data received, disconnect client..."));
+    machineState = tsDisconnectMode;
+    currentClient->disconnect();
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+String CoreThingSpeak::encodeURI(const String& uri)
+{
+  String result;
+  
+  typedef struct
+  {
+    char fromChar;
+    uint8_t toCode;
+    
+  } URIReplace;
+
+  static URIReplace replacements[] = 
+  {
+    {'$',0x24},
+    {'&',0x26},
+    {'+',0x2B},
+    {',',0x2C},
+    {'/',0x2F},
+    {':',0x3A},
+    {';',0x3B},
+    {'=',0x3D},
+    {'?',0x3F},
+    {'@',0x40},
+    {' ',0x20},
+    {'"',0x22},
+    {'<',0x3C},
+    {'>',0x3E},
+    {'#',0x23},
+    {'%',0x25},
+    {'{',0x7B},
+    {'}',0x7D},
+    {'|',0x7C},
+    {'\\',0x5C},
+    {'^',0x5E},
+    {'~',0x7E},
+    {'[',0x5B},
+    {']',0x5D},
+    {'`',0x60},
+    {0,0}
+  };
+
+    for(size_t i=0;i<uri.length();i++)
+    {
+      char ch = uri[i];
+      bool found = false;
+      int counter = 0;
+      while(replacements[counter].fromChar != 0)
+      {
+        if(ch == replacements[counter].fromChar)
+        {
+          result += '%';
+          result += String(replacements[counter].toCode,16);
+          
+          found = true;
+          break;
+        }
+        counter++;
+      } // while
+      
+      if(!found)
+        result += ch;
+      
+    } // for
+  
+
+//  DBG(F("TS: encoded data="));
+//  DBGLN(result);
+
+  return result;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_THINGSPEAK_TRANSPORT_ENABLED

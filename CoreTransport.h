@@ -123,6 +123,16 @@ struct IClientEventsSubscriber
   virtual void OnClientDataAvailable(CoreTransportClient& client, bool isDone) = 0; // событие "Для клиента поступили данные", флаг - все ли данные приняты
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
+// режимы работы клиентов через транспорт
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  workModeDisabled, // выключено
+  workModeThroughESP, // через ESP
+  workModeThroughSIM800, // через SIM800
+  
+} TransportClientWorkMode;
+//--------------------------------------------------------------------------------------------------------------------------------------
 // класс асинхронного транспорта, предназначен для предоставления интерфейса неблокирующей работы с AT-прошивками железок,
 // типа SIM800 или ESP.
 // производные классы могут держать свой пул клиентов, при этом должны заботиться о том,
@@ -615,17 +625,6 @@ private:
 
   HardwareSerial* workStream;
   HardwareSerial* getMyStream(uint8_t SerialNumber);
-
- // uint8_t* dataBuffer;
-//  uint8_t dataBufferLen;
-//  uint8_t writeIterator;
-//  RS485IncomingHeader* currentHeader;
-
-//  RS485State machineState;
-
-//  RS485KnownHeadersList knownHeaders;
-
-
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -635,18 +634,10 @@ extern CoreRS485 RS485;
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_MQTT_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef enum
-{
-  mqttDisabled, // выключено
-  mqttThroughESP, // через ESP
-  mqttThroughSIM800, // через SIM800
-  
-} MQTTWorkMode;
-//--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
   bool enabled;
-  MQTTWorkMode workMode;
+  TransportClientWorkMode workMode;
   String clientID;
   String serverAddress;
   int serverPort;
@@ -754,6 +745,100 @@ private:
 extern CoreMQTT MQTT;
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_MQTT_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_THINGSPEAK_TRANSPORT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  bool enabled;
+  TransportClientWorkMode workMode;
+  String apiKey;
+  uint16_t updateInterval;
+  Vector<String*> sensors;
+
+  void reset()
+  {
+    enabled = false;
+    clearSensors();
+  }
+
+  void addSensor(const char* name)
+  {
+    if(sensors.size() > 7)
+      return;
+
+      String* s = new String(name);
+      sensors.push_back(s);
+  }
+
+  void clearSensors()
+  {
+    for(size_t i=0;i<sensors.size();i++)
+    {
+      delete sensors[i];
+    }
+    sensors.empty();
+  }
+  
+} CoreThingSpeakSettings;
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern CoreThingSpeakSettings ThingSpeakSettings;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  tsWaitingInterval,
+  tsWaitingTransport,
+  tsCatchClient,
+  tsStartConnect,
+  tsConnectMode,
+  tsDisconnectMode,
+  tsWriteMode,
+  tsReadMode,
+  
+} CoreThingSpeakMachineState;
+//--------------------------------------------------------------------------------------------------------------------------------------
+typedef struct
+{
+  bool active;
+  String data;
+  
+} CoreThingSpeakSubstitutions;
+//--------------------------------------------------------------------------------------------------------------------------------------
+class CoreThingSpeak : public IClientEventsSubscriber
+{
+  public:
+  
+    CoreThingSpeak();
+    void reset();
+    void update();
+    void begin();
+
+    void publish(int fieldNumber,const String& data);
+
+    virtual void OnClientConnect(CoreTransportClient& client, bool connected, int errorCode); // событие "Статус соединения клиента"
+    virtual void OnClientDataWritten(CoreTransportClient& client, int errorCode); // событие "Данные из клиента записаны в поток"
+    virtual void OnClientDataAvailable(CoreTransportClient& client, bool isDone); // событие "Для клиента поступили данные", флаг - все ли данные приняты
+
+private:
+
+  CoreThingSpeakSubstitutions substitutions[8];
+  void initSubstitutions();
+
+  CoreTransportClient* currentClient;
+  CoreTransport* currentTransport;
+  unsigned long timer;
+  CoreThingSpeakMachineState machineState;
+  bool onIdleTimer;
+  unsigned long idleInterval;
+
+  void sendData();
+  String encodeURI(const String& uri);
+
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+extern CoreThingSpeak ThingSpeak;
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_THINGSPEAK_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_SIM800_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
