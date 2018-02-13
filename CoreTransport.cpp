@@ -1978,8 +1978,6 @@ void CoreESPTransport::update()
                                removeClientFromQueue(dt.client);
                                
                                setClientBusy(*thisClient,false);
-                               // тут вызывать не надо, поскольку при удачном соединении в порт упадёт ID,CONNECTED, мы его разберём и вызовем событие
-                               //setClientConnected(*thisClient,true,CT_ERROR_NONE);
                             }
                           }
                           else
@@ -2537,8 +2535,8 @@ void CoreESPTransport::clearClientsQueue(bool raiseEvents)
   // помимо этого - надо принудительно всем клиентам выставить статус "Отсоединён"
   for(int i=0;i<ESP_MAX_CLIENTS;i++)
   {
-    setClientConnected(*(clients[i]),false,CT_ERROR_NONE); 
     setClientBusy(*(clients[i]),false);
+    setClientConnected(*(clients[i]),false,CT_ERROR_NONE); 
   }  
 
 //  DBGLN(F("ESP: clients queue cleared."));
@@ -5891,8 +5889,8 @@ void CoreSIM800Transport::clearClientsQueue(bool raiseEvents)
   // помимо этого - надо принудительно всем клиентам выставить статус "Отсоединён"
    for(int i=0;i<SIM800_MAX_CLIENTS;i++)
   {
-    setClientConnected(*(clients[i]),false,CT_ERROR_NONE); 
     setClientBusy(*(clients[i]),false);
+    setClientConnected(*(clients[i]),false,CT_ERROR_NONE); 
   }  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
