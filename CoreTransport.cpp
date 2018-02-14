@@ -2384,7 +2384,7 @@ void CoreESPTransport::begin()
   initClients();
 
   #ifdef CORE_ESP_WEB_SERVER
-    subscribe(&CoreESPWebServer);
+    subscribe(&ESPWebServer);
   #endif  
 
   HardwareSerial* hs = NULL;
@@ -2719,11 +2719,12 @@ bool CoreESPTransport::ready()
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_ESP_WEB_SERVER
 //--------------------------------------------------------------------------------------------------------------------------------------
-CoreESPWebServerClass CoreESPWebServer;
+CoreESPWebServerClass ESPWebServer;
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreESPWebServerClass::CoreESPWebServerClass()
 {
   internalBuffer = new String();
+  dynamicHandlerClient = NULL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPWebServerClass::OnClientConnect(CoreTransportClient& client, bool connected, int errorCode)
@@ -2809,14 +2810,6 @@ void CoreESPWebServerClass::sendNextFileData(CoreWebServerPendingFileData* pfd)
   }
 
   pfd->pendingBytes -= toSend;
-  /*
-  if(pfd->pendingBytes < 1)
-  {
-    // данные закончились
-    pfd->client->disconnect();
-    removePendingFileData(pfd->client);    
-  }
-  */
 
   // посылаем новую порцию данных
   if(!pfd->client->write(buff,toSend,true))
@@ -3064,6 +3057,61 @@ String CoreESPWebServerClass::getContentType(const String& fileName)
     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPWebServerClass::send(int statusCode, const char* contentType, const char* data)
+{
+  if(!dynamicHandlerClient)
+    return;
+
+  String headers = WEB_HEADER_BEGIN;
+  headers += statusCode;
+  headers += F(" Answer");
+  headers += WEB_HEADER_LINE;
+
+  headers += WEB_HEADER_CONNECTION;
+  headers += WEB_HEADER_LINE;
+
+  headers += WEB_HEADER_CONTENT_TYPE;
+  headers += contentType;
+  headers += WEB_HEADER_LINE;
+
+  headers += WEB_HEADER_CONTENT_LENGTH;
+  headers += strlen(data);
+  headers += WEB_HEADER_LINE;
+  headers += WEB_HEADER_LINE;
+
+  headers += data;
+
+  dynamicHandlerClient->write((uint8_t*) headers.c_str(),headers.length());
+  dynamicHandlerClient = NULL;
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPWebServerClass::on(const char* uri, WebServerRequestHandler handler)
+{
+ for(size_t i=0;i<dynamicHandlers.size();i++)
+  {
+    if(!strcmp(dynamicHandlers[i].uri,uri))
+      return;
+  } 
+
+   WebServerRequestHandlerData dt;
+   dt.uri = uri;
+   dt.handler = handler;
+
+   dynamicHandlers.push_back(dt);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+WebServerRequestHandler CoreESPWebServerClass::getDynamicHandler(const char* uri)
+{
+  for(size_t i=0;i<dynamicHandlers.size();i++)
+  {
+    if(!strcmp(dynamicHandlers[i].uri,uri))
+      return dynamicHandlers[i].handler;
+  }
+
+  return NULL;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPWebServerClass::processURI(CoreTransportClient* client, String& uri)
 {
     const char* filename = uri.c_str();
@@ -3083,67 +3131,81 @@ void CoreESPWebServerClass::processURI(CoreTransportClient* client, String& uri)
       DBGLN(paramPtr);      
     }
 
-    #ifdef CORE_SD_SUPPORT_ENABLED
-    
-      // поддержка SD присутствует, читаем файл
-
-      #ifdef CORE_SD_USE_SDFAT
-        SdFile f;
-        f.open(filename,O_READ);
-        if(!f.isOpen())
-        {
-          send404(client);
-          return;
-        }
-      #else
-        File f = SD.open(filename,FILE_READ);
-        if(!f)
-        {
-          send404(client);
-          return;          
-        }
-      #endif
-     
-          // файл открыт, получаем его длину, формируем заголовки и отсылаем его клиенту
-          unsigned long contentLength = 
+    // тут смотрим - если есть обработчик, прявязанный к имени файла - вызываем его, иначе - пытаемся читать с SD
+      WebServerRequestHandler handler = getDynamicHandler(filename);
+      if(handler)
+      {
+        dynamicHandlerClient = client;
+        handler(filename,paramPtr);
+        dynamicHandlerClient = NULL;
+      } // handler exists
+      else
+      {
+          // обработчика не назначено, действуем по умолчанию
+          
+          #ifdef CORE_SD_SUPPORT_ENABLED
+          
+            // поддержка SD присутствует, читаем файл
       
-          #ifdef CORE_SD_USE_SDFAT
-            f.fileSize();
+            #ifdef CORE_SD_USE_SDFAT
+              SdFile f;
+              f.open(filename,O_READ);
+              if(!f.isOpen())
+              {
+                send404(client);
+                return;
+              }
+            #else
+              File f = SD.open(filename,FILE_READ);
+              if(!f)
+              {
+                send404(client);
+                return;          
+              }
+            #endif
+           
+                // файл открыт, получаем его длину, формируем заголовки и отсылаем его клиенту
+                unsigned long contentLength = 
+            
+                #ifdef CORE_SD_USE_SDFAT
+                  f.fileSize();
+                #else
+                  f.size();
+                #endif
+            
+                  String headers = WEB_HEADER_BEGIN;
+                  headers += F("200 OK");
+                  headers += WEB_HEADER_LINE;
+            
+                  headers += WEB_HEADER_CONNECTION;
+                  headers += WEB_HEADER_LINE;
+            
+                  headers += WEB_HEADER_CONTENT_TYPE;
+                  headers += getContentType(filename);
+                  headers += WEB_HEADER_LINE;
+            
+                  headers += WEB_HEADER_CONTENT_LENGTH;
+                  headers += contentLength;
+                  headers += WEB_HEADER_LINE;
+                  headers += WEB_HEADER_LINE;
+            
+            
+                // запоминаем, сколько надо отослать данных и в какого клиента
+                CoreWebServerPendingFileData pfd;
+                pfd.pendingBytes = contentLength;
+                pfd.client = client;
+                pfd.file = f;
+                pendingFiles.push_back(pfd);
+            
+                // отсылаем заголовки
+                client->write((uint8_t*)headers.c_str(),headers.length());    
+      
           #else
-            f.size();
+            // не включена поддержка SD, ничего не выдаём
+            send404(client);
           #endif
-      
-            String headers = WEB_HEADER_BEGIN;
-            headers += F("200 OK");
-            headers += WEB_HEADER_LINE;
-      
-            headers += WEB_HEADER_CONNECTION;
-            headers += WEB_HEADER_LINE;
-      
-            headers += WEB_HEADER_CONTENT_TYPE;
-            headers += getContentType(filename);
-            headers += WEB_HEADER_LINE;
-      
-            headers += WEB_HEADER_CONTENT_LENGTH;
-            headers += contentLength;
-            headers += WEB_HEADER_LINE;
-            headers += WEB_HEADER_LINE;
-      
-      
-          // запоминаем, сколько надо отослать данных и в какого клиента
-          CoreWebServerPendingFileData pfd;
-          pfd.pendingBytes = contentLength;
-          pfd.client = client;
-          pfd.file = f;
-          pendingFiles.push_back(pfd);
-      
-          // отсылаем заголовки
-          client->write((uint8_t*)headers.c_str(),headers.length());    
-
-    #else
-      // не включена поддержка SD, ничего не выдаём
-      send404(client);
-    #endif
+          
+    } // else no linked handler
     
      
 }
@@ -3203,12 +3265,10 @@ void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, b
 
       if(dataSize > 4)
       {
-          //bool httpQueryFound = strstr_P(data,(const char*) F("GET ")) == data && strstr(data,(const char*) F("HTTP/")) != NULL;
           bool httpQueryFound = Core.memFind(data,dataSize,"GET ",4) == data && Core.memFind(data,dataSize,"HTTP/",5) != NULL;
           
           if(httpQueryFound)
           {
-            //bool hasCompletedQuery = strstr_P(data,(const char*) F("\r\n\r\n")) != NULL;
             bool hasCompletedQuery  = Core.memFind(data,dataSize,"\r\n\r\n",4) != NULL;
             if(hasCompletedQuery)
             {
@@ -3224,13 +3284,12 @@ void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, b
               */
               
               // уже есть готовый запрос, выщемляем первую строку - и вперёд
-//              const char* rn = strstr_P(data,(const char*)F("\r\n"));
+
               const char* rn = (const char*) Core.memFind(data,dataSize,"\r\n",2);
                             
               char* query = new char[rn-data+1];              
               memcpy(query,data,rn-data);
               query[rn-data] = 0;
-
               
               processQuery(&client, query);
               
@@ -3240,7 +3299,6 @@ void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, b
             {
               DBGLN(F("WEB: Uncompleted query, save first line"));
                 // нет полного запроса, выщемляем первую строку - и сохраняем
-              //const char* rn = strstr_P(data,(const char*)F("\r\n"));
               const char* rn = (const char*) Core.memFind((const uint8_t*)data,dataSize,(const uint8_t*)"\r\n",2);
               if(rn)
               {

@@ -124,6 +124,21 @@ void setup()
   Core.begin();
 
 
+  // мы можем назначить свои обработчики запросов к веб-серверу, если надо
+  #ifdef CORE_ESP_WEB_SERVER
+    // для примера - назначим обработчик обращения к файлу test.txt при помощи лямбда-функции
+    ESPWebServer.on("test.txt", [](const char* uri, const char* params){
+
+          ESPWebServer.send(
+            200,  // код ответа
+            "text/plain", // тип контента
+            "This is dynamic handler!" // данные контентаы
+            );
+      
+      });
+  #endif
+
+
 /*
   // моргаем светодиодом по сценарию, по кругу
   scene.add({SCENE_PIN,1,100}); // 100 мс - высокий уровень

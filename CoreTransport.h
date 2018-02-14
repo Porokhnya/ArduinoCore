@@ -508,10 +508,23 @@ typedef Vector<CoreWebServerPendingFileData> CoreWebServerPendingFiles;
 #define WEB_HEADER_CONTENT_LENGTH F("Content-Length: ")
 #define WEB_HEADER_LINE F("\r\n")
 //--------------------------------------------------------------------------------------------------------------------------------------
+typedef void (*WebServerRequestHandler)(const char* uri, const char* params);
+typedef struct
+{
+  const char* uri;
+  WebServerRequestHandler handler;
+  
+} WebServerRequestHandlerData;
+typedef Vector<WebServerRequestHandlerData> WebServerRequestHandlers;
+//--------------------------------------------------------------------------------------------------------------------------------------
 class CoreESPWebServerClass : public IClientEventsSubscriber, public Stream
 {
   public:
     CoreESPWebServerClass();
+
+
+   void on(const char* uri, WebServerRequestHandler handler);
+   void send(int statusCode, const char* contentType, const char* data);
 
   // IClientEventsSubscriber
   virtual void OnClientConnect(CoreTransportClient& client, bool connected, int errorCode); // событие "Статус соединения клиента"
@@ -526,6 +539,10 @@ class CoreESPWebServerClass : public IClientEventsSubscriber, public Stream
   virtual size_t write(uint8_t ch) { *internalBuffer += (char) ch; return 1;}
 
   private:
+
+    CoreTransportClient* dynamicHandlerClient;
+    WebServerRequestHandlers dynamicHandlers;
+    WebServerRequestHandler getDynamicHandler(const char* uri);
 
     CoreWebServerQueries pendingQueries;
     bool isOurClient(CoreTransportClient* client);
@@ -547,7 +564,7 @@ class CoreESPWebServerClass : public IClientEventsSubscriber, public Stream
     
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
-extern CoreESPWebServerClass CoreESPWebServer;
+extern CoreESPWebServerClass ESPWebServer;
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_ESP_WEB_SERVER
 //--------------------------------------------------------------------------------------------------------------------------------------
