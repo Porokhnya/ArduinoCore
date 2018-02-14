@@ -132,7 +132,7 @@ void setup()
           ESPWebServer.send(
             200,  // код ответа
             "text/plain", // тип контента
-            "This is dynamic handler!" // данные контентаы
+            "This is dynamic handler!" // данные контента
             );
       
       });

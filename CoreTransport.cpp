@@ -3132,7 +3132,7 @@ void CoreESPWebServerClass::processURI(CoreTransportClient* client, String& uri)
     }
 
     // тут смотрим - если есть обработчик, прявязанный к имени файла - вызываем его, иначе - пытаемся читать с SD
-      WebServerRequestHandler handler = getDynamicHandler(filename);
+      WebServerRequestHandler handler = getDynamicHandler(strlen(filename) ? filename : "/");
       if(handler)
       {
         dynamicHandlerClient = client;
