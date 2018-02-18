@@ -51,27 +51,27 @@ void NextionComponent::send(const char* command)
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_pw(NextionInputType type)
 {
-  send("pw", int32_t(type));  
+  send(F2C("pw"), int32_t(type));  
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_val(int32_t val)
 {
-  send("val", val);
+  send(F2C("val"), val);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_format(NextionNumberFormat format)
 {
-  send("format", int32_t(format));    
+  send(F2C("format"), int32_t(format));    
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_en(uint8_t en)
 {
-  send("en", en);
+  send(F2C("en"), en);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_click(bool isReleaseEvent)
 {
-  send("click ");
+  send(F2C("click "));
   send(this->name);
   send(",");
   send(isReleaseEvent ? "0" : "1");
@@ -81,7 +81,7 @@ void NextionComponent::command_click(bool isReleaseEvent)
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_vis(uint8_t val)
 {
-  send("vis ");
+  send(F2C("vis "));
   send(this->name);
   send(",");
   String s;
@@ -93,17 +93,17 @@ void NextionComponent::command_vis(uint8_t val)
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_gdc(uint16_t val)
 {
-  send("gdc", val);
+  send(F2C("gdc"), val);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_gdw(uint16_t val)
 {
-  send("gdw", val);
+  send(F2C("gdw"), val);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_gdh(uint16_t val)
 {
-  send("gdh", val);
+  send(F2C("gdh"), val);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_pconum(uint8_t val, uint16_t color)
@@ -112,7 +112,7 @@ void NextionComponent::command_pconum(uint8_t val, uint16_t color)
   num = val;
   
   send(this->name);
-  send(".pco");
+  send(F2C(".pco"));
   send(num.c_str());
   send("=");
   num = color;
@@ -124,7 +124,7 @@ void NextionComponent::command_waveformdata(uint8_t id, uint8_t channel, uint8_t
 {
   String num;
   num = id;
-  send("add ");
+  send(F2C("add "));
   send(num.c_str());
   send(",");
   num = channel;
@@ -137,148 +137,148 @@ void NextionComponent::command_waveformdata(uint8_t id, uint8_t channel, uint8_t
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_wid(uint8_t width)
 {
-   send("width", width);
+   send(F2C("width"), width);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_pic(uint16_t number)
 {    
-  send("pic", number); 
+  send(F2C("pic"), number); 
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_xcen(NextionTextAlignment alignment)
 {
-  send("xcen", int32_t(alignment));  
+  send(F2C("xcen"), int32_t(alignment));  
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_ycen(NextionTextAlignment alignment)
 {
- send("ycen", int32_t(alignment));
+ send(F2C("ycen"), int32_t(alignment));
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_font(uint8_t fontNumber)
 {
-  send("font", fontNumber);  
+  send(F2C("font"), fontNumber);  
   
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_isbr(bool wrap)
 {
-  send("isbr", wrap ? 1 : 0);
+  send(F2C("isbr"), wrap ? 1 : 0);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_bco(uint16_t color)
 {
-  send("bco", color);
+  send(F2C("bco"), color);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_pco(uint16_t color)
 {
-  send("pco", color);
+  send(F2C("pco"), color);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_txt(const char* value)
 {
   send(this->name);
-  send(".txt=\"");
+  send(F2C(".txt=\""));
   send(value);
-  send("\"");
+  send(F2C("\""));
   sendDone();  
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_picc(uint16_t number)
 {
-  send("picc", number);
+  send(F2C("picc"), number);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_bco2(uint16_t color)
 {
-  send("bc02", color); 
+  send(F2C("bc02"), color); 
   
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_pco2(uint16_t color)
 {
- send("pco2", color);   
+ send(F2C("pco2"), color);   
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_picc2(uint16_t number)
 {
- send("picc2", number);   
+ send(F2C("picc2"), number);   
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_pic2(uint16_t number)
 {
- send("pic2", number);    
+ send(F2C("pic2"), number);    
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_hig(uint8_t height)
 {
- send("hig", height);
+ send(F2C("hig"), height);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_maxval(uint16_t val)
 {
- send("maxval", val);   
+ send(F2C("maxval"), val);   
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_minval(uint16_t val)
 {
- send("minval", val);
+ send(F2C("minval"), val);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_bco0(uint16_t color)
 {
- send("bco0", color);
+ send(F2C("bco0"), color);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_bco1(uint16_t color)
 {
-  send("bco1", color);
+  send(F2C("bco1"), color);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_picc0(uint16_t num)
 {
-  send("picc0", num);
+  send(F2C("picc0"), num);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_picc1(uint16_t num)
 {
-  send("picc1", num);
+  send(F2C("picc1"), num);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_pic0(uint16_t num)
 {
-  send("pic0", num);
+  send(F2C("pic0"), num);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_pic1(uint16_t num)
 {
-  send("pic1", num);
+  send(F2C("pic1"), num);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_tim(uint16_t interval)
 {
-  send("tim", interval);
+  send(F2C("tim"), interval);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_bpic(uint16_t number)
 {
-  send("bpic", number);
+  send(F2C("bpic"), number);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_ppic(uint16_t number)
 {
-  send("ppic", number);
+  send(F2C("ppic"), number);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_dir(NextionScrollingDirection direction)
 {
-  send("dir", int32_t(direction));
+  send(F2C("dir"), int32_t(direction));
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::command_dis(uint8_t distance)
 {
-  send("dis", distance);
+  send(F2C("dis"), distance);
 }
 //--------------------------------------------------------------------------------------------------
 void NextionComponent::send(const char* cmd,int32_t param)
@@ -318,21 +318,21 @@ void Nextion::sleepDelay(uint8_t seconds)
 {
   String num;
   num = seconds;
-  send("thsp=");
+  send(F2C("thsp="));
   send(num.c_str());
   sendEndOfPacket(); 
 }
 //--------------------------------------------------------------------------------------------------
 void Nextion::wakeOnTouch(bool awake)
 {
-  send("thup=");
+  send(F2C("thup="));
   send(awake ? "1" : "0");
   sendEndOfPacket();
 }
 //--------------------------------------------------------------------------------------------------
 void Nextion::baudRate(uint16_t baud, bool setAsDefault)
 {
-  send("baud");
+  send(F2C("baud"));
   if(setAsDefault)
     send("s");
 
@@ -347,7 +347,7 @@ void Nextion::baudRate(uint16_t baud, bool setAsDefault)
 //--------------------------------------------------------------------------------------------------
 void Nextion::brightness(uint8_t bright, bool setAsDefault)
 {
-  send("dim");
+  send(F2C("dim"));
   if(setAsDefault)
     send("s");
 
@@ -361,7 +361,7 @@ void Nextion::brightness(uint8_t bright, bool setAsDefault)
 //--------------------------------------------------------------------------------------------------
 void Nextion::fontXSpacing(uint8_t spacing)
 {
-  send("spax=");
+  send(F2C("spax="));
   String num;
   num = spacing;
   send(num.c_str());
@@ -371,7 +371,7 @@ void Nextion::fontXSpacing(uint8_t spacing)
 //--------------------------------------------------------------------------------------------------
 void Nextion::fontYSpacing(uint8_t spacing)
 {
-  send("spay=");
+  send(F2C("spay="));
   String num;
   num = spacing;
   send(num.c_str());
@@ -381,21 +381,21 @@ void Nextion::fontYSpacing(uint8_t spacing)
 //--------------------------------------------------------------------------------------------------
 void Nextion::receiveTouchEvents(bool receive)
 {
-  send("sendxy=");
+  send(F2C("sendxy="));
   send(receive ? "1" : "0");
   sendEndOfPacket();
 }
 //--------------------------------------------------------------------------------------------------
 void Nextion::sleep(bool enterSleep)
 {
-  send("sleep=");
+  send(F2C("sleep="));
   send(enterSleep ? "1" : "0");
   sendEndOfPacket();
 }
 //--------------------------------------------------------------------------------------------------
 void Nextion::page(uint8_t pageNum)
 {
-  send("page ");
+  send(F2C("page "));
   String num;
   num = pageNum;
   send(num.c_str());
@@ -404,7 +404,7 @@ void Nextion::page(uint8_t pageNum)
 //--------------------------------------------------------------------------------------------------
 void Nextion::sysVariable(uint8_t sysVarNumber,uint32_t val)
 {
-  send("sys");
+  send(F2C("sys"));
   String num;
   num = sysVarNumber;
   send(num.c_str());
@@ -417,13 +417,13 @@ void Nextion::sysVariable(uint8_t sysVarNumber,uint32_t val)
 //--------------------------------------------------------------------------------------------------
 void Nextion::stopRefresh()
 {
-  send("ref_stop");
+  send(F2C("ref_stop"));
   sendEndOfPacket();
 }
 //--------------------------------------------------------------------------------------------------
 void Nextion::startRefresh()
 {
-  send("ref_star");
+  send(F2C("ref_star"));
   sendEndOfPacket();
 }
 //--------------------------------------------------------------------------------------------------

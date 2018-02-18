@@ -4,7 +4,10 @@
 //--------------------------------------------------------------------------------------------------
 class Nextion; // forward declaration
 //--------------------------------------------------------------------------------------------------
-extern "C" {
+#define F2C(x) String(F((x))).c_str()
+//--------------------------------------------------------------------------------------------------
+extern "C" 
+{
   void ON_NEXTION_BUTTON_TOUCH(Nextion& sender, uint8_t pageID,uint8_t buttonID,bool pressed);
   void ON_NEXTION_PAGE_ID_RECEIVED(Nextion& sender, uint8_t pageID);
   void ON_NEXTION_TOUCH(Nextion& sender,uint16_t x, uint16_t y, bool pressed, bool inSleep);
@@ -489,7 +492,7 @@ class Nextion
     void fontXSpacing(uint8_t spacing);
     void fontYSpacing(uint8_t spacing);
 
-    // принимать события така?
+    // принимать события тача?
     void receiveTouchEvents(bool receive);
 
     // уйти в сон или проснуться
