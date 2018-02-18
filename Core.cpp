@@ -2378,9 +2378,6 @@ bool CoreClass::getLS(const char* commandPassed, const CommandParser& parser, St
     }    
   }
 
-//  int countFiles = FileUtils::countFiles(folderName,false);
-//  pStream->println(countFiles);
-
   FileUtils::printFilesNames(folderName,false,pStream);
   pStream->println(CORE_END_OF_DATA);
   
