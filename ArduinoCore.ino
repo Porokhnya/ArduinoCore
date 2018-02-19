@@ -45,6 +45,8 @@ const uint8_t defaultConfig[] PROGMEM = {
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_INCOMING_CALL(const String& phoneNumber, bool isKnownNumber, bool& shouldHangUp)
 {
+  #ifdef CORE_SIM800_TRANSPORT_ENABLED
+  
   Serial.print(F("Incoming call from: "));
   Serial.print(phoneNumber);
   Serial.print(F("; known number? "));
@@ -57,7 +59,6 @@ void ON_INCOMING_CALL(const String& phoneNumber, bool isKnownNumber, bool& shoul
   shouldHangUp = true;
 
   // отправляем СМС в ответ
-  #ifdef CORE_SIM800_TRANSPORT_ENABLED
     SIM800.sendSMS(phoneNumber, F("Не звони мне больше, редиска :)"), true);
   #endif
 }
@@ -67,6 +68,8 @@ void ON_INCOMING_CALL(const String& phoneNumber, bool isKnownNumber, bool& shoul
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_SMS_RECEIVED(const String& phoneNumber,const String& message, bool isKnownNumber)
 {
+    #ifdef CORE_SIM800_TRANSPORT_ENABLED
+    
     Serial.print(F("INCOMING SMS FROM: "));
     Serial.println(phoneNumber);
     
@@ -74,10 +77,9 @@ void ON_SMS_RECEIVED(const String& phoneNumber,const String& message, bool isKno
     Serial.println(message);
 
     // отправляем СМС назад
-    #ifdef CORE_SIM800_TRANSPORT_ENABLED
       static int smsCounter = 0;
       smsCounter++;
-      String smsText = "Ответочка номер #";
+      String smsText = F("Ответочка номер #");
       smsText += smsCounter;
       SIM800.sendSMS(phoneNumber, smsText, true); // последний параметр - flash или обычное смс
     #endif

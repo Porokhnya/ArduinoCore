@@ -568,10 +568,11 @@ bool CoreConfigIterator::readRecord()
       }
       else
       {
-        // надо сохранить в список сигналов - поэтому мы пропускаем всю запись, но перед этим запоминаем текущий адрес памяти.
-        uint16_t recordStartAddress = address + readed;
         
         #ifdef CORE_SIGNALS_ENABLED
+          // надо сохранить в список сигналов - поэтому мы пропускаем всю запись, но перед этим запоминаем текущий адрес памяти.
+          uint16_t recordStartAddress = address + readed;
+          
           // скармливаем этот адрес менеджеру сигналов, и он будет знать, что по этому адресу лежит запись настроек одного сигнала
           Signals.addRecord(recordStartAddress);
         #endif
@@ -1887,6 +1888,8 @@ bool CoreClass::getCPU(const char* commandPassed, Stream* pStream)
     pStream->println(F("DUE"));
   #elif TARGET_BOARD == ESP_BOARD
     pStream->println(F("ESP"));
+  #elif TARGET_BOARD == ATMEGA328_BOARD
+    pStream->println(F("328"));
   #else
     pStream->println(F("NOP"));
     #error "Unknown target board!"
@@ -2469,7 +2472,7 @@ void CoreClass::handleCommands()
 //--------------------------------------------------------------------------------------------------------------------------------------
 int CoreClass::getFreeMemory()
 {
-  #if TARGET_BOARD == MEGA_BOARD
+  #if TARGET_BOARD == MEGA_BOARD || TARGET_BOARD == ATMEGA328_BOARD
   
     extern int __heap_start, *__brkval;
     int v;
@@ -2585,7 +2588,7 @@ int CoreClass::getPinMode(int p)
      const int max_pin = 69;
   #elif TARGET_BOARD == ESP_BOARD
     #error "NOT IMPLEMENTED!!!"  
-  #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)       
+  #elif TARGET_BOARD == ATMEGA328_BOARD       
      const int max_pin = 19;
   #else
      #error "Unknown target board!"
@@ -2594,7 +2597,7 @@ int CoreClass::getPinMode(int p)
    if (p > max_pin) 
        return -1;
 
-#if (TARGET_BOARD == MEGA_BOARD)
+#if (TARGET_BOARD == MEGA_BOARD) || (TARGET_BOARD == ATMEGA328_BOARD)
 
   uint8_t port = digitalPinToPort(p);
   uint8_t portBit  = digitalPinToBitMask(p);
@@ -2642,7 +2645,7 @@ return -1;
 //--------------------------------------------------------------------------------------------------------------------------------------
 int CoreClass::getPinState(int pin)
 {
-#if (TARGET_BOARD == MEGA_BOARD)
+#if (TARGET_BOARD == MEGA_BOARD) || (TARGET_BOARD == ATMEGA328_BOARD)
   
   int mode = getPinMode(pin);
   if(mode == -1)

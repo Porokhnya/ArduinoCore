@@ -349,7 +349,7 @@ HardwareSerial* CoreRS485::getMyStream(uint8_t SerialNumber)
     default:
       return NULL;
   }
-#elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)
+#elif TARGET_BOARD == ATMEGA328_BOARD
   return &Serial;
 #elif TARGET_BOARD == ESP_BOARD
   #error "NOT IMPLEMENTED!!!"
@@ -1141,7 +1141,7 @@ void CoreRS485::waitTransmitComplete()
     if(workStream == &Serial3)
       while((USART3->US_CSR & US_CSR_TXEMPTY)  == 0);
 
-  #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)      
+  #elif  TARGET_BOARD == ATMEGA328_BOARD
     while(!(UCSR0A & _BV(TXC0) ));
   #elif TARGET_BOARD == ESP_BOARD
     #error "NOT IMPLEMENTED !!!"      
@@ -2410,7 +2410,7 @@ void CoreESPTransport::begin()
     break;
 
   } // switch
-  #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)
+  #elif TARGET_BOARD == ATMEGA328_BOARD
     hs = &Serial;
   #elif TARGET_BOARD == ESP_BOARD
     #error "NOT IMPLEMENTED!!!"
@@ -5796,7 +5796,7 @@ void CoreSIM800Transport::begin()
     break;
 
   } // switch
-  #elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)
+  #elif TARGET_BOARD == ATMEGA328_BOARD
     hs = &Serial;
   #elif TARGET_BOARD == ESP_BOARD
     #error "NOT IMPLEMENTED!!!"

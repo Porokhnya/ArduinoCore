@@ -804,7 +804,7 @@ bool CoreSensorDHT::read(uint8_t* buffer)
   const uint32_t mstcc = ( F_CPU / 40000 ); // сторож таймаута - 100us
 
   uint8_t bit = digitalPinToBitMask(pin);
-  #if TARGET_BOARD == MEGA_BOARD
+  #if TARGET_BOARD == MEGA_BOARD || TARGET_BOARD == ATMEGA328_BOARD
   uint8_t 
   #elif TARGET_BOARD == DUE_BOARD
   Pio*
@@ -816,7 +816,7 @@ bool CoreSensorDHT::read(uint8_t* buffer)
   port = digitalPinToPort(pin);
   
   volatile 
-  #if TARGET_BOARD == MEGA_BOARD
+  #if TARGET_BOARD == MEGA_BOARD || TARGET_BOARD == ATMEGA328_BOARD
   uint8_t*
   #elif TARGET_BOARD == DUE_BOARD
   RoReg*

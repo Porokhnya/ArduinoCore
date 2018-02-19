@@ -118,6 +118,7 @@
 #define DUE_BOARD 1
 #define MEGA_BOARD 2
 #define ESP_BOARD 3
+#define ATMEGA328_BOARD 4
 //--------------------------------------------------------------------------------------------------------------------------------------
 #if defined (__arm__) && defined (__SAM3X8E__)
   #define TARGET_BOARD DUE_BOARD
@@ -125,6 +126,8 @@
   #define TARGET_BOARD MEGA_BOARD
 #elif defined(ESP8266)  
   #define TARGET_BOARD ESP_BOARD
+#elif defined(__AVR_ATmega328__) || defined(__AVR_ATmega328P__)
+  #define TARGET_BOARD ATMEGA328_BOARD
 #else
   #error "Unknown target board!"
 #endif  
