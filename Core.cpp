@@ -1625,9 +1625,10 @@ bool CoreClass::setDATETIME(const char* param)
   #endif // CORE_DS3231_ENABLED
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_DS3231_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::setCurrentDateTime(uint8_t day, uint8_t month, uint16_t year, uint8_t hour, uint8_t minute, uint8_t second)
 {
-  #ifdef CORE_DS3231_ENABLED
    // вычисляем день недели
     int dow;
     uint8_t mArr[12] = {6,2,2,5,0,3,5,1,4,6,2,4};
@@ -1652,8 +1653,9 @@ void CoreClass::setCurrentDateTime(uint8_t day, uint8_t month, uint16_t year, ui
       sensor->setTime(second, minute, hour, dow, day, month, year);
     }
     
-    #endif // CORE_DS3231_ENABLED     
 }
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_DS3231_ENABLED     
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::getFEATURES(const char* commandPassed, Stream* pStream)
 {
@@ -3475,16 +3477,6 @@ void WatchdogSettingsClass::update()
     
     if(millis() - watchdogTimer > wantedInterval)
     {
-      /*
-      if(waitForHigh)
-      {
-        DBGLN(F("Watchdog HIGH!"));
-      }
-      else
-      {
-        DBGLN(F("Watchdog LOW!"));        
-      }
-      */
       pinMode(WatchdogPin,OUTPUT);
       digitalWrite(WatchdogPin, waitForHigh ? HIGH : LOW); 
       waitForHigh = !waitForHigh;

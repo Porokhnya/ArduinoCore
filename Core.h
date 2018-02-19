@@ -214,21 +214,24 @@ class CoreClass
     void yieldCritical(); // функция, вне очереди обновляющая критические части ядра (например, вычитку из порта ESP, чтобы данные не протухали)
 
     char FractDelimiter; // разделитель целой и дробной частей
-    uint8_t TemperatureUnit; // вид измерения температуры (в цельсиях или фаренгейтах)
+    
+    uint8_t TemperatureUnit; // вид измерения температуры (в Цельсиях или Фаренгейтах)
     unsigned long SensorsUpdateInterval; // интервал обновления показаний с датчиков
+    
     uint8_t DeviceID; // уникальный адрес устройства
     uint8_t ClusterID; // уникальный адрес кластера
 
     static uint8_t crc8(const uint8_t *addr, uint8_t len);
 
+    #ifdef CORE_DS3231_ENABLED
     // устанавливает дату/время для всех DS3231
     void setCurrentDateTime(uint8_t dayOfMonth, uint8_t month, uint16_t year, uint8_t hour, uint8_t minute, uint8_t second);
+    #endif
 
     const char* byteToHexString(uint8_t i); // конвертирует байт в его строковое представление в шестнадцатеричном виде
     static uint8_t hexStringToByte(const char* buff); // конвертирует строковое представление байта в шестнадцатеричном виде в байт
 
     void pushToStorage(CoreSensor* sensor); // обновляет показания с датчика в хранилище
-
 
     int getPinMode(int pin); // возвращает режим работы пина - вход или выход
     int getPinState(int pin); // возвращает состояние пина, вне зависимости от его режима работы

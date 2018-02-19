@@ -371,10 +371,18 @@ void CoreRS485::begin()
 
 
   workStream = getMyStream(RS485Settings.SerialNumber);
-    
-    unsigned long uspeed = RS485Settings.UARTSpeed;
-    uspeed *= 9600;
-    workStream->begin(uspeed);
+
+  if(workStream == &Serial)
+  {
+    workStream = NULL;
+  }
+
+    if(workStream)
+    {
+      unsigned long uspeed = RS485Settings.UARTSpeed;
+      uspeed *= 9600;
+      workStream->begin(uspeed);
+    }
 
   if(RS485Settings.DEPin > 0)
     pinMode(RS485Settings.DEPin,OUTPUT);
@@ -2418,11 +2426,20 @@ void CoreESPTransport::begin()
     #error "Unknown target board!"
   #endif    
 
-  workStream = hs;
-  unsigned long uspeed = ESPTransportSettings.UARTSpeed;
-  uspeed *= 9600;
+  if(hs == &Serial)
+  {
+    hs = NULL;
+  }
 
-  hs->begin(uspeed);
+  workStream = hs;
+
+  if(hs)
+  {
+    unsigned long uspeed = ESPTransportSettings.UARTSpeed;
+    uspeed *= 9600;
+  
+    hs->begin(uspeed);
+  }
 
   restart();
 
@@ -5802,14 +5819,22 @@ void CoreSIM800Transport::begin()
     #error "NOT IMPLEMENTED!!!"
   #else
     #error "Unknown target board!"
-  #endif    
+  #endif
 
+  if(hs == &Serial)
+  {
+    hs = NULL;
+  }
 
   workStream = hs;
-  unsigned long uspeed = SIM800TransportSettings.UARTSpeed;
-  uspeed *= 9600;
-  
-  hs->begin(uspeed);
+
+  if(hs)
+  {
+    unsigned long uspeed = SIM800TransportSettings.UARTSpeed;
+    uspeed *= 9600;
+    
+    hs->begin(uspeed);
+  }
 
   restart();
 

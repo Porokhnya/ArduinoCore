@@ -1056,8 +1056,6 @@ bool LoraDispatcherClass::parsePacket(uint8_t* bPacket, int packetSize)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void LoraDispatcherClass::coreLoraReceive(int packetSize)
 {
- 
-
   // тут пришёл пакет от LoRa, и в зависимости от режима работы (мастер/слейв) - мы должны делать какие-либо действия
   
   if(packetSize > 0)

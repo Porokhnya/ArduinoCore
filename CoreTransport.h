@@ -710,6 +710,7 @@ class CoreMQTT : public IClientEventsSubscriber, public Stream
     void update();
     void begin();
 
+  // IClientEventsSubscriber
   virtual void OnClientConnect(CoreTransportClient& client, bool connected, int errorCode); // событие "Статус соединения клиента"
   virtual void OnClientDataWritten(CoreTransportClient& client, int errorCode); // событие "Данные из клиента записаны в поток"
   virtual void OnClientDataAvailable(CoreTransportClient& client, bool isDone); // событие "Для клиента поступили данные", флаг - все ли данные приняты
@@ -832,6 +833,7 @@ class CoreThingSpeak : public IClientEventsSubscriber
 
     void publish(int fieldNumber,const String& data);
 
+    // IClientEventsSubscriber
     virtual void OnClientConnect(CoreTransportClient& client, bool connected, int errorCode); // событие "Статус соединения клиента"
     virtual void OnClientDataWritten(CoreTransportClient& client, int errorCode); // событие "Данные из клиента записаны в поток"
     virtual void OnClientDataAvailable(CoreTransportClient& client, bool isDone); // событие "Для клиента поступили данные", флаг - все ли данные приняты

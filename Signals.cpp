@@ -30,10 +30,9 @@ void SignalHandler::analyze()
 {
   uint16_t addr = memoryAddress;
 
-
   // начинаем анализировать
 
-  bool hasTimeSettings = Core.memRead(addr) == 1; addr++; //record[recordIterator] != 0;
+  bool hasTimeSettings = Core.memRead(addr) == 1; addr++;
 
   //DBG(F("SIG: hasTimeSettings=")); DBGLN(hasTimeSettings);
 
@@ -68,7 +67,6 @@ void SignalHandler::analyze()
     {
       DBGLN(F("SIG: No datetime data!"));
       // нет данных с часов - работать не можем
-      //delete [] record;
       return;
     }
 
@@ -81,7 +79,6 @@ void SignalHandler::analyze()
     {
   //    DBGLN(F("SIG: Can't work today!"));
       // не можем работать в этот день недели, выходим
-     // delete [] record;
       return;
     }
 
@@ -93,7 +90,6 @@ void SignalHandler::analyze()
         {
           DBGLN(F("SIG: Can't work at this time!"));
           // не можем работать в это время, выходим
-        //  delete [] record;
           return;
         }
     }
@@ -185,7 +181,6 @@ void SignalHandler::analyze()
   }
 
   delete [] data;
-  //delete [] record;
   
 
 }
