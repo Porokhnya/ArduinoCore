@@ -2474,11 +2474,11 @@ void CoreClass::handleCommands()
     String command = Commands.getCommand();
 
     if(command.startsWith(CORE_COMMAND_GET) || command.startsWith(CORE_COMMAND_SET))
-      anyCommandFromSerialReceived = true;
-    
-    Stream* pStream = Commands.getStream();
-
-    processCommand(command,pStream);
+    {
+      anyCommandFromSerialReceived = true;    
+      Stream* pStream = Commands.getStream();
+      processCommand(command,pStream);
+    }
     
 
     Commands.clearCommand(); // очищаем буфер команд
