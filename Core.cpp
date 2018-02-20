@@ -1299,6 +1299,9 @@ CoreClass::CoreClass()
   ClusterID = 0;
   wantRestart = false;
   configSaveAddress = CORE_STORE_ADDRESS;
+  serialOwnedFlag = true;
+  lastSerialCommandTimer = 0;
+  anyCommandFromSerialReceived = false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreClass::crc8(const uint8_t *addr, uint8_t len)
@@ -2451,8 +2454,23 @@ bool CoreClass::setRESTART()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::handleCommands()
 {
-  if(Commands.hasCommand())
+  if(!anyCommandFromSerialReceived)
   {
+    if(serialOwnedFlag && millis() - lastSerialCommandTimer > CORE_RELEASE_SERIAL_DELAY)
+    {
+      // нет команд в течение N секунд, отпускаем Serial
+      serialOwnedFlag = false;
+      DBGLN(F("No incoming commands within 5 seconds, release Serial!"));
+      beginSerialRelatedTransports();
+    }
+  }
+
+  if(!serialOwnedFlag) // мы больше не владеем Serial, поэтому не должны ничего из него читать
+    return;
+  
+  if(Commands.hasCommand())
+  {    
+    anyCommandFromSerialReceived = true;
 
     String command = Commands.getCommand();
     Stream* pStream = Commands.getStream();
@@ -2745,10 +2763,88 @@ const char* CoreClass::byteToHexString(byte i)
   return HEX_HOLDER;  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreClass::beginSerialRelatedTransports()
+{ 
+    // тут мы должны стартовать транспорты, только если они используют Serial. Иначе они уже стартовали, и незачем их дёргать лишний раз
+  
+  #ifdef CORE_RS485_TRANSPORT_ENABLED
+    if(RS485Settings.enabled && RS485Settings.SerialNumber == 0)
+    {
+//      DBGLN(F("RS485 linked to Serial, restart it..."));
+      RS485.begin();
+    }
+  #endif
+
+  // сначала выясняем, надо ли нам резетить MQTT и ThingSpeak. Это надо делать в том случае,
+  // если хотя бы один транспорт (ESP или SIM800) - рестартует, т.к. привязан к Serial.
+
+  bool wantResetTransportClients = false;
+  
+  #ifdef CORE_ESP_TRANSPORT_ENABLED
+    if(ESPTransportSettings.enabled && ESPTransportSettings.SerialNumber == 0)
+      wantResetTransportClients = true;
+  #endif
+
+  #ifdef CORE_SIM800_TRANSPORT_ENABLED
+    if(SIM800TransportSettings.enabled && SIM800TransportSettings.SerialNumber == 0)
+    {
+        wantResetTransportClients = true;
+    }
+  #endif
+
+  // теперь резетим клиенты транспортов, при этом они освободят ссылки на транспорт и его клиентов
+  if(wantResetTransportClients)
+  {
+    #ifdef CORE_MQTT_TRANSPORT_ENABLED
+      MQTT.reset();
+    #endif
+  
+    #ifdef CORE_THINGSPEAK_TRANSPORT_ENABLED
+      ThingSpeak.reset();
+    #endif    
+  }
+  
+  bool isAnyTransportRestarted = false;
+
+  #ifdef CORE_ESP_TRANSPORT_ENABLED
+    if(ESPTransportSettings.enabled && ESPTransportSettings.SerialNumber == 0)
+    {
+//      DBGLN(F("ESP linked to Serial, restart it..."));
+      isAnyTransportRestarted = true;
+      ESP.begin();
+    }
+  #endif
+
+  #ifdef CORE_SIM800_TRANSPORT_ENABLED
+    if(SIM800TransportSettings.enabled && SIM800TransportSettings.SerialNumber == 0)
+    {
+//      DBGLN(F("SIM800 linked to Serial, restart it..."));
+      isAnyTransportRestarted = true;
+      SIM800.begin();
+    }
+  #endif 
+
+  // тут надо рестартовать клиентов транспортов, если хотя бы один транспорт рестартован.
+  // Это связано с тем, что клиенты держат в себе класс клиента транспорта, и он будет невалидным
+  // пре рестарте транспорта.
+  if(isAnyTransportRestarted)
+  {
+    #ifdef CORE_MQTT_TRANSPORT_ENABLED
+      MQTT.begin();
+    #endif
+  
+    #ifdef CORE_THINGSPEAK_TRANSPORT_ENABLED
+      ThingSpeak.begin();
+    #endif    
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::begin()
 {
   if(!configLoaded)
     return;
+
+  lastSerialCommandTimer = millis();
 
   #ifdef CORE_SD_SUPPORT_ENABLED
   
@@ -2800,10 +2896,9 @@ void CoreClass::begin()
       }
     #endif
   #endif // CORE_SD_SUPPORT_ENABLED
-    
+
   #ifdef CORE_RS485_TRANSPORT_ENABLED
-    // обновляем транспорт RS-485
-    RS485.begin();
+      RS485.begin();
   #endif  
 
   #ifdef CORE_ESP_TRANSPORT_ENABLED
@@ -2812,7 +2907,7 @@ void CoreClass::begin()
 
   #ifdef CORE_SIM800_TRANSPORT_ENABLED
     SIM800.begin();
-  #endif
+  #endif 
 
   #ifdef CORE_LORA_TRANSPORT_ENABLED
 

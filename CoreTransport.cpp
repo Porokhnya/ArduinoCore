@@ -360,21 +360,26 @@ HardwareSerial* CoreRS485::getMyStream(uint8_t SerialNumber)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::begin()
 {  
-
+  
   workStream = NULL;
 
   if(!RS485Settings.enabled)
     return;
   
-  if(RS485Settings.SerialNumber == 0 || RS485Settings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
+  if(RS485Settings.UARTSpeed == 0) // не можем работать с нулевой скоростью!
     return;
 
+  DBGLN(F("RS485: begin."));
 
   workStream = getMyStream(RS485Settings.SerialNumber);
 
   if(workStream == &Serial)
   {
-    workStream = NULL;
+    if(Core.isSerialOwned())
+    {
+      workStream = NULL;
+      DBGLN(F("RS485: Serial is owned by Core, can't work, waiting..."));
+    }
   }
 
     if(workStream)
@@ -394,6 +399,9 @@ void CoreRS485::begin()
   }
   else
     switchToReceive();
+
+  DBGLN(F("RS485: started."));
+    
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::switchToReceive()
@@ -646,7 +654,7 @@ void CoreRS485::updateMasterMode()
 
    static int currentClientNumber = 0;
 
-   unsigned long pollInterval = 0;//CORE_RS485_POLL_INTERVAL;
+   unsigned long pollInterval = 0;
 
    // когда мало клиентов - минимальное время опроса между ними надо увеличивать, т.к. незачем дёргать два несчастных клиента несколько раз в секунду.
    // для этого мы смотрим - если живых клиентов мало, то мы пересчитываем интервал обновления.
@@ -2378,16 +2386,17 @@ void CoreESPTransport::update()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::begin()
 {
+
+  
   workStream = NULL;
 
   if(!ESPTransportSettings.enabled)
     return;
   
-  if(ESPTransportSettings.SerialNumber == 0 || ESPTransportSettings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
+  if(ESPTransportSettings.UARTSpeed == 0) // не можем работать с нулевой скоростью!
     return;
 
-//  DBG(F("ESP: begin, serial is: "));
-//  DBGLN(ESPTransportSettings.SerialNumber);
+  DBGLN(F("ESP: begin."));
   
   initClients();
 
@@ -2428,7 +2437,11 @@ void CoreESPTransport::begin()
 
   if(hs == &Serial)
   {
-    hs = NULL;
+    if(Core.isSerialOwned())
+    {
+      hs = NULL;
+      DBGLN(F("ESP: Serial is owned by Core, can't work, waiting..."));
+    }  
   }
 
   workStream = hs;
@@ -2450,6 +2463,8 @@ void CoreESPTransport::begin()
     digitalWrite(ESPTransportSettings.RebootPin,!ESPTransportSettings.PowerOnLevel);
     machineState = espReboot;
   }
+
+  DBGLN(F("ESP: started."));
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -5779,14 +5794,16 @@ void CoreSIM800Transport::update()
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::begin()
-{
+{  
   workStream = NULL;
 
   if(!SIM800TransportSettings.enabled)
     return;
   
-  if(SIM800TransportSettings.SerialNumber == 0 || SIM800TransportSettings.UARTSpeed == 0) // не можем работать через Serial или с нулевой скоростью!
+  if(SIM800TransportSettings.UARTSpeed == 0) // не можем работать с нулевой скоростью!
     return;
+
+  DBGLN(F("SIM800: begin."));
   
   initClients();
 
@@ -5823,7 +5840,11 @@ void CoreSIM800Transport::begin()
 
   if(hs == &Serial)
   {
-    hs = NULL;
+    if(Core.isSerialOwned())
+    {
+      hs = NULL;
+      DBGLN(F("SIM800: Serial is owned by Core, can't work, waiting..."));
+    }
   }
 
   workStream = hs;
@@ -5852,6 +5873,9 @@ void CoreSIM800Transport::begin()
   }
 
   machineState = sim800Reboot;
+
+  DBGLN(F("SIM800: started."));
+  
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------

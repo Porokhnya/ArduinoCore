@@ -210,7 +210,6 @@ class CoreClass
 	public:
 		CoreClass();
 
-
     void yieldCritical(); // функция, вне очереди обновляющая критические части ядра (например, вычитку из порта ESP, чтобы данные не протухали)
 
     char FractDelimiter; // разделитель целой и дробной частей
@@ -269,7 +268,18 @@ class CoreClass
    // сохраняет настройки конфига из массива в памяти в EEPROM
    void saveConfig(const uint8_t* address, uint16_t sz, bool isInFlashSource);
 
+   bool isSerialOwned()
+   {
+    return serialOwnedFlag;
+   }
+
    private:
+
+   void beginSerialRelatedTransports();
+
+   bool serialOwnedFlag;
+   bool anyCommandFromSerialReceived;
+   unsigned long lastSerialCommandTimer;
 
    static uint8_t makeNum(char ch);
 
