@@ -2470,9 +2470,12 @@ void CoreClass::handleCommands()
   
   if(Commands.hasCommand())
   {    
-    anyCommandFromSerialReceived = true;
 
     String command = Commands.getCommand();
+
+    if(command.startsWith(CORE_COMMAND_GET) || command.startsWith(CORE_COMMAND_SET))
+      anyCommandFromSerialReceived = true;
+    
     Stream* pStream = Commands.getStream();
 
     processCommand(command,pStream);
