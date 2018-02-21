@@ -1473,12 +1473,14 @@ void CoreClass::initSensors()
 bool CoreClass::setCONFIGSTART()
 {
   configSaveAddress = CORE_STORE_ADDRESS;
-  return true;
 
   // поскольку у нас сигналы читаются напрямую из EEPROM - мы должны на время обновления конфига запретить им перечитывать данные
   #ifdef CORE_SIGNALS_ENABLED
     Signals.pause();
   #endif  
+
+  return true;
+  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreClass::setCONFIGPART(const char* param)
@@ -1975,6 +1977,14 @@ bool CoreClass::getSENSORS(const char* commandPassed, Stream* pStream)
       
     written++;
     pStream->print(F("USENSOR")); 
+  #endif  
+
+  #ifdef CORE_MAX6675_ENABLED
+    if(written)
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+      
+    written++;
+    pStream->print(F("MAX6675")); 
   #endif  
   
 
@@ -3169,13 +3179,13 @@ CoreStoredData::operator TemperatureData() const
     return result;
   }
 
-  if(dataSize < 2)
+  if(dataSize < 3)
   {
     return result;
   }
 
-   result.Value = data[0];
-   result.Fract = data[1];
+   memcpy(&(result.Value),data,sizeof(int16_t));
+   result.Fract = data[2];
 
    return result;
   
@@ -3207,15 +3217,15 @@ CoreStoredData::operator HumidityData() const
   if(!hasData())
     return result;
 
-  if(dataSize < 4)
+  if(dataSize < 6)
     return result;
 
 
-   result.Temperature.Value = data[0];
-   result.Temperature.Fract = data[1];
+   memcpy(&(result.Temperature.Value),data,sizeof(int16_t));
+   result.Temperature.Fract = data[2];
 
-   result.Humidity.Value = data[2];
-   result.Humidity.Fract = data[3];
+   memcpy(&(result.Humidity.Value),&(data[3]),sizeof(int16_t));
+   result.Humidity.Fract = data[5];
 
    return result;
   

@@ -1,6 +1,8 @@
 #include "CoreSensor.h"
 #include "Core.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
+bool __isSPIInited = false;
+//--------------------------------------------------------------------------------------------------------------------------------------
 #if defined(CORE_DS3231_ENABLED) || defined(CORE_BH1750_ENABLED) || defined(CORE_SI7021_ENABLED)
 #include <Wire.h>
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -244,7 +246,7 @@ long DateTimeData::time2long(uint16_t days, uint8_t hours, uint8_t minutes, uint
 //--------------------------------------------------------------------------------------------------------------------------------------
 int TemperatureData::raw() const
 {
-  int result = abs(Value)*100;
+  int32_t result = abs(Value)*100;
   result += Fract;
 
   if(Value < 0)
@@ -255,8 +257,8 @@ int TemperatureData::raw() const
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool TemperatureData::operator==(const TemperatureData& rhs)
 {
-  int this_val = raw();
-  int rhs_val = rhs.raw();
+  int32_t this_val = raw();
+  int32_t rhs_val = rhs.raw();
 
    return (this_val == rhs_val);
 }
@@ -268,8 +270,8 @@ bool TemperatureData::operator!=(const TemperatureData& rhs)
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool TemperatureData::operator<(const TemperatureData& rhs)
 {
-  int this_val = raw();
-  int rhs_val = rhs.raw();
+  int32_t this_val = raw();
+  int32_t rhs_val = rhs.raw();
 
    return (this_val < rhs_val);
   
@@ -277,8 +279,8 @@ bool TemperatureData::operator<(const TemperatureData& rhs)
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool TemperatureData::operator<=(const TemperatureData& rhs)
 {
-  int this_val = raw();
-  int rhs_val = rhs.raw();
+  int32_t this_val = raw();
+  int32_t rhs_val = rhs.raw();
 
    return (this_val <= rhs_val);
   
@@ -286,8 +288,8 @@ bool TemperatureData::operator<=(const TemperatureData& rhs)
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool TemperatureData::operator>(const TemperatureData& rhs)
 {
-  int this_val = raw();
-  int rhs_val = rhs.raw();
+  int32_t this_val = raw();
+  int32_t rhs_val = rhs.raw();
 
    return (this_val > rhs_val);
   
@@ -295,8 +297,8 @@ bool TemperatureData::operator>(const TemperatureData& rhs)
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool TemperatureData::operator>=(const TemperatureData& rhs)
 {
-  int this_val = raw();
-  int rhs_val = rhs.raw();
+  int32_t this_val = raw();
+  int32_t rhs_val = rhs.raw();
 
    return (this_val >= rhs_val);
   
@@ -321,8 +323,8 @@ TemperatureData TemperatureData::ConvertToFahrenheit(const TemperatureData& from
 {  
     TemperatureData result;
       
-    int rawC = from.Value*100 + from.Fract;
-    int rawF = (rawC*9)/5 + 3200;
+    int32_t rawC = from.Value*100 + from.Fract;
+    int32_t rawF = (rawC*9)/5 + 3200;
 
     result.Value = rawF/100;
     result.Fract = rawF%100;
@@ -372,6 +374,15 @@ CoreSensor* CoreSensorsFactory::createSensor(CoreSensorType type)
   
     #ifdef CORE_DS3231_ENABLED
       return new CoreSensorDS3231(true);
+    #else
+      return NULL;
+    #endif
+
+
+    case MAX6675:
+    
+    #ifdef CORE_MAX6675_ENABLED
+      return new CoreSensorMAX6675();
     #else
       return NULL;
     #endif
@@ -466,6 +477,7 @@ CoreDataType CoreSensor::getDataType(CoreSensorType type)
   {
     case DS18B20:
     case DS3231Temperature:
+    case MAX6675:
       return Temperature;
       
     case DHT:
@@ -595,7 +607,7 @@ void CoreSensorSi7021::begin(uint8_t* configData)
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreSensorSi7021::getDataSize()
 {
-  return 4;
+  return 6;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSensorSi7021::read(uint8_t* buffer)
@@ -613,25 +625,29 @@ bool CoreSensorSi7021::read(uint8_t* buffer)
   }
   else
   {     
-    int iTmp = temperature*100;
+    int32_t iTmp = temperature*100;
 
-    int8_t tValue = iTmp/100;
-    uint8_t tFract = iTmp%100;
+    int16_t tValue = iTmp/100;
+    uint8_t tFract = abs(iTmp)%100;
     
 
     if(tValue < -40 || tValue > 125) // плохая, негодная температура
       hasData = false;
     else
     {
-      buffer[0] = tValue; // значение температуры - целая часть
-      buffer[1] = tFract; // значение температуры - дробная часть, в сотых долях
+      uint8_t* ptr = (uint8_t*) &tValue;
+      buffer[0] = *ptr++; // значение температуры - целая часть
+      buffer[1] = *ptr;
+      buffer[2] = tFract; // значение температуры - дробная часть, в сотых долях
 
        if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
        {
         TemperatureData fahren = {tValue, tFract}; 
         fahren = TemperatureData::ConvertToFahrenheit(fahren);
-        buffer[0] = fahren.Value;
-        buffer[1] = fahren.Fract;
+        ptr = (uint8_t*) &(fahren.Value);
+        buffer[0] = *ptr++;
+        buffer[1] = *ptr;
+        buffer[2] = fahren.Fract;
        }
 
     }
@@ -641,14 +657,16 @@ bool CoreSensorSi7021::read(uint8_t* buffer)
           iTmp = humidity*100;
           
           tValue = iTmp/100;
-          tFract = iTmp%100;
+          tFract = abs(iTmp)%100;
       
           if(tValue < 0 || tValue > 100) // плохая, негодная влажность
             hasData = false;
           else
           {
-            buffer[2] = tValue;
-            buffer[3] = tFract;            
+            uint8_t* ptr = (uint8_t*) &tValue;
+            buffer[3] = *ptr++;
+            buffer[4] = *ptr;
+            buffer[5] = tFract;            
           }
         
       } // hasData
@@ -784,7 +802,7 @@ CoreSensorDHT::CoreSensorDHT() : CoreSensor(DHT)
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreSensorDHT::getDataSize()
 {
-  return 4;
+  return 6;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorDHT::begin(uint8_t* configData)
@@ -901,10 +919,10 @@ bool CoreSensorDHT::read(uint8_t* buffer)
   digitalWrite(pin, HIGH); // поднимаем линию, говоря датчику, что он свободен
 
 
-  int8_t temperatureValue = 0;
+  int16_t temperatureValue = 0;
   uint8_t temperatureFract = 0;
   
-  int8_t humidityValue = 0;
+  int16_t humidityValue = 0;
   uint8_t humidityFract = 0;
 
 
@@ -966,16 +984,108 @@ bool CoreSensorDHT::read(uint8_t* buffer)
   temperatureFract = fahren.Fract;
  }  
 
-  buffer[0] = temperatureValue;
-  buffer[1] = temperatureFract;
+  uint8_t* ptr = (uint8_t*)&temperatureValue;
+  buffer[0] = *ptr++;
+  buffer[1] = *ptr;
+  buffer[2] = temperatureFract;
 
-  buffer[2] = humidityValue;
-  buffer[3] = humidityFract;
+  ptr = (uint8_t*)&humidityValue;
+  buffer[3] = *ptr++;
+  buffer[4] = *ptr;
+  buffer[5] = humidityFract;
   
   return true;  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_DHT_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_MAX6675_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#include <SPI.h>
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreSensorMAX6675::CoreSensorMAX6675() : CoreSensor(MAX6675)
+{
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint8_t CoreSensorMAX6675::getDataSize()
+{
+  return 3;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSensorMAX6675::begin(uint8_t* configData)
+{
+  cs = *configData++;
+  slow = *configData == 1;
+
+  if(!__isSPIInited)
+  {
+    __isSPIInited = true;
+    SPI.begin();
+  }
+
+  pinMode(cs, OUTPUT);
+  digitalWrite(cs, HIGH);  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+double CoreSensorMAX6675::readCelsius() 
+{
+  uint16_t v;
+
+  digitalWrite(cs, LOW);
+
+  delayMicroseconds(1000);
+
+   uint8_t oldSPCR = SPCR;
+  if(slow)
+  {
+      oldSPCR = SPCR;
+      SPCR |= 3; // As slow as possible (clock/128 or clock/64 depending on SPI2X)
+  }
+  
+  v = SPI.transfer16(0);
+    
+  if(slow)
+  {
+      SPCR = oldSPCR;
+  }
+  
+  digitalWrite(cs, HIGH);
+  // CSB Rise to Output Disable
+  delayMicroseconds(1000);
+
+  if (v & 0x4) 
+  {
+    // не найдено термопары
+    return NAN;
+  }
+
+  v >>= 3;
+
+  return v*0.25;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreSensorMAX6675::read(uint8_t* buffer)
+{
+
+  double val = readCelsius();
+  if(isnan(val))
+    return false;
+
+  int32_t iVal = val*100;
+    
+  int16_t temperatureValue = iVal/100;
+  uint8_t temperatureFract = abs(iVal)%100;
+
+  uint8_t* ptr = (uint8_t*)&temperatureValue;
+  buffer[0] = *ptr++;
+  buffer[1] = *ptr;
+  buffer[2] = temperatureFract;
+  
+  return true;  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_MAX6675_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_DS3231_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -995,7 +1105,7 @@ uint8_t CoreSensorDS3231::getDataSize()
   if(!isTempOnly)
     return 8; // дата/время, день недели
   else
-    return 2; // только температура
+    return 3; // только температура
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorDS3231::begin(uint8_t* configData)
@@ -1079,16 +1189,23 @@ bool CoreSensorDS3231::read(uint8_t* buffer)
             rtcTemp.b[0] = wire->read();
         
             long tempC100 = (rtcTemp.i >> 6) * 25;
+            
+            int16_t tempValue = tempC100/100;
+            uint8_t tempFract = abs(tempC100 % 100);
+            uint8_t* ptr = (uint8_t*)&tempValue;
         
-            buffer[0] = tempC100/100;
-            buffer[1] = abs(tempC100 % 100);
+            buffer[0] = *ptr++;
+            buffer[1] = *ptr;
+            buffer[2] = tempFract;
 
              if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
              {
-              TemperatureData fahren = {(int8_t)buffer[0], buffer[1]}; 
+              TemperatureData fahren = {tempValue, tempFract}; 
               fahren = TemperatureData::ConvertToFahrenheit(fahren);
-              buffer[0] = fahren.Value;
-              buffer[1] = fahren.Fract;
+              ptr = (uint8_t*)&(fahren.Value);
+              buffer[0] = *ptr++;
+              buffer[1] = *ptr;
+              buffer[2] = fahren.Fract;
              }    
 
             return true;
@@ -1578,7 +1695,7 @@ uint16_t CoreSensorDS18B20::startMeasure()
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreSensorDS18B20::getDataSize()
 {
-  return 2;
+  return 3;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSensorDS18B20::read(uint8_t* buffer)
@@ -1589,9 +1706,13 @@ bool CoreSensorDS18B20::read(uint8_t* buffer)
   bool result = myManager->readTemperature(temp,tempFract,this);
   if(result)
   {
+
+      int16_t tTemp = temp;
+      uint8_t* ptr = (uint8_t*)&tTemp;
       
-      buffer[0] = temp;
-      buffer[1] = tempFract;
+      buffer[0] = *ptr++;
+      buffer[1] = *ptr;
+      buffer[2] = tempFract;
   }
   return result;
 }

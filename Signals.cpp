@@ -399,17 +399,17 @@ bool SignalHandler::compareLuminosity(LuminosityData& dataStored, SignalOperands
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 bool SignalHandler::compareHumidity(HumidityData& dataStored, SignalOperands operand, uint8_t* data, uint8_t dataLength)
 {
-    if(dataLength < 6)
+    if(dataLength < 8)
     {
       DBGLN(F("SIG: compareHumidity - MALFORMED DATA!"));
       return false;
     }
   
-  // dataLength у нас не меньше 6, и в зависимости от операнда - там либо одно значение, либо - попадание в диапазон
-  // в третьем байте - указание, чего сравниваем - влажность или температуру
-  if(data[2] == 1)
+  // dataLength у нас не меньше 8, и в зависимости от операнда - там либо одно значение, либо - попадание в диапазон
+  // в четвёртом байте - указание, чего сравниваем - влажность или температуру
+  if(data[3] == 1)
   {
-    //DBGLN(F("SIG: compare humidity humidity"));
+   // DBGLN(F("SIG: compare humidity humidity"));
       
     // сравниваем влажность
     return compareTemperature(dataStored.Humidity, operand, data, dataLength);
@@ -426,32 +426,34 @@ bool SignalHandler::compareHumidity(HumidityData& dataStored, SignalOperands ope
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 bool SignalHandler::compareTemperature(TemperatureData& dataStored, SignalOperands operand, uint8_t* data, uint8_t dataLength)
 {
-    if(dataLength < 6)
+    if(dataLength < 8)
     {
-      DBGLN(F("SIG: compareTemperature - MALFORMED DATA!"));
+      DBG(F("SIG: compareTemperature - MALFORMED DATA, dataLength="));
+      DBGLN(dataLength);
       return false;
     }
   
-  // dataLength у нас не меньше 6, и в зависимости от операнда - там либо одно значение, либо - попадание в диапазон
+  // dataLength у нас не меньше 8, и в зависимости от операнда - там либо одно значение, либо - попадание в диапазон
 
   TemperatureData tempFrom, tempTo;
-  tempFrom.Value = (int8_t) data[0]; // в первом байте - значение температуры в целых
+  // в первых двух байтах - значение температуры в целых
+  memcpy(&(tempFrom.Value),data,sizeof(int16_t));
 
-  // во втором байте - значение температуры в сотых
-  tempFrom.Fract = data[1];
+  // в третьем байте - значение температуры в сотых
+  tempFrom.Fract = data[2];
 
-  // третий байт - игнорируем, там признак для влажности стоит
+  // четвёртый байт - игнорируем, там признак для влажности стоит
 
-  // в четвёртом байте - значение конечного диапазона температуры, в целых
-  tempTo.Value = (int8_t) data[3];
+  // в пятом и шестом байте - значение конечного диапазона температуры, в целых
+  memcpy(&(tempTo.Value),&(data[4]),sizeof(int16_t));
   
-  // в пятом байте - значение конечного диапазона температуры, в сотых
-  tempTo.Fract = data[4];
+  // в седьмом байте - значение конечного диапазона температуры, в сотых
+  tempTo.Fract = data[6];
 
-  //DBG(F("SIG: compare temperature, toCompare="));
-  //DBG(tempFrom);
-  //DBG(F("; stored="));
-  //DBGLN(dataStored);
+//  DBG(F("SIG: compare temperature, toCompare="));
+//  DBG(tempFrom);
+//  DBG(F("; stored="));
+//  DBGLN(dataStored);
 
   switch(operand)
   {
