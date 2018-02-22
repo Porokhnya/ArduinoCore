@@ -363,7 +363,7 @@ PressureData PressureData::ConvertToMmHg(const PressureData& from)
   return result;  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-int PressureData::raw() const
+int32_t PressureData::raw() const
 {
   int32_t result = abs(Value)*100;
   result += Fract;
