@@ -5,11 +5,13 @@ extern "C" {
 static void __nolora(uint8_t* b, int dummy){}
 static void __noincomingcall(const String& phoneNumber, bool isKnownNumber, bool& shouldHangUp) {}
 static void __nosmsreceived(const String& phoneNumber, const String& message, bool isKnownNumber) {}
+static void __nors485received(Stream* stream, uint16_t dataToRead){}
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_LORA_RECEIVE(uint8_t*, int16_t) __attribute__ ((weak, alias("__nolora")));
 void ON_INCOMING_CALL(const String& phoneNumber, bool isKnownNumber, bool& shouldHangUp) __attribute__ ((weak, alias("__noincomingcall")));
 void ON_SMS_RECEIVED(const String& phoneNumber,const String& message, bool isKnownNumber) __attribute__ ((weak, alias("__nosmsreceived")));
+void ON_RS485_DATA_RECEIVED(Stream* stream, uint16_t dataToRead) __attribute__ ((weak, alias("__nors485received")));
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_RS485_TRANSPORT_ENABLED
 CoreRS485Settings RS485Settings;
@@ -321,13 +323,6 @@ CoreRS485::CoreRS485()
   
 #endif // CORE_RS485_DISABLE_CORE_LOGIC
   
-/*  
-  dataBuffer = NULL;
-  dataBufferLen = 0;
-  writeIterator = 0;
-  
-  machineState = rs485WaitingHeader;
-*/  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 HardwareSerial* CoreRS485::getMyStream(uint8_t SerialNumber)
@@ -426,6 +421,34 @@ bool CoreRS485::gotRS485Packet()
 {
   // проверяем, есть ли у нас валидный RS-485 пакет
   return rs485WritePtr > ( sizeof(CoreTransportPacket)-1 );
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreRS485::processUserDataPacket()
+{
+  CorePacketAnyData data;
+  memcpy(&data,&rs485Packet,sizeof(CorePacketAnyData));
+
+  // вызываем событие, говорящее о том, сколько байт надо вычитать
+  ON_RS485_DATA_RECEIVED(workStream,data.DataLength);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreRS485::gotUserDataPacket()
+{
+  // проверяем, есть ли у нас пакет с пользовательскими данными
+  if(rs485WritePtr == sizeof(CorePacketAnyData))
+  {
+    // возможно, это пакет с пользовательскими данными, пробуем проверить
+    CorePacketAnyData possibleUserData, ethalonUserData;
+    memcpy(&possibleUserData,&rs485Packet,sizeof(CorePacketAnyData));
+    if(!memcmp(&(possibleUserData.STX),&(ethalonUserData.STX), sizeof(ethalonUserData.STX)) && 
+    !memcmp(&(possibleUserData.ETX),&(ethalonUserData.ETX), sizeof(ethalonUserData.ETX)))
+    {
+      DBG(F("RS485: User data packet detected, length: "));
+      DBGLN(possibleUserData.DataLength);
+      return true;
+    }
+  }
+  return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::processRS485Packet()
@@ -625,10 +648,17 @@ void CoreRS485::processIncomingRS485Packets() // обрабатываем вхо
   while(workStream->available())
   {
     rsPacketPtr[rs485WritePtr++] = (uint8_t) workStream->read();
-   
-    if(gotRS485Packet())
+
+    if(gotUserDataPacket())
     {
-      processRS485Packet();
+      processUserDataPacket();
+    }
+    else
+    {
+      if(gotRS485Packet())
+      {
+        processRS485Packet();
+      }
     }
   } // while
   
@@ -1043,7 +1073,37 @@ void CoreRS485::addToExcludedList(uint8_t clientNumber)
   excludedList.push_back(rec);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-#endif // CORE_RS485_DISABLE_CORE_LOGIC
+void CoreRS485::endUserPacket()
+{
+  if(!workStream) // нет буфера для данных или неизвестный Serial
+    return;
+
+  waitTransmitComplete();
+  switchToReceive();
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreRS485::echo(uint8_t* data, uint16_t dataSize)
+{
+  sendData(data,dataSize);  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+Stream* CoreRS485::beginUserPacket(uint16_t dataSize)
+{
+  if(!workStream)
+    return NULL;
+
+   CorePacketAnyData anyData;
+   anyData.DataLength = dataSize;
+
+   switchToSend();
+
+   sendData((uint8_t*)&anyData,sizeof(CorePacketAnyData));
+
+   return workStream;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // !CORE_RS485_DISABLE_CORE_LOGIC
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::update()
 {
@@ -1072,22 +1132,6 @@ void CoreRS485::reset()
   if(!RS485Settings.enabled)
     return;
   
-  /*
-  // тут очищаем наши данные
-  delete [] dataBuffer;
-  dataBuffer = NULL;
-  dataBufferLen = 0;
-  writeIterator = 0;
-  machineState = rs485WaitingHeader;
-
-  for(size_t i=0;i<knownHeaders.size();i++)
-  {
-    delete [] knownHeaders[i].header;
-  }
-
-  while(knownHeaders.size())
-    knownHeaders.pop();
-    */
 
   #ifndef CORE_RS485_DISABLE_CORE_LOGIC
   
@@ -1099,30 +1143,6 @@ void CoreRS485::reset()
   #endif // CORE_RS485_DISABLE_CORE_LOGIC
     
 }
-//--------------------------------------------------------------------------------------------------------------------------------------
-/*
-void CoreRS485::addKnownPacketHeader(uint8_t* header, uint8_t headerSize, uint8_t packetDataLen, uint8_t packetID)
-{
-  RS485IncomingHeader knownHeader;
-  
-  knownHeader.headerLen = headerSize;
-  knownHeader.header = new byte[headerSize];
-  memcpy(knownHeader.header,header,headerSize);
-  knownHeader.packetDataLen = packetDataLen;
-  knownHeader.packetID = packetID;
-
-  knownHeaders.push_back(knownHeader);
-
-  // смотрим - хватает ли нам места под самый большой из известных заголовков пакетов на шине
-  if(dataBufferLen < (headerSize + packetDataLen))
-  {
-    delete [] dataBuffer;
-    dataBufferLen = headerSize + packetDataLen;
-    dataBuffer = new uint8_t[dataBufferLen];
-  }
-  
-}
-*/
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreRS485::waitTransmitComplete()
 {
@@ -1166,7 +1186,7 @@ void CoreRS485::waitTransmitComplete()
   #endif  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreRS485::sendData(uint8_t* data, uint8_t dataSize)
+void CoreRS485::sendData(uint8_t* data, uint16_t dataSize)
 {
   if(!workStream)
     return;

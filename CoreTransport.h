@@ -18,6 +18,7 @@ extern "C" {
   void ON_LORA_RECEIVE(uint8_t* packet, int16_t packetSize);
   void ON_INCOMING_CALL(const String& phoneNumber, bool isKnownNumber, bool& shouldHangUp);
   void ON_SMS_RECEIVED(const String& phoneNumber,const String& message, bool isKnownNumber);
+  void ON_RS485_DATA_RECEIVED(Stream* stream, uint16_t dataToRead);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 // типы пакетов, гоняющихся по транспортам
@@ -99,6 +100,25 @@ typedef struct
   uint8_t reserved[12]; // резерв
   
 } CoreDataReceiptPacket;
+//--------------------------------------------------------------------------------------------------------------------------------------
+// пакет заголовка для любых пользовательских данных на шине RS-485
+//--------------------------------------------------------------------------------------------------------------------------------------
+#define DATA_STX 'A'
+#define DATA_ETX 'Z'
+//--------------------------------------------------------------------------------------------------------------------------------------
+struct CorePacketAnyData
+{
+  uint8_t STX[4];
+  uint16_t DataLength;
+  uint8_t ETX[4];
+
+  CorePacketAnyData()
+  {
+    memset(STX,DATA_STX,sizeof(STX));
+    memset(ETX,DATA_ETX,sizeof(ETX));
+    DataLength = 0;
+  }
+};
 //--------------------------------------------------------------------------------------------------------------------------------------
 #pragma pack(pop)
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -613,21 +633,38 @@ class CoreRS485
     void update();
     void reset();
 
+    
+#ifdef CORE_RS485_DISABLE_CORE_LOGIC // только при выключенной логике работы ядра
+
     // возвращает UART, используемый для RS-485
     HardwareSerial* getSerial() {return workStream; }
 
-    void sendData(uint8_t* data, uint8_t dataSize); // отправляет данные в шину: переключается на передачу, посылает данные, после отсыла - переключается на приём
+    void sendData(uint8_t* data, uint16_t dataSize); // отправляет данные в шину: переключается на передачу, посылает данные, после отсыла - переключается на приём
     void switchToReceive(); // переключается на приём
     void switchToSend(); // переключается на передачу
     void waitTransmitComplete(); //ждёт окончания передачи
     
-//    void addKnownPacketHeader(uint8_t* header, uint8_t headerSize, uint8_t packetDataLen, uint8_t packetID); // добавляем пакет в известные пакеты на шине
-
-
+#else
+    // логика работы ядра включена, разрешаем посылать пользовательские пакеты данных
+    Stream* beginUserPacket(uint16_t dataSize); // начинает пользовательский пакет с данными, возвращает Stream, в который надо записать данные указанной длины
+    void endUserPacket(); // завершает передачу пользовательского пакета
+    void echo(uint8_t* data, uint16_t dataSize); // посылаем ответ на пакет пользовательских данных
+    
+#endif // CORE_RS485_DISABLE_CORE_LOGIC   
+    
 private:
 
 #ifndef CORE_RS485_DISABLE_CORE_LOGIC
 
+  bool gotUserDataPacket();
+  void processUserDataPacket();
+
+  // когда логика ядра включена - перемещаем эти функции в private, т.к. при включенной логике мы предоставляем другой интерфейс отсыла пользовательских пакетов
+  void sendData(uint8_t* data, uint16_t dataSize); // отправляет данные в шину: переключается на передачу, посылает данные, после отсыла - переключается на приём
+  void switchToReceive(); // переключается на приём
+  void switchToSend(); // переключается на передачу
+  void waitTransmitComplete(); //ждёт окончания передачи
+    
   CoreRS485ExcludedList excludedList;
   bool inExcludedList(uint8_t clientNumber);
   void addToExcludedList(uint8_t clientNumber);
@@ -642,7 +679,8 @@ private:
   bool gotRS485Packet();
   void processIncomingRS485Packets();
   void processRS485Packet();
-#endif // CORE_RS485_DISABLE_CORE_LOGIC
+  
+#endif // !CORE_RS485_DISABLE_CORE_LOGIC
 
   HardwareSerial* workStream;
   HardwareSerial* getMyStream(uint8_t SerialNumber);
