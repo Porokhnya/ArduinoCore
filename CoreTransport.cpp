@@ -7,7 +7,7 @@ static void __noincomingcall(const String& phoneNumber, bool isKnownNumber, bool
 static void __nosmsreceived(const String& phoneNumber, const String& message, bool isKnownNumber) {}
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void ON_LORA_RECEIVE(uint8_t*, int) __attribute__ ((weak, alias("__nolora")));
+void ON_LORA_RECEIVE(uint8_t*, int16_t) __attribute__ ((weak, alias("__nolora")));
 void ON_INCOMING_CALL(const String& phoneNumber, bool isKnownNumber, bool& shouldHangUp) __attribute__ ((weak, alias("__noincomingcall")));
 void ON_SMS_RECEIVED(const String& phoneNumber,const String& message, bool isKnownNumber) __attribute__ ((weak, alias("__nosmsreceived")));
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -60,7 +60,7 @@ void CoreTransportClient::setID(uint8_t id)
   clientID = id;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::setConnected(bool flag, int errorCode)
+void CoreTransportClient::setConnected(bool flag, int16_t errorCode)
 {
   // если была ошибка - по-любому постим событие с ошибкой
   if(errorCode != CT_ERROR_NONE)
@@ -175,7 +175,7 @@ uint8_t CoreTransportClient::getID()
   return clientID;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::notifyDataWritten(int errorCode)
+void CoreTransportClient::notifyDataWritten(int16_t errorCode)
 {
   // говорим, что данные записаны в поток
   raiseEvent(etDataWritten, errorCode);
@@ -223,7 +223,7 @@ void CoreTransportClient::unsubscribe(IClientEventsSubscriber* subscriber)
     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::raiseEvent(ClientEventType et, int errorCode)
+void CoreTransportClient::raiseEvent(ClientEventType et, int16_t errorCode)
 {
   for(size_t i=0;i<subscribers.size();i++)
   {
@@ -276,7 +276,7 @@ void CoreTransport::unsubscribeClient(CoreTransportClient& client, IClientEvents
   client.unsubscribe(subscriber);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::notifyClientDataWritten(CoreTransportClient& client,int errorCode)
+void CoreTransport::notifyClientDataWritten(CoreTransportClient& client,int16_t errorCode)
 {
   client.notifyDataWritten(errorCode);
 }
@@ -296,7 +296,7 @@ void CoreTransport::setClientID(CoreTransportClient& client, uint8_t id)
     client.setID(id);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::setClientConnected(CoreTransportClient& client, bool isConnected, int errorCode)
+void CoreTransport::setClientConnected(CoreTransportClient& client, bool isConnected, int16_t errorCode)
 {
   client.setConnected(isConnected, errorCode);
 }
@@ -649,12 +649,12 @@ void CoreRS485::updateMasterMode()
     
   // тут обновляем данные, посылая в линию запросы на получение информации с датчиков
 
-   static unsigned long past = 0;
-   unsigned long now = millis();
+   static uint32_t past = 0;
+   uint32_t now = millis();
 
-   static int currentClientNumber = 0;
+   static int16_t currentClientNumber = 0;
 
-   unsigned long pollInterval = 0;
+   uint32_t pollInterval = 0;
 
    // когда мало клиентов - минимальное время опроса между ними надо увеличивать, т.к. незачем дёргать два несчастных клиента несколько раз в секунду.
    // для этого мы смотрим - если живых клиентов мало, то мы пересчитываем интервал обновления.
@@ -686,9 +686,9 @@ void CoreRS485::updateMasterMode()
       }
     }
 
-     unsigned long tmoDivider = RS485Settings.UARTSpeed;
+     uint32_t tmoDivider = RS485Settings.UARTSpeed;
      tmoDivider *= 9600;
-     unsigned long readTimeout  = (10000000ul/tmoDivider)*10; // кол-во микросекунд, необходимое для вычитки десяти байт
+     uint32_t readTimeout  = (10000000ul/tmoDivider)*10; // кол-во микросекунд, необходимое для вычитки десяти байт
 
 /*     
      #ifdef _CORE_DEBUG
@@ -739,7 +739,7 @@ void CoreRS485::updateMasterMode()
      // принимаем данные
      
      // запоминаем время начала чтения
-     unsigned long startReadingTime = micros();
+     uint32_t startReadingTime = micros();
 
   // начинаем читать данные
       while(1)
@@ -1188,7 +1188,7 @@ CoreESPTransport ESP;
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreESPTransport::CoreESPTransport() : CoreTransport()
 {
-  for(int i=0;i<ESP_MAX_CLIENTS;i++)
+  for(uint8_t i=0;i<ESP_MAX_CLIENTS;i++)
     clients[i] = NULL;
 
   wiFiReceiveBuff = new String();
@@ -1603,7 +1603,7 @@ void CoreESPTransport::processIPD()
   // здесь в wiFiReceiveBuff лежит только команда вида +IPD,<id>,<len>:
   // все данные надо вычитывать из потока
         
-    int idx = wiFiReceiveBuff->indexOf(F(",")); // ищем первую запятую после +IPD
+    int16_t idx = wiFiReceiveBuff->indexOf(F(",")); // ищем первую запятую после +IPD
     const char* ptr = wiFiReceiveBuff->c_str();
     ptr += idx+1;
     // перешли за запятую, парсим ID клиента
@@ -1622,7 +1622,7 @@ void CoreESPTransport::processIPD()
     }
 
     // получили ID клиента и длину его данных, которые - пока в потоке, и надо их быстро попакетно вычитать
-    int clientID = connectedClientID.toInt();
+    int16_t clientID = connectedClientID.toInt();
     size_t lengthOfData = dataLen.toInt();
     
     if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
@@ -1642,7 +1642,7 @@ void CoreESPTransport::processIPD()
        // поскольку у нас её - не вагон.
 
       // пусть у нас будет максимум 512 байт на пакет
-      const int MAX_PACKET_SIZE = 512;
+      const uint16_t MAX_PACKET_SIZE = 512;
       
       // если длина всех данных меньше 512 - просто тупо все сразу вычитаем
        uint16_t packetSize = min(MAX_PACKET_SIZE,lengthOfData);
@@ -1924,7 +1924,7 @@ void CoreESPTransport::update()
                 // поэтому мы будем звать её минимум раз в N секунд. При этом следует учитывать, что мы всё равно должны звать эту команду
                 // вне зависимости от того, откликается ли ESP или нет, т.к. в этой команде мы проверяем - есть ли соединение с роутером.
                 // эту проверку надо делать периодически, чтобы форсировать переподсоединение, если роутер отвалился.
-                static unsigned long hangTimer = 0;
+                static uint32_t hangTimer = 0;
                 if(millis() - hangTimer > 30000)
                 {
                  // DBGLN(F("ESP: want to check modem availability..."));
@@ -2259,7 +2259,7 @@ void CoreESPTransport::update()
         case espReboot:
         {
           // ждём перезагрузки модема
-          unsigned long powerOffTime = ESPTransportSettings.HangPowerOffTime;
+          uint32_t powerOffTime = ESPTransportSettings.HangPowerOffTime;
           powerOffTime *= 1000;
           if(millis() - timer > powerOffTime)
           {
@@ -2279,7 +2279,7 @@ void CoreESPTransport::update()
 
         case espWaitInit:
         {
-          unsigned long waitTime = ESPTransportSettings.WaitInitTIme;
+          uint32_t waitTime = ESPTransportSettings.WaitInitTIme;
           waitTime *= 1000;
           if(millis() - timer > waitTime)
           {            
@@ -2299,12 +2299,12 @@ void CoreESPTransport::update()
     {
       
        // смотрим, подсоединился ли клиент?
-       int idx = wiFiReceiveBuff->indexOf(F(",CONNECT"));
+       int16_t idx = wiFiReceiveBuff->indexOf(F(",CONNECT"));
        if(idx != -1)
        {
           // клиент подсоединился
           String s = wiFiReceiveBuff->substring(0,idx);
-          int clientID = s.toInt();
+          int16_t clientID = s.toInt();
           if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
           {
             DBG(F("ESP: client connected - #"));
@@ -2323,7 +2323,7 @@ void CoreESPTransport::update()
        {
         // клиент отсоединился
           String s = wiFiReceiveBuff->substring(0,idx);
-          int clientID = s.toInt();
+          int16_t clientID = s.toInt();
           if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
           {
             DBG(F("ESP: client disconnected - #"));
@@ -2361,7 +2361,7 @@ void CoreESPTransport::update()
     {
 
       // нет ответа от ESP, проверяем, зависла ли она?
-      unsigned long hangTime = ESPTransportSettings.HangTimeout;
+      uint32_t hangTime = ESPTransportSettings.HangTimeout;
       hangTime *= 1000;
 
       if(millis() - timer > hangTime)
@@ -2448,7 +2448,7 @@ void CoreESPTransport::begin()
 
   if(hs)
   {
-    unsigned long uspeed = ESPTransportSettings.UARTSpeed;
+    uint32_t uspeed = ESPTransportSettings.UARTSpeed;
     uspeed *= 9600;
   
     hs->begin(uspeed);
@@ -2565,7 +2565,7 @@ void CoreESPTransport::clearClientsQueue(bool raiseEvents)
   clientsQueue.empty();
 
   // помимо этого - надо принудительно всем клиентам выставить статус "Отсоединён"
-  for(int i=0;i<ESP_MAX_CLIENTS;i++)
+  for(uint8_t i=0;i<ESP_MAX_CLIENTS;i++)
   {
     setClientBusy(*(clients[i]),false);
     setClientConnected(*(clients[i]),false,CT_ERROR_NONE); 
@@ -2633,7 +2633,7 @@ void CoreESPTransport::removeClientFromQueue(CoreTransportClient* client)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::initClients()
 {
-  for(int i=0;i<ESP_MAX_CLIENTS;i++)
+  for(uint8_t i=0;i<ESP_MAX_CLIENTS;i++)
   {
     if(clients[i])
       continue;
@@ -2648,7 +2648,7 @@ void CoreESPTransport::subscribe(IClientEventsSubscriber* subscriber)
 {
   initClients();
   
-  for(int i=0;i<ESP_MAX_CLIENTS;i++)
+  for(uint8_t i=0;i<ESP_MAX_CLIENTS;i++)
   {
     subscribeClient(*(clients[i]),subscriber);
   }
@@ -2658,7 +2658,7 @@ void CoreESPTransport::unsubscribe(IClientEventsSubscriber* subscriber)
 {
   initClients();
   
-  for(int i=0;i<ESP_MAX_CLIENTS;i++)
+  for(uint8_t i=0;i<ESP_MAX_CLIENTS;i++)
   {
     unsubscribeClient(*(clients[i]),subscriber);
   }
@@ -2669,7 +2669,7 @@ CoreTransportClient* CoreESPTransport::getFreeClient()
   if(!ready()) // если ещё не готовы к работе - ничего не возвращаем
     return NULL;
   
-  for(int i=0;i<ESP_MAX_CLIENTS;i++)
+  for(uint8_t i=0;i<ESP_MAX_CLIENTS;i++)
   {
     if(!clients[i]->connected() && !clients[i]->busy()) // возвращаем первого неподсоединённого и незанятого чем-либо клиента
       return clients[i];
@@ -2759,12 +2759,12 @@ CoreESPWebServerClass::CoreESPWebServerClass()
   dynamicHandlerClient = NULL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPWebServerClass::OnClientConnect(CoreTransportClient& client, bool connected, int errorCode)
+void CoreESPWebServerClass::OnClientConnect(CoreTransportClient& client, bool connected, int16_t errorCode)
 {
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPWebServerClass::OnClientDataWritten(CoreTransportClient& client, int errorCode)
+void CoreESPWebServerClass::OnClientDataWritten(CoreTransportClient& client, int16_t errorCode)
 {
 //  DBG(F("WEB: Client DATA WRITTEN, errorCode = "));
 //  DBGLN(errorCode);
@@ -2820,9 +2820,9 @@ void CoreESPWebServerClass::sendNextFileData(CoreWebServerPendingFileData* pfd)
     return;
 
   // тут читаем в буфер, и отсылаем
-  const int BUFFER_SIZE = CORE_ESP_WEB_SERVER_CLIENT_BUFFER; // будем читать по N байт
+  const int16_t BUFFER_SIZE = CORE_ESP_WEB_SERVER_CLIENT_BUFFER; // будем читать по N байт
 
-  unsigned long toSend = min(BUFFER_SIZE,pfd->pendingBytes);
+  uint32_t toSend = min(BUFFER_SIZE,pfd->pendingBytes);
 
  // DBG(F("WEB: sendNextFileData, dataLen="));
  // DBGLN(toSend);
@@ -2830,15 +2830,15 @@ void CoreESPWebServerClass::sendNextFileData(CoreWebServerPendingFileData* pfd)
   uint8_t* buff = new uint8_t[toSend];
   
   //тут чтение из файла
-  for(unsigned long i=0;i<toSend;i++)
+  for(uint32_t i=0;i<toSend;i++)
   {
-     int iCh = pfd->file.read();
+      int16_t iCh = pfd->file.read();
       if(iCh == -1)
       {
         // ОШИБКА ЧТЕНИЯ С ФАЙЛА!!!
         break;
       }
-       buff[i] = (byte) iCh;
+       buff[i] = (uint8_t) iCh;
   }
 
   pfd->pendingBytes -= toSend;
@@ -2878,9 +2878,9 @@ bool CoreESPWebServerClass::isOurClient(CoreTransportClient* client)
 String UrlDecode(const String& uri) // декодирует URI-строку
 {
   String result;
-  int len = uri.length();
+  int16_t len = uri.length();
   result.reserve(len);
-  int s = 0;
+  int16_t s = 0;
 
  while (s < len) 
  {
@@ -3089,7 +3089,7 @@ String CoreESPWebServerClass::getContentType(const String& fileName)
     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPWebServerClass::send(int statusCode, const char* contentType, const char* data)
+void CoreESPWebServerClass::send(int16_t statusCode, const char* contentType, const char* data)
 {
   if(!dynamicHandlerClient)
     return;
@@ -3455,9 +3455,9 @@ void CoreMQTT::processIncomingPacket(CoreTransportClient* client)
 
       // декодируем длину сообщения
       
-        unsigned long multiplier = 1;
-        int remainingLength = 0;
-        unsigned int curReadPos = 1;
+        uint32_t multiplier = 1;
+        int16_t remainingLength = 0;
+        uint16_t curReadPos = 1;
         uint8_t encodedByte;
         
         do
@@ -3567,7 +3567,7 @@ void CoreMQTT::processIncomingPacket(CoreTransportClient* client)
             // удаляем ненужные префиксы
             topic.remove(0,normalizedTopic - topic.c_str() );
             bool bFirst = true;
-            for(unsigned int k=0;k<topic.length();k++)
+            for(uint16_t k=0;k<topic.length();k++)
             {
               if(topic[k] == '/')
               {
@@ -3662,7 +3662,7 @@ void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreMQTT::OnClientDataWritten(CoreTransportClient& client, int errorCode)
+void CoreMQTT::OnClientDataWritten(CoreTransportClient& client, int16_t errorCode)
 {
   
   if(!currentClient || &client != currentClient) // не наш клиент
@@ -3684,7 +3684,7 @@ void CoreMQTT::OnClientDataWritten(CoreTransportClient& client, int errorCode)
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreMQTT::OnClientConnect(CoreTransportClient& client, bool connected, int errorCode)
+void CoreMQTT::OnClientConnect(CoreTransportClient& client, bool connected, int16_t errorCode)
 {
   if(!currentClient || &client != currentClient) // не наш клиент
     return;
@@ -3714,19 +3714,19 @@ void CoreMQTT::convertAnswerToJSON(const String& answer, String* resultBuffer)
   // тут мы должны сформировать объект JSON из ответа, для этого надо разбить ответ по разделителям, и для каждого параметра создать именованное поле
   // в анонимном JSON-объекте
   // прикинем, сколько нам памяти надо резервировать, чтобы вместиться
-  int neededJsonLen = 3; // {} - под скобки и завершающий ноль
+  int16_t neededJsonLen = 3; // {} - под скобки и завершающий ноль
   // считаем кол-во параметров ответа
-  int jsonParamsCount=1; // всегда есть один ответ
-  int answerLen = answer.length();
+  int16_t jsonParamsCount=1; // всегда есть один ответ
+  int16_t answerLen = answer.length();
   
-  for(int j=0;j<answerLen;j++)
+  for(int16_t j=0;j<answerLen;j++)
   {
     if(answer[j] == CORE_COMMAND_PARAM_DELIMITER) // разделитель
       jsonParamsCount++;
   }
   // у нас есть количество параметров, под каждый параметр нужно минимум 6 символов ("p":""), плюс длина числа, которое будет как имя
   // параметра, плюс длина самого параметра, плюс запятые между параметрами
-  int paramNameCharsCount = jsonParamsCount > 9 ? 2 : 1;
+  int16_t paramNameCharsCount = jsonParamsCount > 9 ? 2 : 1;
 
    neededJsonLen += (6 + paramNameCharsCount)*jsonParamsCount + (jsonParamsCount-1) + answer.length();
 
@@ -3738,13 +3738,13 @@ void CoreMQTT::convertAnswerToJSON(const String& answer, String* resultBuffer)
 
     if(answerLen > 0)
     {
-       int currentParamNumber = 1;
+       int16_t currentParamNumber = 1;
 
        *resultBuffer += F("\"p");
        *resultBuffer += currentParamNumber;
        *resultBuffer += F("\":\"");
        
-       for(int j=0;j<answerLen;j++)
+       for(int16_t j=0;j<answerLen;j++)
        {
          if(answer[j] == CORE_COMMAND_PARAM_DELIMITER)
          {
@@ -3780,7 +3780,7 @@ bool CoreMQTT::publish(const char* topicName, const char* payload)
     return false; 
     
   MQTTPublishQueue pq;
-  int tnLen = strlen(topicName);
+  int16_t tnLen = strlen(topicName);
   pq.topic = new char[tnLen+1];
   memset(pq.topic,0,tnLen+1);
   strcpy(pq.topic,topicName);
@@ -3788,7 +3788,7 @@ bool CoreMQTT::publish(const char* topicName, const char* payload)
   pq.payload = NULL;
   if(payload)
   {
-    int pllen = strlen(payload);
+    int16_t pllen = strlen(payload);
     pq.payload = new char[pllen+1];
     memset(pq.payload,0,pllen+1);
     strcpy(pq.payload,payload);    
@@ -3831,7 +3831,7 @@ void CoreMQTT::update()
 
       case mqttWaitConnection:
       {
-        unsigned long toWait = 20000;
+        uint32_t toWait = 20000;
         if(MQTTSettings.workMode == workModeThroughSIM800)
           toWait = 80000; // максимальное время ответа для SIM800 - 75 секунд
         
@@ -3871,7 +3871,7 @@ void CoreMQTT::update()
           DBGLN(F("MQTT: start send connect packet!"));
   
           String mqttBuffer;
-          int mqttBufferLength;
+          int16_t mqttBufferLength;
           
           constructConnectPacket(mqttBuffer,mqttBufferLength,
             MQTTSettings.clientID.c_str() // client id
@@ -3910,7 +3910,7 @@ void CoreMQTT::update()
         if(currentClient)
         {
           String mqttBuffer;
-          int mqttBufferLength;
+          int16_t mqttBufferLength;
             
           // конструируем пакет подписки
           String topic = MQTTSettings.clientID;
@@ -3940,7 +3940,7 @@ void CoreMQTT::update()
         bool hasReportTopics = reportQueue.size() > 0;
         bool hasPublishTopics = publishList.size() > 0;
         
-        unsigned long interval = MQTTSettings.intervalBetweenTopics;
+        uint32_t interval = MQTTSettings.intervalBetweenTopics;
         if(hasReportTopics || hasPublishTopics || millis() - timer > interval)
         {
           DBGLN(F("MQTT: SEND NEXT TOPIC!"));
@@ -3948,7 +3948,7 @@ void CoreMQTT::update()
           if(currentClient)
           {
             String mqttBuffer;
-            int mqttBufferLength;
+            int16_t mqttBufferLength;
   
             // пока просто потестируем
             String topicName, data;
@@ -3963,7 +3963,7 @@ void CoreMQTT::update()
 
               // тут в имя топика надо добавить запрошенную команду, чтобы в клиенте можно было ориентироваться
               // на конкретные топики отчёта
-              int idx = reportQueue[0]->indexOf("=");
+              int16_t idx = reportQueue[0]->indexOf("=");
               String commandStatus = reportQueue[0]->substring(0,idx);
               reportQueue[0]->remove(0,idx+1);
 
@@ -4111,7 +4111,7 @@ void CoreMQTT::clearReportsQueue()
   reportQueue.empty();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreMQTT::constructPublishPacket(String& mqttBuffer,int& mqttBufferLength, const char* topic, const char* payload)
+void CoreMQTT::constructPublishPacket(String& mqttBuffer,int16_t& mqttBufferLength, const char* topic, const char* payload)
 {
   MQTTBuffer byteBuffer; // наш буфер из байт, в котором будет содержаться пакет
 
@@ -4121,7 +4121,7 @@ void CoreMQTT::constructPublishPacket(String& mqttBuffer,int& mqttBufferLength, 
   encode(byteBuffer,topic);
 
   // теперь пишем данные топика
-  int sz = strlen(payload);
+  int16_t sz = strlen(payload);
   const char* readPtr = payload;
   for(int i=0;i<sz;i++)
   {
@@ -4138,7 +4138,7 @@ void CoreMQTT::constructPublishPacket(String& mqttBuffer,int& mqttBufferLength, 
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------
-void CoreMQTT::constructSubscribePacket(String& mqttBuffer,int& mqttBufferLength, const char* topic)
+void CoreMQTT::constructSubscribePacket(String& mqttBuffer,int16_t& mqttBufferLength, const char* topic)
 {
   MQTTBuffer byteBuffer; // наш буфер из байт, в котором будет содержаться пакет
 
@@ -4168,7 +4168,7 @@ void CoreMQTT::constructSubscribePacket(String& mqttBuffer,int& mqttBufferLength
   writePacket(fixedHeader,byteBuffer,mqttBuffer,mqttBufferLength);  
 }
 //--------------------------------------------------------------------------------------------------------------------------------
-void CoreMQTT::constructConnectPacket(String& mqttBuffer,int& mqttBufferLength,const char* id, const char* user, const char* pass
+void CoreMQTT::constructConnectPacket(String& mqttBuffer,int16_t& mqttBufferLength,const char* id, const char* user, const char* pass
 ,const char* willTopic,uint8_t willQoS, uint8_t willRetain, const char* willMessage)
 {
   mqttBuffer = "";
@@ -4230,7 +4230,7 @@ void CoreMQTT::constructConnectPacket(String& mqttBuffer,int& mqttBufferLength,c
     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreMQTT::writePacket(MQTTBuffer& fixedHeader, MQTTBuffer& payload, String& mqttBuffer,int& mqttBufferLength)
+void CoreMQTT::writePacket(MQTTBuffer& fixedHeader, MQTTBuffer& payload, String& mqttBuffer,int16_t& mqttBufferLength)
 {
   mqttBuffer = "";
   
@@ -4239,11 +4239,11 @@ void CoreMQTT::writePacket(MQTTBuffer& fixedHeader, MQTTBuffer& payload, String&
 
    // теперь записываем это в строку, перед этим зарезервировав память, и заполнив строку пробелами
    mqttBuffer.reserve(mqttBufferLength);
-   for(int i=0;i<mqttBufferLength;i++)
+   for(int16_t i=0;i<mqttBufferLength;i++)
     mqttBuffer += ' ';
 
   // теперь можем копировать данные в строку побайтово
-  int writePos = 0;
+  int16_t writePos = 0;
 
   // пишем фиксированный заголовок
   for(size_t i=0;i<fixedHeader.size();i++)
@@ -4258,7 +4258,7 @@ void CoreMQTT::writePacket(MQTTBuffer& fixedHeader, MQTTBuffer& payload, String&
   }  
 }
 //--------------------------------------------------------------------------------------------------------------------------------
-void CoreMQTT::constructFixedHeader(byte command, MQTTBuffer& fixedHeader, size_t payloadSize)
+void CoreMQTT::constructFixedHeader(uint8_t command, MQTTBuffer& fixedHeader, size_t payloadSize)
 {
     fixedHeader.push_back(command); // пишем тип команды
   
@@ -4301,7 +4301,7 @@ void CoreMQTT::encode(MQTTBuffer& buff,const char* str)
     buff.push_back(0);
 
     const char* ptr = str;
-    int strLen = 0;
+    int16_t strLen = 0;
     while(*ptr)
     {
       buff.push_back(*ptr++);
@@ -4364,7 +4364,7 @@ CoreSIM800Transport SIM800;
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreSIM800Transport::CoreSIM800Transport() : CoreTransport()
 {
-  for(int i=0;i<SIM800_MAX_CLIENTS;i++)
+  for(uint8_t i=0;i<SIM800_MAX_CLIENTS;i++)
     clients[i] = NULL;
 
   sim800ReceiveBuff = new String();
@@ -4594,7 +4594,7 @@ void CoreSIM800Transport::processIPD()
   // здесь в sim800ReceiveBuff лежит только команда вида +RECEIVE,<id>,<len>:
   // все данные надо вычитывать из потока
         
-    int idx = sim800ReceiveBuff->indexOf(F(",")); // ищем первую запятую после +IPD
+    int16_t idx = sim800ReceiveBuff->indexOf(F(",")); // ищем первую запятую после +IPD
     const char* ptr = sim800ReceiveBuff->c_str();
     ptr += idx+1;
     // перешли за запятую, парсим ID клиента
@@ -4613,7 +4613,7 @@ void CoreSIM800Transport::processIPD()
     }
 
     // получили ID клиента и длину его данных, которые - пока в потоке, и надо их быстро попакетно вычитать
-    int clientID = connectedClientID.toInt();
+    int16_t clientID = connectedClientID.toInt();
     size_t lengthOfData = dataLen.toInt();
     
     if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
@@ -4632,7 +4632,7 @@ void CoreSIM800Transport::processIPD()
        // поскольку у нас её - не вагон.
 
       // пусть у нас будет максимум 512 байт на пакет
-      const int MAX_PACKET_SIZE = 512;
+      const uint16_t MAX_PACKET_SIZE = 512;
       
       // если длина всех данных меньше 512 - просто тупо все сразу вычитаем
        uint16_t packetSize = min(MAX_PACKET_SIZE,lengthOfData);
@@ -4706,7 +4706,7 @@ void CoreSIM800Transport::processIncomingCall(const String& line)
    // входящий звонок, проверяем, приняли ли мы конец строки?
     String ring = line.substring(8); // пропускаем команду +CLIP:, пробел и открывающую кавычку "
 
-    int idx = ring.indexOf("\"");
+    int16_t idx = ring.indexOf("\"");
     if(idx != -1)
       ring = ring.substring(0,idx);
 
@@ -4769,7 +4769,7 @@ void CoreSIM800Transport::sendQueuedSMS()
   delete smsToSend;
   smsToSend = new String();
   
-  int messageLength = 0;
+  int16_t messageLength = 0;
 
   SIM800OutgoingSMS* sms = &(outgoingSMSList[0]);  
  
@@ -4987,7 +4987,7 @@ void CoreSIM800Transport::update()
               {
                   // получаем первого клиента в очереди
                   SIM800ClientQueueData dt = clientsQueue[0];
-                  int clientID = dt.client->getID();
+                  int16_t clientID = dt.client->getID();
                   
                   // смотрим, чего он хочет от нас
                   switch(dt.action)
@@ -5057,7 +5057,7 @@ void CoreSIM800Transport::update()
               {
                 timer = millis(); // обновляем таймер в режиме ожидания, поскольку мы не ждём ответа на команды
 
-                static unsigned long hangTimer = 0;
+                static uint32_t hangTimer = 0;
                 if(millis() - hangTimer > 30000)
                 {
                   DBGLN(F("SIM800: want to check modem availability..."));
@@ -5147,7 +5147,7 @@ void CoreSIM800Transport::update()
                     // отсоединялись
                     if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
                     {
-                      int clientID = sim800ReceiveBuff->toInt();
+                      int16_t clientID = sim800ReceiveBuff->toInt();
                       
                       if(clientsQueue.size())
                       {
@@ -5175,7 +5175,7 @@ void CoreSIM800Transport::update()
                     
                         if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
                         {
-                          int clientID = sim800ReceiveBuff->toInt();
+                          int16_t clientID = sim800ReceiveBuff->toInt();
                                                                                                         
                           if(knownAnswer == gsmConnectOk)
                           {
@@ -5225,7 +5225,7 @@ void CoreSIM800Transport::update()
                       
                       if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
                       {
-                        int clientID = sim800ReceiveBuff->toInt();
+                        int16_t clientID = sim800ReceiveBuff->toInt();
                                                 
                         if(knownAnswer == gsmSendOk)
                         {
@@ -5628,7 +5628,7 @@ void CoreSIM800Transport::update()
         case sim800Reboot:
         {
           // ждём перезагрузки модема
-          unsigned long powerOffTime = SIM800TransportSettings.HangPowerOffTime;
+          uint32_t powerOffTime = SIM800TransportSettings.HangPowerOffTime;
           powerOffTime *= 1000;
 
           if(!SIM800TransportSettings.UseRebootPin)
@@ -5656,7 +5656,7 @@ void CoreSIM800Transport::update()
 
         case sim800WaitInit:
         {
-          unsigned long waitTime = SIM800TransportSettings.PowerKeyInitTime;
+          uint32_t waitTime = SIM800TransportSettings.PowerKeyInitTime;
 
           if(!SIM800TransportSettings.UsePowerKey)
             waitTime = 0;
@@ -5720,12 +5720,12 @@ void CoreSIM800Transport::update()
     {
       
        // смотрим, подсоединился ли клиент?
-       int idx = sim800ReceiveBuff->indexOf(F(",CONNECT OK"));
+       int16_t idx = sim800ReceiveBuff->indexOf(F(",CONNECT OK"));
        if(idx != -1)
        {
           // клиент подсоединился
           String s = sim800ReceiveBuff->substring(0,idx);
-          int clientID = s.toInt();
+          int16_t clientID = s.toInt();
           if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
           {
             DBG(F("SIM800: client connected - #"));
@@ -5745,7 +5745,7 @@ void CoreSIM800Transport::update()
        {
         // клиент отсоединился
           String s = sim800ReceiveBuff->substring(0,idx);
-          int clientID = s.toInt();
+          int16_t clientID = s.toInt();
           if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
           {
             DBG(F("SIM800: client disconnected - #"));
@@ -5770,8 +5770,8 @@ void CoreSIM800Transport::update()
     if(!hasAnswer) // проверяем на зависание
     {
 
-      // нет ответа от ESP, проверяем, зависла ли она?
-      unsigned long hangTime = SIM800TransportSettings.HangTimeout;
+      // нет ответа от SIM800, проверяем, зависла ли она?
+      uint32_t hangTime = SIM800TransportSettings.HangTimeout;
       hangTime *= 1000;
 
       if(millis() - timer > hangTime)
@@ -5851,7 +5851,7 @@ void CoreSIM800Transport::begin()
 
   if(hs)
   {
-    unsigned long uspeed = SIM800TransportSettings.UARTSpeed;
+    uint32_t uspeed = SIM800TransportSettings.UARTSpeed;
     uspeed *= 9600;
     
     hs->begin(uspeed);
@@ -5994,14 +5994,14 @@ void CoreSIM800Transport::clearClientsQueue(bool raiseEvents)
   clientsQueue.empty();
 
   // помимо этого - надо принудительно всем клиентам выставить статус "Отсоединён"
-   for(int i=0;i<SIM800_MAX_CLIENTS;i++)
+   for(uint8_t i=0;i<SIM800_MAX_CLIENTS;i++)
   {
     setClientBusy(*(clients[i]),false);
     setClientConnected(*(clients[i]),false,CT_ERROR_NONE); 
   }  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-CoreTransportClient* CoreSIM800Transport::getClientFromQueue(int clientID, SIM800ClientAction action)
+CoreTransportClient* CoreSIM800Transport::getClientFromQueue(int16_t clientID, SIM800ClientAction action)
 {
    for(size_t i=0;i<clientsQueue.size();i++)
   {
@@ -6068,7 +6068,7 @@ void CoreSIM800Transport::removeClientFromQueue(CoreTransportClient* client, SIM
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::initClients()
 {
-  for(int i=0;i<SIM800_MAX_CLIENTS;i++)
+  for(uint8_t i=0;i<SIM800_MAX_CLIENTS;i++)
   {
     if(clients[i])
       continue;
@@ -6082,7 +6082,7 @@ void CoreSIM800Transport::initClients()
 void CoreSIM800Transport::subscribe(IClientEventsSubscriber* subscriber)
 {
   initClients();
-  for(int i=0;i<SIM800_MAX_CLIENTS;i++)
+  for(uint8_t i=0;i<SIM800_MAX_CLIENTS;i++)
   {
     subscribeClient(*(clients[i]),subscriber);
   }  
@@ -6091,7 +6091,7 @@ void CoreSIM800Transport::subscribe(IClientEventsSubscriber* subscriber)
 void CoreSIM800Transport::unsubscribe(IClientEventsSubscriber* subscriber)
 {
   initClients();
-  for(int i=0;i<SIM800_MAX_CLIENTS;i++)
+  for(uint8_t i=0;i<SIM800_MAX_CLIENTS;i++)
   {
     unsubscribeClient(*(clients[i]),subscriber);
   }
@@ -6102,7 +6102,7 @@ CoreTransportClient* CoreSIM800Transport::getFreeClient()
   if(!ready() || !flags.gprsAvailable) // если ещё не готовы к работе - ничего не возвращаем
     return NULL;
   
-  for(int i=0;i<SIM800_MAX_CLIENTS;i++)
+  for(uint8_t i=0;i<SIM800_MAX_CLIENTS;i++)
   {
     if(!clients[i]->connected() && !clients[i]->busy()) // возвращаем первого неподсоединённого и незанятого чем-либо клиента
       return clients[i];
@@ -6264,10 +6264,10 @@ void CoreThingSpeak::update()
       case tsWaitingInterval:
       {
         // ждём момента начала отсыла данных
-          unsigned long now = millis();
+          uint32_t now = millis();
 
           // интервал обновления у нас - в секундах
-          unsigned long needed = ThingSpeakSettings.updateInterval;
+          uint32_t needed = ThingSpeakSettings.updateInterval;
           needed *= 1000;
         
           if(now - timer > needed)
@@ -6351,7 +6351,7 @@ void CoreThingSpeak::update()
       case tsReadMode:
       {
         // в этих режимах проверяем - возможно, мы ооочень долго пишем/читаем/коннектимся/дисконнектимся
-        unsigned long needed = 60000;
+        uint32_t needed = 60000;
         if(ThingSpeakSettings.workMode == workModeThroughSIM800)
           needed = 80000; // максимальное время ответа от SIM800 - 75 секунд
 
@@ -6380,7 +6380,7 @@ void CoreThingSpeak::update()
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreThingSpeak::OnClientConnect(CoreTransportClient& client, bool connected, int errorCode)
+void CoreThingSpeak::OnClientConnect(CoreTransportClient& client, bool connected, int16_t errorCode)
 {
   if(!currentClient || currentClient != &client) // не наш клиент
     return;
@@ -6438,7 +6438,7 @@ void CoreThingSpeak::OnClientConnect(CoreTransportClient& client, bool connected
   }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreThingSpeak::publish(int fieldNumber,const String& data)
+void CoreThingSpeak::publish(int16_t fieldNumber,const String& data)
 {
   if(fieldNumber < 1)
     fieldNumber = 1;
@@ -6457,7 +6457,7 @@ void CoreThingSpeak::sendData()
   machineState = tsWriteMode;
 
    // собираем данные с датчиков
-   int currentFieldNumber = 1;
+   int16_t currentFieldNumber = 1;
 
    CoreTextFormatProvider textFormatter;
    String httpQuery = F("GET /update?headers=false&api_key=");
@@ -6514,7 +6514,7 @@ void CoreThingSpeak::sendData()
     if(currentFieldNumber <=8)
     {
       // ещё остались свободные слоты
-      for(int i=currentFieldNumber;i<=8;i++)
+      for(int16_t i=currentFieldNumber;i<=8;i++)
       {
         if(substitutions[i-1].active)
         {
@@ -6541,13 +6541,13 @@ void CoreThingSpeak::sendData()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreThingSpeak::initSubstitutions()
 {
-  for(int i=0;i<8;i++)
+  for(uint8_t i=0;i<8;i++)
   {
     substitutions[i].active = false;
   }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreThingSpeak::OnClientDataWritten(CoreTransportClient& client, int errorCode)
+void CoreThingSpeak::OnClientDataWritten(CoreTransportClient& client, int16_t errorCode)
 {
   if(!currentClient || currentClient != &client)
     return;

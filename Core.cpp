@@ -199,10 +199,10 @@ void FileUtils::printFilesNames(const String& dirName, bool recursive, Stream* o
   #endif
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-int FileUtils::countFiles(const String& dirName, bool recursive)
+int16_t FileUtils::countFiles(const String& dirName, bool recursive)
 {
 #ifdef CORE_SD_USE_SDFAT  
-  int result = 0;
+  int16_t result = 0;
   const char* dirP = dirName.c_str();
   
   SdFile root;
@@ -236,7 +236,7 @@ int FileUtils::countFiles(const String& dirName, bool recursive)
 
   #else
 
-    int result = 0;
+    int16_t result = 0;
     const char* dirP = dirName.c_str();
 
       File root = SD.open(dirP);
@@ -522,7 +522,7 @@ bool CoreConfigIterator::readRecord()
         byte* writePtr = (byte*)&interval;
         bool shouldSave = false;
         
-        for(int i=0;i<2;i++)
+        for(uint8_t i=0;i<2;i++)
         {
           b = read();
           if(!writeOut(b))
@@ -538,7 +538,7 @@ bool CoreConfigIterator::readRecord()
         }
 
         writePtr = (byte*)&interval;
-        for(int i=0;i<2;i++)
+        for(uint8_t i=0;i<2;i++)
         {
           b = read();
           if(!writeOut(b))
@@ -563,7 +563,7 @@ bool CoreConfigIterator::readRecord()
       if(writeOut(recordLength))
       {
         // нас попросили просто вывести всё в поток
-        for(int skipBytes=0;skipBytes<recordLength;skipBytes++)
+        for(uint16_t skipBytes=0;skipBytes<recordLength;skipBytes++)
           writeOut(read());
       }
       else
@@ -625,7 +625,7 @@ bool CoreConfigIterator::readRecord()
 
           if(inSaveMode)
           {
-            byte* writePtr = (byte*)&(ThingSpeakSettings.updateInterval);
+            uint8_t* writePtr = (uint8_t*)&(ThingSpeakSettings.updateInterval);
             *writePtr++ = read();
             *writePtr = read();
           }
@@ -642,7 +642,7 @@ bool CoreConfigIterator::readRecord()
           {
             ThingSpeakSettings.clearSensors();
             
-             for(byte i=0;i<b;i++)
+             for(uint8_t i=0;i<b;i++)
              {
                String s;
                readString(s);
@@ -652,7 +652,7 @@ bool CoreConfigIterator::readRecord()
           else
           {
             // тут просто попросили отдать данные в поток
-            for(byte i=0;i<b;i++)
+            for(uint8_t i=0;i<b;i++)
             {
               skipString();
             }
@@ -673,10 +673,10 @@ bool CoreConfigIterator::readRecord()
         writeOut(read());
 
         // sensors
-        byte cnt = read();
+        uint8_t cnt = read();
         writeOut(cnt);
 
-        for(byte i=0;i<cnt;i++)
+        for(uint8_t i=0;i<cnt;i++)
         {
           skipString();
         }
@@ -755,7 +755,7 @@ bool CoreConfigIterator::readRecord()
           // PowerKeyPulseDuration
           if(inSaveMode)
           {
-            byte* writePtr = (byte*)&(SIM800TransportSettings.PowerKeyPulseDuration);
+            uint8_t* writePtr = (uint8_t*)&(SIM800TransportSettings.PowerKeyPulseDuration);
             *writePtr++ = read();
             *writePtr = read();
           }
@@ -775,7 +775,7 @@ bool CoreConfigIterator::readRecord()
           // PowerKeyInitTime
           if(inSaveMode)
           {
-            byte* writePtr = (byte*)&(SIM800TransportSettings.PowerKeyInitTime);
+            uint8_t* writePtr = (uint8_t*)&(SIM800TransportSettings.PowerKeyInitTime);
             *writePtr++ = read();
             *writePtr = read();
           }
@@ -811,7 +811,7 @@ bool CoreConfigIterator::readRecord()
           if(inSaveMode)
           {
             SIM800TransportSettings.clearKnownNumbers();
-             for(byte i=0;i<b;i++)
+             for(uint8_t i=0;i<b;i++)
              {
                String s;
                readString(s);
@@ -821,7 +821,7 @@ bool CoreConfigIterator::readRecord()
           else
           {
             // тут просто попросили отдать данные в поток
-            for(byte i=0;i<b;i++)
+            for(uint8_t i=0;i<b;i++)
             {
               skipString();
             }
@@ -878,10 +878,10 @@ bool CoreConfigIterator::readRecord()
         skipString();
 
         // known numbers
-        byte cnt = read();
+        uint8_t cnt = read();
         writeOut(cnt);
 
-        for(byte i=0;i<cnt;i++)
+        for(uint8_t i=0;i<cnt;i++)
         {
           skipString();
         }
@@ -920,7 +920,7 @@ bool CoreConfigIterator::readRecord()
           // читаем порт сервера
           if(inSaveMode)
           {
-            byte* writePtr = (byte*)&(MQTTSettings.serverPort);
+            uint8_t* writePtr = (uint8_t*)&(MQTTSettings.serverPort);
             *writePtr++ = read();
             *writePtr = read();
           }
@@ -945,7 +945,7 @@ bool CoreConfigIterator::readRecord()
           // читаем интервал обновления топиков
           if(inSaveMode)
           {
-            byte* writePtr = (byte*)&(MQTTSettings.intervalBetweenTopics);
+            uint8_t* writePtr = (uint8_t*)&(MQTTSettings.intervalBetweenTopics);
             *writePtr++ = read();
             *writePtr = read();            
           }
@@ -1269,7 +1269,7 @@ CoreEEPROMConfigIterator::CoreEEPROMConfigIterator() : CoreConfigIterator()
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreEEPROMConfigIterator::doRead(uint16_t startAddress, uint16_t addressOffset)
 {
-  uint16_t addr = startAddress;//*((uint16_t*)&startAddress);
+  uint16_t addr = startAddress;
   addr += addressOffset;
   return Core.memRead(addr);
 }
@@ -1635,7 +1635,7 @@ bool CoreClass::setDATETIME(const char* param)
 void CoreClass::setCurrentDateTime(uint8_t day, uint8_t month, uint16_t year, uint8_t hour, uint8_t minute, uint8_t second)
 {
    // вычисляем день недели
-    int dow;
+    int16_t dow;
     uint8_t mArr[12] = {6,2,2,5,0,3,5,1,4,6,2,4};
     dow = (year % 100);
     dow = dow*1.25;
@@ -1671,7 +1671,7 @@ bool CoreClass::getFEATURES(const char* commandPassed, Stream* pStream)
       pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
   }
 
-  int written = 0;
+  int16_t written = 0;
   #ifdef CORE_ESP_TRANSPORT_ENABLED
    pStream->print(F("ESP")); 
    written++;
@@ -1917,7 +1917,7 @@ bool CoreClass::getSENSORS(const char* commandPassed, Stream* pStream)
       pStream->print(CORE_COMMAND_PARAM_DELIMITER);    
   }
   
-  int written = 0;
+  int16_t written = 0;
   #ifdef CORE_BH1750_ENABLED
    pStream->print(F("BH1750")); 
    written++;
@@ -1987,6 +1987,14 @@ bool CoreClass::getSENSORS(const char* commandPassed, Stream* pStream)
     pStream->print(F("MAX6675")); 
   #endif  
   
+  #ifdef CORE_BMP180_ENABLED
+    if(written)
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+      
+    written++;
+    pStream->print(F("BMP180")); 
+  #endif  
+
 
   pStream->println();
 
@@ -2409,8 +2417,8 @@ bool CoreClass::getPIN(const char* commandPassed, const CommandParser& parser, S
   if(parser.argsCount() < 2)
     return false;  
 
-   int pinNumber = atoi(parser.getArg(1));   
-   int pinState = getPinState(pinNumber);
+   int16_t pinNumber = atoi(parser.getArg(1));   
+   int16_t pinState = getPinState(pinNumber);
 
   pStream->print(CORE_COMMAND_ANSWER_OK);
 
@@ -2429,7 +2437,7 @@ bool CoreClass::setPIN(CommandParser& parser, Stream* pStream)
   if(parser.argsCount() < 3)
     return false;
   
-  int pinNumber = atoi(parser.getArg(1));
+  int16_t pinNumber = atoi(parser.getArg(1));
   const char* level = parser.getArg(2);
   
   bool isHigh = !strcasecmp_P(level,(const char*) F("ON")) || *level == '1';
@@ -2448,7 +2456,7 @@ bool CoreClass::setPIN(CommandParser& parser, Stream* pStream)
   // если есть ещё один параметр - значит, надо держать сигнал определённое время, например, SET=PIN|13|ON|2000
   if(parser.argsCount() > 3)
   {
-    unsigned long raiseDelay = atol(parser.getArg(3));
+    uint32_t raiseDelay = atol(parser.getArg(3));
     CoreDelayedEvent.raise(raiseDelay,CoreDelayedEventClass::CoreDelayedEventPinChange,(void*) new CoreDelayedEventPinChangeArg(pinNumber,!isHigh));
   }
   
@@ -2612,15 +2620,15 @@ void CoreClass::readFromSensor(CoreSensor* sensor,uint16_t storeIndex)
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-int CoreClass::getPinMode(int p)
+int16_t CoreClass::getPinMode(uint8_t p)
 {
 
   #if (TARGET_BOARD == MEGA_BOARD) || (TARGET_BOARD == DUE_BOARD)
-     const int max_pin = 69;
+     const uint8_t max_pin = 69;
   #elif TARGET_BOARD == ESP_BOARD
     #error "NOT IMPLEMENTED!!!"  
   #elif TARGET_BOARD == ATMEGA328_BOARD       
-     const int max_pin = 19;
+     const uint8_t max_pin = 19;
   #else
      #error "Unknown target board!"
   #endif
@@ -2674,11 +2682,11 @@ int CoreClass::getPinMode(int p)
 return -1;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-int CoreClass::getPinState(int pin)
+int16_t CoreClass::getPinState(uint8_t pin)
 {
 #if (TARGET_BOARD == MEGA_BOARD) || (TARGET_BOARD == ATMEGA328_BOARD)
   
-  int mode = getPinMode(pin);
+  int16_t mode = getPinMode(pin);
   if(mode == -1)
     return mode;
 
@@ -2721,7 +2729,7 @@ bool CoreClass::isOnTimer(CoreSensor* sensor)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::updateTimers()
 {
-  unsigned long curMillis = millis();
+  uint32_t curMillis = millis();
   
   for(size_t i = 0;i < sensorTimers.size();)
   {
@@ -2761,7 +2769,7 @@ const char* CoreClass::byteToHexString(byte i)
 {
   static char HEX_HOLDER[3] = {0}; // холдер для шестнадцатеричного представления байта в строковом виде
   
-  int idx = i & 0xF;
+  int16_t idx = i & 0xF;
   char char1 = (char) pgm_read_byte_near( HEX_CHARS + idx );
   i>>=4;
   idx = i & 0xF;
@@ -2873,7 +2881,7 @@ void CoreClass::begin()
       
       delay(400);
       
-      for(int i=0;i<5;i++)
+      for(uint8_t i=0;i<5;i++)
       {
         if(SD.begin(SDSettings.CSPin, CORE_SD_SDFAT_SPEED))
         {
@@ -3009,7 +3017,7 @@ void CoreClass::update()
   #endif
 
   
-  unsigned long curMillis = millis();
+  uint32_t curMillis = millis();
 
   #ifdef CORE_DIGITALPORT_ENABLED
   // тут проходим по всем датчикам, и для датчиков слежения за цифровыми портами обновляем их состояние постоянно, вне зависимости от выставленного интервала
@@ -3026,7 +3034,7 @@ void CoreClass::update()
 
   #ifdef CORE_DS3231_ENABLED
   // с датчиков DS3231 надо обновлять показания каждую секунду, вне зависимости от выставленного интервала
-  static unsigned long ds3231UpdateMillis = 0;
+  static uint32_t ds3231UpdateMillis = 0;
   if(!ds3231UpdateMillis || curMillis - ds3231UpdateMillis > 1000)
   {
     ds3231UpdateMillis = curMillis;
@@ -3093,7 +3101,7 @@ void CoreClass::memInit()
 #endif    
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-uint8_t CoreClass::memRead(unsigned int address)
+uint8_t CoreClass::memRead(uint16_t address)
 {
   #if MEMORY_USED == 1
     return EEPROM.read(address);
@@ -3103,7 +3111,7 @@ uint8_t CoreClass::memRead(unsigned int address)
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreClass::memWrite(unsigned int address, uint8_t val)
+void CoreClass::memWrite(uint16_t address, uint8_t val)
 {
   #if MEMORY_USED == 1
     if(memRead(address) != val)
@@ -3124,10 +3132,10 @@ CoreStoredData::operator LuminosityData() const
   if(!hasData())
     return result;
     
-  if(dataSize < sizeof(uint16_t))
+  if(dataSize < sizeof(LuminosityData))
     return result;
 
-  memcpy(&(result.Value),data,sizeof(uint16_t));
+  memcpy(&result,data,sizeof(LuminosityData));
   return result;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -3139,11 +3147,10 @@ CoreStoredData::operator DigitalPortData() const
   if(!hasData())
     return result;
     
-  if(dataSize < 2)
+  if(dataSize < sizeof(DigitalPortData))
     return result;
 
-   result.Pin = data[0];
-   result.Value = data[1];
+  memcpy(&result,data,sizeof(DigitalPortData));
 
   return result;
 }
@@ -3156,13 +3163,10 @@ CoreStoredData::operator AnalogPortData() const
   if(!hasData())
     return result;
     
-  if(dataSize < 3)
+  if(dataSize < sizeof(AnalogPortData))
     return result;
 
-  result.Pin = data[0];
-  memcpy(&(result.Value),&(data[1]),sizeof(uint16_t));
-
-  return result;  
+  memcpy(&result,data,sizeof(AnalogPortData));
   
   return result;
 }
@@ -3177,13 +3181,12 @@ CoreStoredData::operator TemperatureData() const
     return result;
   }
 
-  if(dataSize < 3)
+  if(dataSize < sizeof(TemperatureData))
   {
     return result;
   }
 
-   memcpy(&(result.Value),data,sizeof(int16_t));
-   result.Fract = data[2];
+  memcpy(&result,data,sizeof(TemperatureData));
 
    return result;
   
@@ -3215,15 +3218,10 @@ CoreStoredData::operator HumidityData() const
   if(!hasData())
     return result;
 
-  if(dataSize < 6)
+  if(dataSize < sizeof(HumidityData))
     return result;
 
-
-   memcpy(&(result.Temperature.Value),data,sizeof(int16_t));
-   result.Temperature.Fract = data[2];
-
-   memcpy(&(result.Humidity.Value),&(data[3]),sizeof(int16_t));
-   result.Humidity.Fract = data[5];
+  memcpy(&result,data,sizeof(HumidityData));
 
    return result;
   
@@ -3240,27 +3238,10 @@ CoreStoredData::operator BarometricData() const
   if(!hasData())
     return result;
 
-  if(dataSize < 12)
+  if(dataSize < sizeof(BarometricData))
     return result;
 
-   int idx = 0;
-
-   memcpy(&(result.Temperature.Value),data,sizeof(int16_t));
-   idx += sizeof(int16_t);
-   result.Temperature.Fract = data[idx];
-   idx++;
-
-   result.Pressure.isInPA = data[idx];
-   idx++;
-
-   memcpy(&(result.Pressure.Value),&(data[idx]),sizeof(int32_t));
-   idx += sizeof(int32_t);
-   result.Pressure.Fract = data[idx];
-   idx++;
-   
-   memcpy(&(result.Altitude.Value),&(data[idx]),sizeof(int16_t));
-   idx += sizeof(int16_t);
-   result.Altitude.Fract = data[idx];
+   memcpy(&result,data,sizeof(BarometricData));
 
    return result;
   
@@ -3275,18 +3256,11 @@ CoreStoredData::operator PressureData() const
   if(!hasData())
     return result;
 
-  if(dataSize < 6)
+  if(dataSize < sizeof(PressureData))
     return result;
 
-   int idx = 0;
-
-   result.isInPA = data[idx];
-   idx++;
-
-   memcpy(&(result.Value),&(data[idx]),sizeof(int32_t));
-   idx += sizeof(int32_t);
-   result.Fract = data[idx];
-   
+   memcpy(&result,data,sizeof(PressureData));
+ 
    return result;
   
 }
@@ -3719,9 +3693,9 @@ void WatchdogSettingsClass::update()
     return;
 
     static bool waitForHigh = true;
-    static unsigned long watchdogTimer = 0;
+    static uint32_t watchdogTimer = 0;
 
-    unsigned long wantedInterval = waitForHigh ? WatchdogInterval : WatchdogPulseDuration;
+    uint32_t wantedInterval = waitForHigh ? WatchdogInterval : WatchdogPulseDuration;
     
     if(millis() - watchdogTimer > wantedInterval)
     {
@@ -3741,7 +3715,7 @@ CoreDelayedEventClass::CoreDelayedEventClass()
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreDelayedEventClass::raise(unsigned long raiseDelay,CoreDelayedEventHandler handler, void* param)
+void CoreDelayedEventClass::raise(uint32_t raiseDelay,CoreDelayedEventHandler handler, void* param)
 {
   CoreDelayedEventData rec;
   rec.timer = millis();

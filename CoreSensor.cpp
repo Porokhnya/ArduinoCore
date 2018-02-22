@@ -3,7 +3,7 @@
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool __isSPIInited = false;
 //--------------------------------------------------------------------------------------------------------------------------------------
-#if defined(CORE_DS3231_ENABLED) || defined(CORE_BH1750_ENABLED) || defined(CORE_SI7021_ENABLED)
+#if defined(CORE_DS3231_ENABLED) || defined(CORE_BH1750_ENABLED) || defined(CORE_SI7021_ENABLED) || defined(CORE_BMP180_ENABLED)
 #include <Wire.h>
 //--------------------------------------------------------------------------------------------------------------------------------------
 TwoWire* getWireInterface(uint8_t i2cIndex)
@@ -259,7 +259,7 @@ long DateTimeData::time2long(uint16_t days, uint8_t hours, uint8_t minutes, uint
 //--------------------------------------------------------------------------------------------------------------------------------------
 // TemperatureData
 //--------------------------------------------------------------------------------------------------------------------------------------
-int TemperatureData::raw() const
+int32_t TemperatureData::raw() const
 {
   int32_t result = abs(Value)*100;
   result += Fract;
@@ -484,11 +484,18 @@ CoreSensor* CoreSensorsFactory::createSensor(CoreSensorType type)
       return NULL;
     #endif
 
-
     case MAX6675:
     
     #ifdef CORE_MAX6675_ENABLED
       return new CoreSensorMAX6675();
+    #else
+      return NULL;
+    #endif
+
+    case BMP180:
+    
+    #ifdef CORE_BMP180_ENABLED
+      return new CoreSensorBMP180();
     #else
       return NULL;
     #endif
@@ -611,6 +618,9 @@ CoreDataType CoreSensor::getDataType(CoreSensorType type)
     case Unknown:
       return UnknownType;
 
+    case BMP180:
+      return Barometric;
+
 
   }
   return UnknownType;
@@ -660,7 +670,7 @@ void CoreSensorBH1750::begin(uint8_t* configData)
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreSensorBH1750::getDataSize()
 {
-  return 2;
+  return sizeof(LuminosityData);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSensorBH1750::read(uint8_t* buffer)
@@ -680,12 +690,9 @@ bool CoreSensorBH1750::read(uint8_t* buffer)
   curLuminosity |= wire->read();
   curLuminosity = curLuminosity/1.2; // конвертируем в люксы
 
-  // теперь выдаём в буфер. Считаем, что он достаточного размера
-  uint8_t* readPtr = (uint8_t*)&curLuminosity;
-  for(size_t i=0;i<sizeof(curLuminosity);i++)
-  {
-    *buffer++ = *readPtr++;
-  }
+  LuminosityData lum;
+  lum.Value = curLuminosity;
+  memcpy(buffer,&lum,sizeof(LuminosityData));
   
   result = true;
  }
@@ -696,6 +703,269 @@ bool CoreSensorBH1750::read(uint8_t* buffer)
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_BH1750_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_BMP180_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+// CoreSensorBMP180
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreSensorBMP180::CoreSensorBMP180() : CoreSensor(BMP180)
+{
+ i2cIndex = 0;
+ homeplacePressure = 101500;
+ isInPascalsMeasure = true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSensorBMP180::begin(uint8_t* configData)
+{
+  i2cIndex = *configData++; // читаем индекс I2C
+  isInPascalsMeasure = *configData++; // читаем вид измерений (в паскалях или мм.рт.ст)
+  memcpy(&homeplacePressure,configData,sizeof(homeplacePressure)); // читаем нормальное давление для нашего местоположения
+
+  doBegin();
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint8_t CoreSensorBMP180::getDataSize()
+{
+  return sizeof(BarometricData);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreSensorBMP180::read(uint8_t* buffer)
+{
+  bool result = true;
+
+  float temp = readTemperature();
+  int32_t pressurePascals = readPressure();
+  float altitude = readAltitude(homeplacePressure);
+
+  // сырые данные прочитали, теперь переводим их в нормализованную форму
+  BarometricData data;
+
+  // преобразуем температуру во внутреннее представление
+  int32_t iTemp = temp*100;
+  data.Temperature.Value = iTemp/100;
+  data.Temperature.Fract = abs(iTemp%100);
+
+  if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
+   {
+     data.Temperature = TemperatureData::ConvertToFahrenheit(data.Temperature);
+   }
+
+   // теперь работаем с давлением. Оно у нас по умолчанию в паскалях
+   data.Pressure.Value = pressurePascals;
+   data.Pressure.Fract = 0;
+
+   if(!isInPascalsMeasure)
+   {
+      // тут меряем в мм.рт.ст. - конвертируем
+      data.Pressure = PressureData::ConvertToMmHg(data.Pressure);
+   }
+   // сохраняем признак, как измеряем
+   data.Pressure.isInPA = isInPascalsMeasure;
+
+   // теперь получаем высоту
+   int iAltitude = altitude*100;
+   data.Altitude.Value = iAltitude/100;
+   data.Altitude.Fract = abs(iAltitude%100);
+
+   // теперь копируем всё в буфер в памяти
+   memcpy(buffer,&data,sizeof(data));
+  
+  return result;
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreSensorBMP180::doBegin(uint8_t mode) 
+{
+  if (mode > BMP085_ULTRAHIGHRES) 
+    mode = BMP085_ULTRAHIGHRES;
+    
+  oversampling = mode;
+
+  TwoWire* wire = getWireInterface(i2cIndex);
+
+  wire->begin();
+
+  if (read8(0xD0) != 0x55) 
+    return false;
+
+  /* read calibration data */
+  ac1 = read16(BMP085_CAL_AC1);
+  ac2 = read16(BMP085_CAL_AC2);
+  ac3 = read16(BMP085_CAL_AC3);
+  ac4 = read16(BMP085_CAL_AC4);
+  ac5 = read16(BMP085_CAL_AC5);
+  ac6 = read16(BMP085_CAL_AC6);
+
+  b1 = read16(BMP085_CAL_B1);
+  b2 = read16(BMP085_CAL_B2);
+
+  mb = read16(BMP085_CAL_MB);
+  mc = read16(BMP085_CAL_MC);
+  md = read16(BMP085_CAL_MD);
+
+  return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+int32_t CoreSensorBMP180::computeB5(int32_t UT) 
+{
+  int32_t X1 = (UT - (int32_t)ac6) * ((int32_t)ac5) >> 15;
+  int32_t X2 = ((int32_t)mc << 11) / (X1+(int32_t)md);
+  return X1 + X2;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint16_t CoreSensorBMP180::readRawTemperature(void) 
+{
+  write8(BMP085_CONTROL, BMP085_READTEMPCMD);
+  delay(5);
+  return read16(BMP085_TEMPDATA);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint32_t CoreSensorBMP180::readRawPressure(void) 
+{
+  uint32_t raw;
+
+  write8(BMP085_CONTROL, BMP085_READPRESSURECMD + (oversampling << 6));
+
+  if (oversampling == BMP085_ULTRALOWPOWER) 
+    delay(5);
+  else if (oversampling == BMP085_STANDARD) 
+    delay(8);
+  else if (oversampling == BMP085_HIGHRES) 
+    delay(14);
+  else 
+    delay(26);
+
+  raw = read16(BMP085_PRESSUREDATA);
+
+  raw <<= 8;
+  raw |= read8(BMP085_PRESSUREDATA+2);
+  raw >>= (8 - oversampling);
+
+  return raw;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+int32_t CoreSensorBMP180::readPressure(void) 
+{
+  int32_t UT, UP, B3, B5, B6, X1, X2, X3, p;
+  uint32_t B4, B7;
+
+  UT = readRawTemperature();
+  UP = readRawPressure();
+
+  B5 = computeB5(UT);
+
+  // do pressure calcs
+  B6 = B5 - 4000;
+  X1 = ((int32_t)b2 * ( (B6 * B6)>>12 )) >> 11;
+  X2 = ((int32_t)ac2 * B6) >> 11;
+  X3 = X1 + X2;
+  B3 = ((((int32_t)ac1*4 + X3) << oversampling) + 2) / 4;
+
+  X1 = ((int32_t)ac3 * B6) >> 13;
+  X2 = ((int32_t)b1 * ((B6 * B6) >> 12)) >> 16;
+  X3 = ((X1 + X2) + 2) >> 2;
+  B4 = ((uint32_t)ac4 * (uint32_t)(X3 + 32768)) >> 15;
+  B7 = ((uint32_t)UP - B3) * (uint32_t)( 50000UL >> oversampling );
+
+  if (B7 < 0x80000000) 
+  {
+    p = (B7 * 2) / B4;
+  } 
+  else 
+  {
+    p = (B7 / B4) * 2;
+  }
+  
+  X1 = (p >> 8) * (p >> 8);
+  X1 = (X1 * 3038) >> 16;
+  X2 = (-7357 * p) >> 16;
+
+  p = p + ((X1 + X2 + (int32_t)3791)>>4);
+
+  return p;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+int32_t CoreSensorBMP180::readSealevelPressure(float altitude_meters) 
+{
+  float pressure = readPressure();
+  return (int32_t)(pressure / pow(1.0-altitude_meters/44330, 5.255));
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+float CoreSensorBMP180::readTemperature(void) 
+{
+  int32_t UT, B5;     // following ds convention
+  float temp;
+
+  UT = readRawTemperature();
+
+  B5 = computeB5(UT);
+  temp = (B5+8) >> 4;
+  temp /= 10;
+  
+  return temp;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+float CoreSensorBMP180::readAltitude(float sealevelPressure) 
+{
+  float altitude;
+
+  float pressure = readPressure();
+
+  altitude = 44330 * (1.0 - pow(pressure /sealevelPressure,0.1903));
+
+  return altitude;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint8_t CoreSensorBMP180::read8(uint8_t a) 
+{
+  uint8_t ret;
+
+  TwoWire* wire = getWireInterface(i2cIndex);
+
+  wire->beginTransmission(BMP085_I2CADDR); // start transmission to device 
+  wire->write(a); // sends register address to read from
+  wire->endTransmission(); // end transmission
+  
+  wire->beginTransmission(BMP085_I2CADDR); // start transmission to device 
+  wire->requestFrom(BMP085_I2CADDR, 1);// send data n-bytes read
+  ret = wire->read(); // receive DATA
+  wire->endTransmission(); // end transmission
+
+  return ret;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint16_t CoreSensorBMP180::read16(uint8_t a) 
+{
+  uint16_t ret;
+
+  TwoWire* wire = getWireInterface(i2cIndex);
+
+  wire->beginTransmission(BMP085_I2CADDR); // start transmission to device 
+  wire->write(a); // sends register address to read from
+  wire->endTransmission(); // end transmission
+  
+  wire->beginTransmission(BMP085_I2CADDR); // start transmission to device 
+  wire->requestFrom(BMP085_I2CADDR, 2);// send data n-bytes read
+  ret = wire->read(); // receive DATA
+  ret <<= 8;
+  ret |= wire->read(); // receive DATA
+  wire->endTransmission(); // end transmission
+
+  return ret;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSensorBMP180::write8(uint8_t a, uint8_t d) 
+{
+  TwoWire* wire = getWireInterface(i2cIndex);
+  
+  wire->beginTransmission(BMP085_I2CADDR); // start transmission to device 
+  wire->write(a); // sends register address to read from
+  wire->write(d);  // write data
+  wire->endTransmission(); // end transmission
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_BMP180_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_SI7021_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -713,7 +983,7 @@ void CoreSensorSi7021::begin(uint8_t* configData)
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreSensorSi7021::getDataSize()
 {
-  return 6;
+  return sizeof(TemperatureData)*2;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSensorSi7021::read(uint8_t* buffer)
@@ -730,32 +1000,26 @@ bool CoreSensorSi7021::read(uint8_t* buffer)
     hasData = false;
   }
   else
-  {     
+  {    
     int32_t iTmp = temperature*100;
 
     int16_t tValue = iTmp/100;
-    uint8_t tFract = abs(iTmp)%100;
-    
+    uint8_t tFract = abs(iTmp)%100;   
 
     if(tValue < -40 || tValue > 125) // плохая, негодная температура
       hasData = false;
     else
     {
-      uint8_t* ptr = (uint8_t*) &tValue;
-      buffer[0] = *ptr++; // значение температуры - целая часть
-      buffer[1] = *ptr;
-      buffer[2] = tFract; // значение температуры - дробная часть, в сотых долях
+      TemperatureData temp;
+      temp.Value = tValue;
+      temp.Fract = tFract;
+      if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
+      {
+        temp = TemperatureData::ConvertToFahrenheit(temp);
+      }
 
-       if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
-       {
-        TemperatureData fahren = {tValue, tFract}; 
-        fahren = TemperatureData::ConvertToFahrenheit(fahren);
-        ptr = (uint8_t*) &(fahren.Value);
-        buffer[0] = *ptr++;
-        buffer[1] = *ptr;
-        buffer[2] = fahren.Fract;
-       }
-
+      memcpy(buffer,&temp,sizeof(TemperatureData));
+      
     }
 
       if(hasData)
@@ -769,10 +1033,11 @@ bool CoreSensorSi7021::read(uint8_t* buffer)
             hasData = false;
           else
           {
-            uint8_t* ptr = (uint8_t*) &tValue;
-            buffer[3] = *ptr++;
-            buffer[4] = *ptr;
-            buffer[5] = tFract;            
+            TemperatureData humidity;
+            humidity.Value = tValue;
+            humidity.Fract = tFract;
+
+            memcpy((buffer + sizeof(TemperatureData)),&humidity,sizeof(TemperatureData));
           }
         
       } // hasData
@@ -793,7 +1058,7 @@ CoreSensorDigitalPort::CoreSensorDigitalPort() : CoreSensor(DigitalPortState)
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreSensorDigitalPort::getDataSize()
 {
-  return 2;
+  return sizeof(DigitalPortData);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorDigitalPort::begin(uint8_t* configData)
@@ -803,9 +1068,11 @@ void CoreSensorDigitalPort::begin(uint8_t* configData)
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSensorDigitalPort::read(uint8_t* buffer)
 {
-  
- *buffer++ = pin;
- *buffer = Core.getPinState(pin);
+  DigitalPortData data;
+  data.Pin = pin;
+  data.Value = Core.getPinState(pin);
+
+  memcpy(buffer,&data,sizeof(DigitalPortData));
   
   return true;  
 }
@@ -821,7 +1088,7 @@ CoreSensorAnalogPort::CoreSensorAnalogPort() : CoreSensor(AnalogPortState)
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreSensorAnalogPort::getDataSize()
 {
-  return 3;
+  return sizeof(AnalogPortData);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorAnalogPort::begin(uint8_t* configData)
@@ -831,12 +1098,12 @@ void CoreSensorAnalogPort::begin(uint8_t* configData)
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSensorAnalogPort::read(uint8_t* buffer)
 {
-  
- *buffer++ = pin;
+ AnalogPortData data;
+ data.Pin = pin;
+ data.Value = analogRead(pin);
 
- uint16_t val = analogRead(pin);
- memcpy(buffer,&val,sizeof(val));
-  
+ memcpy(buffer,&data,sizeof(AnalogPortData));
+    
   return true;  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -908,7 +1175,7 @@ CoreSensorDHT::CoreSensorDHT() : CoreSensor(DHT)
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreSensorDHT::getDataSize()
 {
-  return 6;
+  return sizeof(TemperatureData)*2;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorDHT::begin(uint8_t* configData)
@@ -1082,23 +1349,19 @@ bool CoreSensorDHT::read(uint8_t* buffer)
     return false;
   }
 
+ TemperatureData temp;
+ temp.Value = temperatureValue;
+ temp.Fract = temperatureFract;
+
  if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
  {
-  TemperatureData fahren = {temperatureValue, temperatureFract}; 
-  fahren = TemperatureData::ConvertToFahrenheit(fahren);
-  temperatureValue = fahren.Value;
-  temperatureFract = fahren.Fract;
+  temp = TemperatureData::ConvertToFahrenheit(temp);
  }  
+  memcpy(buffer,&temp,sizeof(TemperatureData));
 
-  uint8_t* ptr = (uint8_t*)&temperatureValue;
-  buffer[0] = *ptr++;
-  buffer[1] = *ptr;
-  buffer[2] = temperatureFract;
-
-  ptr = (uint8_t*)&humidityValue;
-  buffer[3] = *ptr++;
-  buffer[4] = *ptr;
-  buffer[5] = humidityFract;
+  temp.Value = humidityValue;
+  temp.Fract = humidityFract;
+  memcpy((buffer + sizeof(TemperatureData)),&temp,sizeof(TemperatureData));
   
   return true;  
 }
@@ -1116,7 +1379,7 @@ CoreSensorMAX6675::CoreSensorMAX6675() : CoreSensor(MAX6675)
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreSensorMAX6675::getDataSize()
 {
-  return 3;
+  return sizeof(TemperatureData);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorMAX6675::begin(uint8_t* configData)
@@ -1142,19 +1405,25 @@ double CoreSensorMAX6675::readCelsius()
 
   delayMicroseconds(1000);
 
+  #if TARGET_BOARD != DUE_BOARD
    uint8_t oldSPCR = SPCR;
+
+   
   if(slow)
   {
       oldSPCR = SPCR;
       SPCR |= 3; // As slow as possible (clock/128 or clock/64 depending on SPI2X)
   }
+   #endif
   
   v = SPI.transfer16(0);
-    
+
+   #if TARGET_BOARD != DUE_BOARD    
   if(slow)
   {
       SPCR = oldSPCR;
   }
+  #endif
   
   digitalWrite(cs, HIGH);
   // CSB Rise to Output Disable
@@ -1175,18 +1444,18 @@ bool CoreSensorMAX6675::read(uint8_t* buffer)
 {
 
   double val = readCelsius();
+  
   if(isnan(val))
     return false;
 
   int32_t iVal = val*100;
-    
-  int16_t temperatureValue = iVal/100;
-  uint8_t temperatureFract = abs(iVal)%100;
 
-  uint8_t* ptr = (uint8_t*)&temperatureValue;
-  buffer[0] = *ptr++;
-  buffer[1] = *ptr;
-  buffer[2] = temperatureFract;
+  TemperatureData temp;
+    
+  temp.Value = iVal/100;
+  temp.Fract = abs(iVal)%100;
+
+  memcpy(buffer,&temp,sizeof(TemperatureData));
   
   return true;  
 }
@@ -1209,9 +1478,9 @@ CoreSensorDS3231::CoreSensorDS3231(bool tempOnly) : CoreSensor(DS3231)
 uint8_t CoreSensorDS3231::getDataSize()
 {
   if(!isTempOnly)
-    return 8; // дата/время, день недели
+    return sizeof(DateTimeData); // дата/время, день недели
   else
-    return 3; // только температура
+    return sizeof(TemperatureData); // только температура
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSensorDS3231::begin(uint8_t* configData)
@@ -1293,24 +1562,18 @@ bool CoreSensorDS3231::read(uint8_t* buffer)
             rtcTemp.b[0] = wire->read();
         
             long tempC100 = (rtcTemp.i >> 6) * 25;
-            
-            int16_t tempValue = tempC100/100;
-            uint8_t tempFract = abs(tempC100 % 100);
-            uint8_t* ptr = (uint8_t*)&tempValue;
-        
-            buffer[0] = *ptr++;
-            buffer[1] = *ptr;
-            buffer[2] = tempFract;
 
-             if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
-             {
-              TemperatureData fahren = {tempValue, tempFract}; 
-              fahren = TemperatureData::ConvertToFahrenheit(fahren);
-              ptr = (uint8_t*)&(fahren.Value);
-              buffer[0] = *ptr++;
-              buffer[1] = *ptr;
-              buffer[2] = fahren.Fract;
-             }    
+            TemperatureData temp;
+            
+            temp.Value = tempC100/100;
+            temp.Fract = abs(tempC100 % 100);
+            if(Core.TemperatureUnit == UnitFahrenheit) // измеряем в фаренгейтах
+            {
+             temp = TemperatureData::ConvertToFahrenheit(temp); 
+            }
+            
+            memcpy(buffer,&temp,sizeof(TemperatureData));
+ 
 
             return true;
             
@@ -1799,24 +2062,23 @@ uint16_t CoreSensorDS18B20::startMeasure()
 //--------------------------------------------------------------------------------------------------------------------------------------
 uint8_t CoreSensorDS18B20::getDataSize()
 {
-  return 3;
+  return sizeof(TemperatureData);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSensorDS18B20::read(uint8_t* buffer)
 {
-  
+
   int8_t temp;
   uint8_t tempFract;
   bool result = myManager->readTemperature(temp,tempFract,this);
   if(result)
   {
+    TemperatureData tempStruct;
+    tempStruct.Value = temp;
+    tempStruct.Fract = tempFract;
+    
+    memcpy(buffer,&tempStruct,sizeof(TemperatureData));
 
-      int16_t tTemp = temp;
-      uint8_t* ptr = (uint8_t*)&tTemp;
-      
-      buffer[0] = *ptr++;
-      buffer[1] = *ptr;
-      buffer[2] = tempFract;
   }
   return result;
 }

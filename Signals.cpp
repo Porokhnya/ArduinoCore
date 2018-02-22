@@ -250,7 +250,7 @@ void SignalHandler::executeActions(SignalActionsList& actions)
   
 }
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-bool SignalHandler::compareNumber(long num,SignalOperands operand,long from, long to)
+bool SignalHandler::compareNumber(int32_t num,SignalOperands operand,int32_t from, int32_t to)
 {
  switch(operand)
   {
@@ -382,7 +382,7 @@ bool SignalHandler::compareLuminosity(LuminosityData& dataStored, SignalOperands
     }
   
   // dataLength у нас равно 8, и в зависимости от операнда - там либо одно значение, либо - попадание в диапазон
-  long lumFrom, lumTo;
+  int32_t lumFrom, lumTo;
   memcpy(&lumFrom,data,sizeof(long));
   data += sizeof(long);
   memcpy(&lumTo,data,sizeof(long));
@@ -673,7 +673,7 @@ void Signal::set(uint8_t val)
   if(byteNum >= CORE_SIGNAL_BYTES)
     return;
 
-  byte b = SIGNALS[byteNum];
+  uint8_t b = SIGNALS[byteNum];
   
   b &= ~(1 << bitNum);
   b |= (val << bitNum);
@@ -752,7 +752,7 @@ void SignalsManager::update()
     return;
   
   // Тут обновление сигналов
-  unsigned long now = millis();
+  uint32_t now = millis();
   if(now - updateTimer > CORE_SIGNALS_UPDATE_INTERVAL)
   {
     // пора обновлять сигналы

@@ -36,7 +36,7 @@ class FileUtils
 {
   public:
   
-  static int countFiles(const String& dirName, bool recursive);
+  static int16_t countFiles(const String& dirName, bool recursive);
   static void printFilesNames(const String& dirName, bool recursive, Stream* outStream);
   static void printFile(const String& fileName, Stream* outStream);
   
@@ -196,10 +196,10 @@ class CoreSensors
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
-  unsigned long startTimer;
+  uint32_t startTimer;
   uint16_t timerDelay;
   CoreSensor* sensor;
-  int storeIndex;
+  int16_t storeIndex;
   
 } CoreSensorTimerStruct;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -215,7 +215,7 @@ class CoreClass
     char FractDelimiter; // разделитель целой и дробной частей
     
     uint8_t TemperatureUnit; // вид измерения температуры (в Цельсиях или Фаренгейтах)
-    unsigned long SensorsUpdateInterval; // интервал обновления показаний с датчиков
+    uint32_t SensorsUpdateInterval; // интервал обновления показаний с датчиков
     
     uint8_t DeviceID; // уникальный адрес устройства
     uint8_t ClusterID; // уникальный адрес кластера
@@ -232,8 +232,8 @@ class CoreClass
 
     void pushToStorage(CoreSensor* sensor); // обновляет показания с датчика в хранилище
 
-    int getPinMode(int pin); // возвращает режим работы пина - вход или выход
-    int getPinState(int pin); // возвращает состояние пина, вне зависимости от его режима работы
+    int16_t getPinMode(uint8_t pin); // возвращает режим работы пина - вход или выход
+    int16_t getPinState(uint8_t pin); // возвращает состояние пина, вне зависимости от его режима работы
 		
 		void setup(CoreUnhandledCommandsHandler func = NULL);
    
@@ -242,8 +242,8 @@ class CoreClass
     
     int getFreeMemory(); // возвращает кол-во свободной оперативной памяти
 
-   uint8_t memRead(unsigned int address); // читает байт из EEPROM
-   void memWrite(unsigned int address, uint8_t val); // пишет байт в EEPROM
+   uint8_t memRead(uint16_t address); // читает байт из EEPROM
+   void memWrite(uint16_t address, uint8_t val); // пишет байт в EEPROM
 
    void* memFind(const void *haystack, size_t n, const void *needle, size_t m);
 
@@ -279,7 +279,7 @@ class CoreClass
 
    bool serialOwnedFlag;
    bool anyCommandFromSerialReceived;
-   unsigned long lastSerialCommandTimer;
+   uint32_t lastSerialCommandTimer;
 
    static uint8_t makeNum(char ch);
 
@@ -289,7 +289,7 @@ class CoreClass
     bool configLoaded;
 
    CoreUnhandledCommandsHandler pUnhandled;
-   unsigned long lastMillis;
+   uint32_t lastMillis;
 
    CoreSensors list;
    CoreSensorTimers sensorTimers;
@@ -456,8 +456,8 @@ struct CoreDelayedEventPinChangeArg
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
-  unsigned long timer;
-  unsigned long duration;
+  uint32_t timer;
+  uint32_t duration;
   void* param;
   CoreDelayedEventHandler handler;
   
@@ -471,7 +471,7 @@ class CoreDelayedEventClass
     CoreDelayedEventClass();
 
     void update();
-    void raise(unsigned long raiseDelay,CoreDelayedEventHandler handler, void* param);
+    void raise(uint32_t raiseDelay,CoreDelayedEventHandler handler, void* param);
 
     static void CoreDelayedEventPinChange(void* param);
 

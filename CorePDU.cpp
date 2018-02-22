@@ -7,7 +7,7 @@ PDUHelper PDU;
 //--------------------------------------------------------------------------------------------------------------------------------------
 const char HEX_CHARS[]  PROGMEM = {"0123456789ABCDEF"};
 //--------------------------------------------------------------------------------------------------------------------------------------
-unsigned int PDUMessageEncoder::utf8GetCharSize(unsigned char bt) 
+uint16_t PDUMessageEncoder::utf8GetCharSize(uint8_t bt) 
 { 
   if (bt < 128) 
   return 1; 
@@ -26,9 +26,9 @@ unsigned int PDUMessageEncoder::utf8GetCharSize(unsigned char bt)
   return 1; 
 } 
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool PDUMessageEncoder::utf8ToUInt(const String& bytes, unsigned int& target) 
+bool PDUMessageEncoder::utf8ToUInt(const String& bytes, uint16_t& target) 
 { 
-  unsigned int bsize = bytes.length(); 
+  uint16_t bsize = bytes.length(); 
   target = 0; 
   bool result = true; 
   if (bsize == 1) 
@@ -42,9 +42,9 @@ bool PDUMessageEncoder::utf8ToUInt(const String& bytes, unsigned int& target)
    } 
     else 
     { 
-      unsigned char cur_byte = bytes[0]; 
+      uint8_t cur_byte = bytes[0]; 
       target = ((cur_byte & (0xFF >> (bsize + 1))) << (6 * (bsize - 1))); 
-      unsigned int i = 1; 
+      uint16_t i = 1; 
       
       while (result && (i < bsize)) 
       { 
@@ -65,7 +65,7 @@ PDUMessageEncoder::PDUMessageEncoder()
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void PDUMessageEncoder::UTF8ToUCS2(const String& s, unsigned int& bytesProcessed, String* output)
+void PDUMessageEncoder::UTF8ToUCS2(const String& s, uint16_t& bytesProcessed, String* output)
 {
   // Попытка оптимизировать работу с памятью
   const char* ptr = s.c_str();
@@ -79,20 +79,20 @@ void PDUMessageEncoder::UTF8ToUCS2(const String& s, unsigned int& bytesProcessed
 
   while(*ptr) 
   {
-    byte curChar = (byte) *ptr;
-    unsigned int charSz = utf8GetCharSize(curChar);
+    uint8_t curChar = (uint8_t) *ptr;
+    uint16_t charSz = utf8GetCharSize(curChar);
 
     // у нас максимальная длина символа в UTF-8 - 6 байт, поэтому используем промежуточный буфер в 7 байт
     static char curBytes[7] = {0};
 
-    for(byte i=0;i<charSz;i++) 
+    for(uint8_t i=0;i<charSz;i++) 
     {
       curBytes[i] = *ptr++;
     }
 
     curBytes[charSz] = '\0'; // добавляем завершающий 0
 
-    unsigned int myChar;
+    uint16_t myChar;
     if(utf8ToUInt(curBytes,myChar))
     {
       bytesProcessed++;
@@ -130,11 +130,11 @@ String PDUMessageEncoder::EncodePhoneNumber(const char* nm)
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-String PDUMessageEncoder::ToHex(int i)
+String PDUMessageEncoder::ToHex(int16_t i)
 {  
   
   char out[3] = {0};
-  int idx = i & 0xF;
+  int16_t idx = i & 0xF;
   //char char1 
   out[1] = (char) pgm_read_byte_near( HEX_CHARS + idx );
   i>>=4;
@@ -165,21 +165,17 @@ PDUOutgoingMessage PDUMessageEncoder::Encode(const String& recipientPhoneNum, co
   if(*phonePtr == '+')
     phonePtr++; 
 
-  int phoneNumLen = strlen(phonePtr);
+  int16_t phoneNumLen = strlen(phonePtr);
 
   String encodedPhoneNum = EncodePhoneNumber(phonePtr);
 
-  int reserveLen = encodedPhoneNum.length() + 7; // 1 байт - символ завершения строки, два байта - "91", 4 байта - длиза номера, закодированная в UCS2
+  int16_t reserveLen = encodedPhoneNum.length() + 7; // 1 байт - символ завершения строки, два байта - "91", 4 байта - длиза номера, закодированная в UCS2
   
   String recipient; 
   recipient.reserve(reserveLen);
   recipient = ToHex(phoneNumLen) + F("91") + encodedPhoneNum;
-  
-  #ifdef GSM_DEBUG_MODE
-    Serial.print(F("recipient: ")); Serial.println(recipient);
-  #endif
 
-  unsigned int bytesProcessed = 0;
+  uint16_t bytesProcessed = 0;
   
   if(!incomingMessageInUCS2Format) // если входящее сообщение не в UCS2 - кодируем его
     UTF8ToUCS2(utf8Message,bytesProcessed,result.Message);
@@ -202,11 +198,6 @@ PDUOutgoingMessage PDUMessageEncoder::Encode(const String& recipientPhoneNum, co
   }
     
   String strBytesProcessed = ToHex(bytesProcessed*2);
-
-  #ifdef GSM_DEBUG_MODE
-    Serial.print(F("bytes processed: ")); Serial.println(bytesProcessed);
-    Serial.print(F("message: ")); Serial.println(*(result.Message));
-  #endif
   
   // длина headers - 6 байт, фиксирована
   // длина recipient - максимум 20 байт
@@ -217,7 +208,7 @@ PDUOutgoingMessage PDUMessageEncoder::Encode(const String& recipientPhoneNum, co
   // в result.Message у нас уже лежит строка, у которой в конце есть свободный хвост.
   // если мы сдвинем строку так, чтобы в начале оставался пробел нужной нам величины - 
   // мы просто сможем записать туда нужную нам информацию.
-  unsigned int neededShiftLen = 10 + recipient.length() + strBytesProcessed.length();
+  uint16_t neededShiftLen = 10 + recipient.length() + strBytesProcessed.length();
 
   // теперь мы должны сдвинуть каждый символ строки на neededShiftLen позиций вправо.
   // сперва ищем окончание строки
@@ -228,7 +219,7 @@ PDUOutgoingMessage PDUMessageEncoder::Encode(const String& recipientPhoneNum, co
 
    // потом добавляем в строку N символов, чтобы она пересчитала свою длину.
    // память при этом выделяться не будет, т.к. буфер уже выделен.
-   for(unsigned int i=0;i<neededShiftLen;i++)
+   for(uint16_t i=0;i<neededShiftLen;i++)
     *(result.Message) += '\0';
 
   // strEnd у нас стоит на нулевом символе, после него - свободный буфер с памятью, которую мы можем использовать.
@@ -236,17 +227,16 @@ PDUOutgoingMessage PDUMessageEncoder::Encode(const String& recipientPhoneNum, co
   // вправо на neededShiftLen до тех пор, пока не дойдём до начала строки
   while(strEnd >= strBegin) 
   {
-    unsigned int startPos = (strEnd - strBegin);
-    unsigned int endPos = (startPos + neededShiftLen);
+    uint16_t startPos = (strEnd - strBegin);
+    uint16_t endPos = (startPos + neededShiftLen);
     char ch = result.Message->charAt(startPos);
     result.Message->setCharAt(endPos,ch);
     strEnd--;  
   }
 
   // теперь у нас всё сдвинуто вправо на нужную величину, пишем в message всё, что нужно.
-  unsigned int curWritePos = 0;
-  
-  unsigned int lengthHelper = 0;
+  uint16_t curWritePos = 0;  
+  uint16_t lengthHelper = 0;
   
   result.Message->setCharAt(curWritePos++,'0');
   result.Message->setCharAt(curWritePos++,'0');
@@ -256,7 +246,7 @@ PDUOutgoingMessage PDUMessageEncoder::Encode(const String& recipientPhoneNum, co
   result.Message->setCharAt(curWritePos++,'0');
 
   lengthHelper = recipient.length();
-  for(unsigned int i=0;i<lengthHelper;i++) 
+  for(uint16_t i=0;i<lengthHelper;i++) 
   {
     result.Message->setCharAt(curWritePos,recipient.charAt(i));
     curWritePos++;
@@ -267,7 +257,7 @@ PDUOutgoingMessage PDUMessageEncoder::Encode(const String& recipientPhoneNum, co
   result.Message->setCharAt(curWritePos++, isFlash ? '1' : '0');
   result.Message->setCharAt(curWritePos++,'8');
 
-  for(unsigned int i=0;i<strBytesProcessed.length();i++)
+  for(uint16_t i=0;i<strBytesProcessed.length();i++)
     result.Message->setCharAt(curWritePos++,strBytesProcessed[i]);
     
    #ifdef GSM_DEBUG_MODE
@@ -277,9 +267,6 @@ PDUOutgoingMessage PDUMessageEncoder::Encode(const String& recipientPhoneNum, co
   result.MessageLength = result.Message->length()/2 - 1; // без учёта длины смс-центра, мы его не указываем (пишем "00"),значит - минус 1 байт.
   //result.MessageLength = strlen(result.Message->c_str())/2 - 1; // без учёта длины смс-центра, мы его не указываем (пишем "00"),значит - минус 1 байт.
 
-   #ifdef GSM_DEBUG_MODE
-    Serial.print(F("hlen: ")); Serial.println(result.MessageLength);
-  #endif   
 
   return result; 
 }
@@ -421,7 +408,7 @@ String PDUMessageDecoder::getUTF8From16BitEncoding(const String& ucs2Message)
 {
   String result;
 
-  unsigned char buff[6] = {0};
+  uint8_t buff[6] = {0};
   for(uint16_t i=0;i<ucs2Message.length();i+=4)
   {
      String hex1 = ucs2Message.substring(i,i+2);
@@ -444,7 +431,7 @@ String PDUMessageDecoder::getUTF8From8BitEncoding(const String& ucs2Message)
   for(uint16_t i=0;i<ucs2Message.length();i+=2)
   {
      String hex1 = ucs2Message.substring(i,i+2);
-     unsigned long ucs2Code = HexToNum(hex1);
+     uint32_t ucs2Code = HexToNum(hex1);
 
     if(UCS2ToUTF8(ucs2Code,buff) > 0)
       result += (char*) buff;
@@ -469,14 +456,14 @@ String PDUMessageDecoder::getUTF8From7BitEncoding(const String& ucs2Message, uin
   } // for
     
    // начинаем декодировать семибитную кодировку
-   int bits=0, i = 0, last = 0;
+   int16_t bits=0, i = 0, last = 0;
    uint16_t j = 0;
 
     while(j < trueLength)
       {
         if(bits < 7)
         {
-          last |= ((byte)bytes[i++]) << bits;
+          last |= ((uint8_t)bytes[i++]) << bits;
           bits+=8;
         }
         char c = last & 0x7F;
@@ -489,7 +476,7 @@ String PDUMessageDecoder::getUTF8From7BitEncoding(const String& ucs2Message, uin
  return result;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-int PDUMessageDecoder::UCS2ToUTF8 (unsigned long ucs2, unsigned char * utf8)
+int16_t PDUMessageDecoder::UCS2ToUTF8 (uint32_t ucs2, unsigned char * utf8)
 {
     if (ucs2 < 0x80) 
     {

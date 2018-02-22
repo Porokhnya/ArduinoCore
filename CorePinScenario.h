@@ -33,7 +33,7 @@ class CorePinScenario
           bool isEnabled;
           CorePinActionsList* actions;
           size_t currentActionIndex;
-          unsigned long timer;
+          uint32_t timer;
   
 };
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------

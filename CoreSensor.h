@@ -9,44 +9,46 @@
   #include "HTU21D.h"
 #endif
 //--------------------------------------------------------------------------------------------------------------------------------------
-// класс абстрактного датчика
+// тымы данных и структуры
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef enum // тип датчика
 {
-  Unknown, // неизвестный датчик
-  DS18B20, // температурный датчик DS18B20
-  DHT, // датчик влажности DHT
-  Si7021,  // датчик влажности Si7021
-  BH1750, // датчик освещённости BH1750
-  DS3231, // датчик часов реального времени
-  DS3231Temperature, // температура с датчика часов реального времени
-  DigitalPortState, // состояние цифрового порта
-  AnalogPortState, // значение с аналогового порта
-  UserDataSensor, // датчик "пользовательские данные"
-  MAX6675, // термопара MAX6675
+  Unknown = 0, // неизвестный датчик
+  DS18B20 = 1, // температурный датчик DS18B20
+  DHT = 2, // датчик влажности DHT
+  Si7021 = 3,  // датчик влажности Si7021
+  BH1750 = 4, // датчик освещённости BH1750
+  DS3231 = 5, // датчик часов реального времени
+  DS3231Temperature = 6, // температура с датчика часов реального времени
+  DigitalPortState = 7, // состояние цифрового порта
+  AnalogPortState = 8, // значение с аналогового порта
+  UserDataSensor = 9, // датчик "пользовательские данные"
+  MAX6675 = 10, // термопара MAX6675
+  BMP180 = 11, // датчик BMP085 или BMP180
   //TODO: Тут добавлять другие типы!!!
   
 } CoreSensorType;
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef enum
 {
-  UnknownType,
-  Temperature, // температура
-  Luminosity, // освещённость
-  Humidity, // температура и влажность
-  DateTime, // дата и время
-  DigitalPort, // состояние порта
-  AnalogPort, // показания аналогового порта
-  UserData, // пользовательские данные
-  
-  Pressure, // давление
-  Altitude, // высота над уровнем моря
-  Barometric, // данные с барометрических датчиков
+  UnknownType = 0,
+  Temperature = 1, // температура
+  Luminosity = 2, // освещённость
+  Humidity = 3, // температура и влажность
+  DateTime = 4, // дата и время
+  DigitalPort = 5, // состояние порта
+  AnalogPort = 6, // показания аналогового порта
+  UserData = 7, // пользовательские данные
+  Pressure = 8, // давление
+  Altitude = 9, // высота над уровнем моря
+  Barometric = 10, // данные с барометрических датчиков
   
   //TODO: Тут добавлять другие типы!!!
   
   
 } CoreDataType;
+//--------------------------------------------------------------------------------------------------------------------------------------
+#pragma pack(push, 1)
 //--------------------------------------------------------------------------------------------------------------------------------------
 struct TemperatureData
 {
@@ -68,7 +70,7 @@ struct TemperatureData
 
 private:
 
-  int raw() const;
+  int32_t raw() const;
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -93,7 +95,7 @@ typedef struct TemperatureData AltitudeData;
 //--------------------------------------------------------------------------------------------------------------------------------------
 struct PressureData // структура, описывающая давление (в паскалях)
 {
-  bool isInPA; // тип показаний - в Паскалях или мм. рт. ст.
+  uint8_t isInPA; // тип показаний - в Паскалях или мм. рт. ст.
   int32_t Value;
   uint8_t Fract;
 
@@ -224,6 +226,10 @@ struct DateTimeData
 
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
+#pragma pack(pop)
+//--------------------------------------------------------------------------------------------------------------------------------------
+// класс абстрактного датчика
+//--------------------------------------------------------------------------------------------------------------------------------------
 class CoreSensor
 {
 public:
@@ -280,6 +286,71 @@ class CoreSensorBH1750 : public CoreSensor
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_BH1750_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_BMP180_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#define BMP085_I2CADDR 0x77
+
+#define BMP085_ULTRALOWPOWER 0
+#define BMP085_STANDARD      1
+#define BMP085_HIGHRES       2
+#define BMP085_ULTRAHIGHRES  3
+#define BMP085_CAL_AC1           0xAA  // R   Calibration data (16 bits)
+#define BMP085_CAL_AC2           0xAC  // R   Calibration data (16 bits)
+#define BMP085_CAL_AC3           0xAE  // R   Calibration data (16 bits)    
+#define BMP085_CAL_AC4           0xB0  // R   Calibration data (16 bits)
+#define BMP085_CAL_AC5           0xB2  // R   Calibration data (16 bits)
+#define BMP085_CAL_AC6           0xB4  // R   Calibration data (16 bits)
+#define BMP085_CAL_B1            0xB6  // R   Calibration data (16 bits)
+#define BMP085_CAL_B2            0xB8  // R   Calibration data (16 bits)
+#define BMP085_CAL_MB            0xBA  // R   Calibration data (16 bits)
+#define BMP085_CAL_MC            0xBC  // R   Calibration data (16 bits)
+#define BMP085_CAL_MD            0xBE  // R   Calibration data (16 bits)
+
+#define BMP085_CONTROL           0xF4 
+#define BMP085_TEMPDATA          0xF6
+#define BMP085_PRESSUREDATA      0xF6
+#define BMP085_READTEMPCMD       0x2E
+#define BMP085_READPRESSURECMD  0x34
+//--------------------------------------------------------------------------------------------------------------------------------------
+class CoreSensorBMP180 : public CoreSensor
+{
+  public:
+
+  CoreSensorBMP180();
+
+  virtual void begin(uint8_t* configData); // инициализирует датчик
+  virtual bool read(uint8_t* buffer); // читает с датчика, возвращает false в случае, если с датчика не удалось прочитать
+ 
+  virtual uint8_t getDataSize(); // возвращает размер данных буфера показаний с датчика
+
+  private:
+
+    bool doBegin(uint8_t mode = BMP085_ULTRAHIGHRES);  // by default go highres
+    float readTemperature(void);
+    int32_t readPressure(void);
+    int32_t readSealevelPressure(float altitude_meters = 0);
+    float readAltitude(float sealevelPressure = 101325); // std atmosphere
+    uint16_t readRawTemperature(void);
+    uint32_t readRawPressure(void);
+    
+    int32_t computeB5(int32_t UT);
+    uint8_t read8(uint8_t addr);
+    uint16_t read16(uint8_t addr);
+    void write8(uint8_t addr, uint8_t data);
+  
+    uint8_t oversampling;
+  
+    int16_t ac1, ac2, ac3, b1, b2, mb, mc, md;
+    uint16_t ac4, ac5, ac6;
+
+    uint8_t i2cIndex;
+    bool isInPascalsMeasure; // флаг - меряем в паскалях или в мм.рт.ст
+    int32_t homeplacePressure; // нормальное давление для нашего местоположения (для расчёта высоты над уровнем моря)
+  
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_BMP180_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_DIGITALPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------

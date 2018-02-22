@@ -141,7 +141,7 @@ class LoraDispatcherClass
       void updateMasterMode();
       void updateSlaveMode();
   
-      bool parsePacket(uint8_t* packet, int packetSize);
+      bool parsePacket(uint8_t* packet, int16_t packetSize);
       bool checkHeaders(uint8_t* packet);
   
       // MASTER UTILS
@@ -150,9 +150,9 @@ class LoraDispatcherClass
       
   
       // SLAVE UTILS
-      unsigned long getDefaultSendWaitTime();
-      unsigned long sendWaitTime; // сколько ждём до очередной итерации работы в режиме слейва
-      unsigned long slaveTimer; // таймер для расчёта времени на всякие операции слейва
+      uint32_t getDefaultSendWaitTime();
+      uint32_t sendWaitTime; // сколько ждём до очередной итерации работы в режиме слейва
+      uint32_t slaveTimer; // таймер для расчёта времени на всякие операции слейва
       LoRaSlaveState slaveState; // состояние конечного автомата слейва
       uint8_t slaveSensorNumber; // номер текущего датчика для отсыла данных
       bool slaveReceiptReceived; // флаг, что мы получили квитанцию

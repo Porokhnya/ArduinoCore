@@ -105,7 +105,7 @@ class SignalHandler
       
       bool compareUserData(CoreStoredData& dataStored, SignalOperands operand, uint8_t* data, uint8_t dataLength);
 
-      bool compareNumber(long num,SignalOperands operand,long from, long to);
+      bool compareNumber(int32_t num,SignalOperands operand,int32_t from, int32_t to);
 
       uint16_t memoryAddress;
   
@@ -169,7 +169,7 @@ class SignalsManager
 
     Signal thisSignal;
     SignalsAddressList addresses;
-    unsigned long updateTimer;
+    uint32_t updateTimer;
 
     bool bPaused;
   

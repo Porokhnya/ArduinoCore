@@ -548,7 +548,7 @@ void LoraDispatcherClass::begin()
 
     LoRa.setPins(LoRaSettings.ss, reset, LoRaSettings.dio);
 
-    long frequency = 915E6;
+    uint32_t frequency = 915E6;
     switch(LoRaSettings.frequency)
     {
       case 1:
@@ -568,7 +568,7 @@ void LoraDispatcherClass::begin()
 
     LoRa.setTxPower(LoRaSettings.txPower);
 
-    long signalBandwidth = 125E3;
+    uint32_t signalBandwidth = 125E3;
     
     switch(LoRaSettings.bandwidth)
     {
@@ -668,9 +668,9 @@ void LoraDispatcherClass::reset()
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifndef CORE_LORA_DISABLE_CORE_LOGIC
 //--------------------------------------------------------------------------------------------------------------------------------------
-unsigned long LoraDispatcherClass::getDefaultSendWaitTime()
+uint32_t LoraDispatcherClass::getDefaultSendWaitTime()
 {
-  unsigned long swt = CORE_LORA_TIME_SHIFT;
+  uint32_t swt = CORE_LORA_TIME_SHIFT;
   swt *= Core.DeviceID;
   
   return swt;
@@ -695,7 +695,7 @@ void LoraDispatcherClass::updateSlaveMode()
       отсылаем следующий. Если пакет не обработан мастером - то повторяем отправку через CORE_LORA_DATA_SHIFT*Core.DeviceID.
       После N неуспешных попыток отправки - считаем, что мастер вообще не отвечает, и засыпаем на N секунд.
    */
-   unsigned long now = millis();
+   uint32_t now = millis();
 
    switch(slaveState)
    {
@@ -1054,7 +1054,7 @@ bool LoraDispatcherClass::parsePacket(uint8_t* bPacket, int packetSize)
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_LORA_DISABLE_CORE_LOGIC
 //--------------------------------------------------------------------------------------------------------------------------------------
-void LoraDispatcherClass::coreLoraReceive(int packetSize)
+void LoraDispatcherClass::coreLoraReceive(int16_t packetSize)
 {
   // тут пришёл пакет от LoRa, и в зависимости от режима работы (мастер/слейв) - мы должны делать какие-либо действия
   
