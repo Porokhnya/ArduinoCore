@@ -347,6 +347,97 @@ TemperatureData TemperatureData::ConvertToFahrenheit(const TemperatureData& from
     return result;  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+// PressureData
+//--------------------------------------------------------------------------------------------------------------------------------------
+PressureData PressureData::ConvertToMmHg(const PressureData& from)
+{
+  PressureData result;
+  
+  int32_t rawP = from.Value*100 + from.Fract;
+  int32_t rawMm = (rawP*1.0)/133.3;
+
+  result.isInPA = false;
+  result.Value = rawMm/100;
+  result.Fract = rawMm%100;
+
+  return result;  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+int PressureData::raw() const
+{
+  int32_t result = abs(Value)*100;
+  result += Fract;
+
+  if(Value < 0)
+    result = -result;
+
+    return result;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool PressureData::operator==(const PressureData& rhs)
+{
+  int32_t this_val = raw();
+  int32_t rhs_val = rhs.raw();
+
+   return (this_val == rhs_val);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool PressureData::operator!=(const PressureData& rhs)
+{
+  return !operator==(rhs);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool PressureData::operator<(const PressureData& rhs)
+{
+  int32_t this_val = raw();
+  int32_t rhs_val = rhs.raw();
+
+   return (this_val < rhs_val);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool PressureData::operator<=(const PressureData& rhs)
+{
+  int32_t this_val = raw();
+  int32_t rhs_val = rhs.raw();
+
+   return (this_val <= rhs_val);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool PressureData::operator>(const PressureData& rhs)
+{
+  int32_t this_val = raw();
+  int32_t rhs_val = rhs.raw();
+
+   return (this_val > rhs_val);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool PressureData::operator>=(const PressureData& rhs)
+{
+  int32_t this_val = raw();
+  int32_t rhs_val = rhs.raw();
+
+   return (this_val >= rhs_val);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+PressureData::operator String()
+{
+    String result;
+    result = Value;
+    
+    result += Core.FractDelimiter;
+    if(Fract < 10)
+      result += '0';
+
+     result += Fract;
+
+     return result;
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 // CoreSensorsFactory
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreSensor* CoreSensorsFactory::createSensor(CoreSensorType type)
@@ -454,7 +545,7 @@ void CoreSensor::update()
   // nop
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-String CoreSensor::getUnit(CoreDataType type)
+String CoreSensor::getUnit(CoreDataType type, uint8_t anyFlag)
 {
   switch(type)
   {
@@ -468,19 +559,22 @@ String CoreSensor::getUnit(CoreDataType type)
       return F(" lux"); //люксы
 
     case UnknownType:
-      return "";
-
     case DateTime:
-      return "";
-
-    case DigitalPort:
-      return "";
-      
+    case DigitalPort:      
     case AnalogPort:
+    case UserData:
+    case Barometric:
       return "";
 
-    case UserData:
-      return "";
+    case Altitude:
+      return "m";
+
+    case Pressure:
+    
+      if(anyFlag)
+        return "Pa";
+      else
+        return "mm";
   }
 
   return "";

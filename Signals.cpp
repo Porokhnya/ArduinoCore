@@ -543,6 +543,7 @@ bool SignalHandler::compare(const String& sensorName, SignalOperands operand, ui
       break;
 
       case Temperature: // это температура?
+      case Altitude: // высоту тоже можем сравнивать как температуру
       {
         TemperatureData dt = dataStored;
         return compareTemperature(dt, operand, data, dataLength);
@@ -573,7 +574,11 @@ bool SignalHandler::compare(const String& sensorName, SignalOperands operand, ui
       }
 
       case DateTime: // это дата/время?
-        return false;
+        return false; // пока не сравниваем
+
+      case Barometric: // это барометрические данные?
+      case Pressure: // это давление?
+        return false; // пока не сравниваем
 
       case UserData: // пользовательские данные
         return compareUserData(dataStored, operand, data, dataLength);

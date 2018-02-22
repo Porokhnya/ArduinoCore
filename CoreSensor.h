@@ -38,6 +38,11 @@ typedef enum
   DigitalPort, // состояние порта
   AnalogPort, // показания аналогового порта
   UserData, // пользовательские данные
+  
+  Pressure, // давление
+  Altitude, // высота над уровнем моря
+  Barometric, // данные с барометрических датчиков
+  
   //TODO: Тут добавлять другие типы!!!
   
   
@@ -81,6 +86,42 @@ typedef struct
   }
   
 } HumidityData;
+//--------------------------------------------------------------------------------------------------------------------------------------
+// для высоты над уровнем моря вполне можно использовать структуру температуры, т.к. на 32767 метров навряд ли кто с датчиком улетит. 
+// Ну и погрузиться на -32767 метров на Земле - тоже проблематично, Марианская впадина негодуэ :). Поэтому делаем typedef.
+typedef struct TemperatureData AltitudeData;
+//--------------------------------------------------------------------------------------------------------------------------------------
+struct PressureData // структура, описывающая давление (в паскалях)
+{
+  bool isInPA; // тип показаний - в Паскалях или мм. рт. ст.
+  int32_t Value;
+  uint8_t Fract;
+
+  bool operator==(const PressureData& rhs);
+  bool operator!=(const PressureData& rhs);
+
+  bool operator<(const PressureData& rhs);
+  bool operator<=(const PressureData& rhs);
+
+  bool operator>(const PressureData& rhs);
+  bool operator>=(const PressureData& rhs);
+
+  static PressureData ConvertToMmHg(const PressureData& from); // конвертирует паскали в мм. рт. ст.
+  
+  operator String(); 
+
+private:
+
+  int raw() const;   
+  
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+struct BarometricData // структура данных для барометрических датчиков, типа BMP180
+{
+   TemperatureData Temperature;
+   PressureData Pressure;
+   AltitudeData Altitude;
+};
 //--------------------------------------------------------------------------------------------------------------------------------------
 struct LuminosityData
 {
@@ -201,7 +242,7 @@ public:
   CoreSensorType getType() { return type; } // возвращает тип железки
 
   static CoreDataType getDataType(CoreSensorType type); // возвращает тип данных с датчика
-  static String getUnit(CoreDataType type); // возвращает единицы измерения для типов данных
+  static String getUnit(CoreDataType type, uint8_t anyFlag=0); // возвращает единицы измерения для типов данных
 
   String getName() {return mnemonicName;} // мнемоническое имя датчика
   void setName(const String& name) { mnemonicName = name; } 

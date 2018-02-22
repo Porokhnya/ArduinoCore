@@ -3229,6 +3229,68 @@ CoreStoredData::operator HumidityData() const
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+CoreStoredData::operator BarometricData() const
+{
+  BarometricData result;
+  
+  result.Temperature.Value = 0;
+  result.Pressure.Value = 0;
+  result.Altitude.Value = 0;
+
+  if(!hasData())
+    return result;
+
+  if(dataSize < 12)
+    return result;
+
+   int idx = 0;
+
+   memcpy(&(result.Temperature.Value),data,sizeof(int16_t));
+   idx += sizeof(int16_t);
+   result.Temperature.Fract = data[idx];
+   idx++;
+
+   result.Pressure.isInPA = data[idx];
+   idx++;
+
+   memcpy(&(result.Pressure.Value),&(data[idx]),sizeof(int32_t));
+   idx += sizeof(int32_t);
+   result.Pressure.Fract = data[idx];
+   idx++;
+   
+   memcpy(&(result.Altitude.Value),&(data[idx]),sizeof(int16_t));
+   idx += sizeof(int16_t);
+   result.Altitude.Fract = data[idx];
+
+   return result;
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreStoredData::operator PressureData() const
+{
+  PressureData result;
+  
+  result.Value = 0;
+
+  if(!hasData())
+    return result;
+
+  if(dataSize < 6)
+    return result;
+
+   int idx = 0;
+
+   result.isInPA = data[idx];
+   idx++;
+
+   memcpy(&(result.Value),&(data[idx]),sizeof(int32_t));
+   idx += sizeof(int32_t);
+   result.Fract = data[idx];
+   
+   return result;
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 // CoreDataStoreClass
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreDataStoreClass::CoreDataStoreClass()
@@ -3363,6 +3425,7 @@ Vector<String*> CoreTextFormatProvider::formatComposite(const CoreStoredData& da
       break;
 
       case Temperature: // это температура?
+      case Altitude: // высота у нас тоже в структуре температуры
       {
          // приводим к температуре
         TemperatureData tdt = dataStored;
@@ -3447,6 +3510,48 @@ Vector<String*> CoreTextFormatProvider::formatComposite(const CoreStoredData& da
       }
       break;
 
+      case Barometric:
+      {
+        BarometricData hData = dataStored;
+        
+        String* t = new String(hData.Temperature);
+        
+        if(showUnits)
+          *t += CoreSensor::getUnit(Temperature);
+
+        result.push_back(t);
+                
+        t = new String(hData.Pressure);
+        
+        if(showUnits)
+          *t += CoreSensor::getUnit(Pressure, hData.Pressure.isInPA);
+
+        result.push_back(t);        
+
+        t = new String(hData.Altitude);
+        
+        if(showUnits)
+          *t += CoreSensor::getUnit(Altitude);
+        
+        result.push_back(t);        
+      }
+      break;
+
+      case Pressure:
+      {
+         // приводим к давлению
+        PressureData tdt = dataStored;
+        String* t = new String();
+        *t = tdt;
+        
+        if(showUnits)
+          *t += CoreSensor::getUnit(typeOfData,tdt.isInPA);
+
+          result.push_back(t);
+        
+      }
+      break;
+
       //TODO: тут другие типы показаний!!!
     }        
 
@@ -3477,6 +3582,7 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
       break;
 
       case Temperature: // это температура?
+      case Altitude: // высота у нас тоже в структуре температуры
       {
          // приводим к температуре
         TemperatureData tdt = dataStored;
@@ -3549,6 +3655,42 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
           
       }
       break;
+
+      case Barometric:
+      {
+        BarometricData hData = dataStored;
+        
+        result = hData.Temperature;
+        
+        if(showUnits)
+          result += CoreSensor::getUnit(Temperature);
+        
+        result += CORE_HUMIDITY_DELIMITER;
+        
+        result += hData.Pressure;
+        
+        if(showUnits)
+          result += CoreSensor::getUnit(Pressure, hData.Pressure.isInPA);
+
+        result += CORE_HUMIDITY_DELIMITER;
+        
+        result += hData.Altitude;
+        
+        if(showUnits)
+          result += CoreSensor::getUnit(Altitude);
+        
+      }
+      break;
+
+      case Pressure: // это давление?
+      {
+         // приводим к температуре
+        PressureData tdt = dataStored;
+        result = tdt;
+        if(showUnits)
+          result += CoreSensor::getUnit(typeOfData, tdt.isInPA);       
+      }
+      break;      
 
       //TODO: тут другие типы показаний!!!
     }

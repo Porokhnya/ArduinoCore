@@ -366,11 +366,13 @@ struct CoreStoredData
   CoreSensor* sensor; // датчик, с которого получены данные
 
   operator LuminosityData() const; // возвращает данные как освещённость
-  operator TemperatureData() const; // возвращает данные, как температуру
+  operator TemperatureData() const; // возвращает данные, как температуру (или высоту, которая тоже суть структура температуры)
   operator HumidityData() const; // возвращает данные, как пару температуры и влажности
   operator DateTimeData() const; // возвращает данные, как дату/время
   operator DigitalPortData() const; // возвращает данные, как состояние цифрового порта
   operator AnalogPortData() const; // возвращает данные, как состояние аналогового порта
+  operator BarometricData() const; // возвращает данные как структуру показаний с барометрических датчиков
+  operator PressureData() const; // возвращает данные как структуру показаний давления
   
   bool hasData() const {return data != NULL;}
 
