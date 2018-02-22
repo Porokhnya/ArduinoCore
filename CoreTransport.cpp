@@ -428,6 +428,8 @@ void CoreRS485::processUserDataPacket()
   CorePacketAnyData data;
   memcpy(&data,&rs485Packet,sizeof(CorePacketAnyData));
 
+  rs485WritePtr = 0; // обнуляем указатель записи, т.к. всё уже приняли и обработали
+
   // вызываем событие, говорящее о том, сколько байт надо вычитать
   ON_RS485_DATA_RECEIVED(workStream,data.DataLength);
 }
