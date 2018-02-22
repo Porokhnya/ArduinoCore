@@ -2598,8 +2598,6 @@ void CoreClass::readFromSensor(CoreSensor* sensor,uint16_t storeIndex)
   {
     uint8_t* dt = new uint8_t[sz];
     
-    //DBGLN(F("Read..."));
-    
     if(sensor->read(dt))
     {      
         // на датчике есть данные
@@ -3359,7 +3357,7 @@ Vector<String*> CoreTextFormatProvider::formatComposite(const CoreStoredData& da
       #endif
     }
 
-switch(typeOfData)
+    switch(typeOfData)
     {
       case UnknownType:
       break;

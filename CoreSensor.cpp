@@ -10,8 +10,23 @@ TwoWire* getWireInterface(uint8_t i2cIndex)
 {
   #if TARGET_BOARD == DUE_BOARD
     if(i2cIndex == 1)
+    {
+      static bool _isWire1Inited = false;
+      if(!_isWire1Inited)
+      {
+        _isWire1Inited = true;
+        Wire1.begin();
+      }
       return &Wire1;
+    }
   #endif
+
+  static bool _isWireInited = false;
+  if(!_isWireInited)
+  {
+    _isWireInited = true;
+    Wire.begin();
+  }
 
   return &Wire;
 }
@@ -543,9 +558,6 @@ void CoreSensorBH1750::begin(uint8_t* configData)
 {
   i2cIndex = *configData++;
   deviceAddress = *configData;
-
-  TwoWire* wire = getWireInterface(i2cIndex);
-  wire->begin();
 
   writeByte(0x01); // включаем датчик
   writeByte(0x10); // режим Continuous High Resolution
@@ -1111,8 +1123,6 @@ uint8_t CoreSensorDS3231::getDataSize()
 void CoreSensorDS3231::begin(uint8_t* configData)
 {
   i2cIndex = *configData;
-  TwoWire* wire = getWireInterface(i2cIndex);
-  wire->begin();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSensorDS3231::read(uint8_t* buffer)
