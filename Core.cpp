@@ -2003,6 +2003,14 @@ bool CoreClass::getSENSORS(const char* commandPassed, Stream* pStream)
     pStream->print(F("MAX44009")); 
   #endif  
 
+  #ifdef CORE_HCSR04_ENABLED
+    if(written)
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+      
+    written++;
+    pStream->print(F("HCSR04")); 
+  #endif  
+
   pStream->println();
 
   return true;
@@ -3133,9 +3141,7 @@ void CoreClass::memWrite(uint16_t address, uint8_t val)
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreStoredData::operator LuminosityData() const
 {
-  LuminosityData result;
-  result.Value = 0;
-  
+  LuminosityData result;  
   if(!hasData())
     return result;
     
@@ -3146,10 +3152,23 @@ CoreStoredData::operator LuminosityData() const
   return result;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+CoreStoredData::operator DistanceData() const
+{
+  DistanceData result;
+    
+  if(!hasData())
+    return result;
+    
+  if(dataSize < sizeof(DistanceData))
+    return result;
+
+  memcpy(&result,data,sizeof(DistanceData));
+  return result;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 CoreStoredData::operator DigitalPortData() const
 {
   DigitalPortData result;
-  result.Value = LOW;
   
   if(!hasData())
     return result;
@@ -3165,7 +3184,6 @@ CoreStoredData::operator DigitalPortData() const
 CoreStoredData::operator AnalogPortData() const
 {
   AnalogPortData result;
-  result.Value = 0;
   
   if(!hasData())
     return result;
@@ -3181,7 +3199,6 @@ CoreStoredData::operator AnalogPortData() const
 CoreStoredData::operator TemperatureData() const
 {
   TemperatureData result;
-  result.Value = 0;
 
   if(!hasData())
   {
@@ -3219,8 +3236,6 @@ CoreStoredData::operator DateTimeData() const
 CoreStoredData::operator HumidityData() const
 {
   HumidityData result;
-  result.Temperature.Value = 0;
-  result.Humidity.Value = 0;
 
   if(!hasData())
     return result;
@@ -3238,10 +3253,6 @@ CoreStoredData::operator BarometricData() const
 {
   BarometricData result;
   
-  result.Temperature.Value = 0;
-  result.Pressure.Value = 0;
-  result.Altitude.Value = 0;
-
   if(!hasData())
     return result;
 
@@ -3258,8 +3269,6 @@ CoreStoredData::operator PressureData() const
 {
   PressureData result;
   
-  result.Value = 0;
-
   if(!hasData())
     return result;
 
@@ -3432,6 +3441,18 @@ Vector<String*> CoreTextFormatProvider::formatComposite(const CoreStoredData& da
       }
       break;
 
+      case Distance: // это расстояние?
+      {
+        // приводим к расстоянию
+        DistanceData dis = dataStored;
+        String* t = new String(dis);
+        if(showUnits)
+          *t += CoreSensor::getUnit(typeOfData);
+
+          result.push_back(t);
+      }
+      break;
+
       case DigitalPort: // это состояние цифрового порта?
       {
         DigitalPortData dpd = dataStored;
@@ -3578,6 +3599,16 @@ String CoreTextFormatProvider::format(const CoreStoredData& dataStored, size_t s
         // приводим к освещённости
         LuminosityData lum = dataStored;
         result = lum.Value;
+        if(showUnits)
+          result += CoreSensor::getUnit(typeOfData);
+      }
+      break;
+
+      case Distance: // это расстояние?
+      {
+        // приводим к расстоянию
+        DistanceData dis = dataStored;
+        result = dis;
         if(showUnits)
           result += CoreSensor::getUnit(typeOfData);
       }

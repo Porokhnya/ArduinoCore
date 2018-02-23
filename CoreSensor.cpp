@@ -257,6 +257,80 @@ long DateTimeData::time2long(uint16_t days, uint8_t hours, uint8_t minutes, uint
     return ((days * 24L + hours) * 60 + minutes) * 60 + seconds;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+// DistanceData
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint32_t DistanceData::raw() const
+{
+  uint32_t result = Value*100;
+  result += Fract;
+
+  return result;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DistanceData::operator==(const DistanceData& rhs)
+{
+  uint32_t this_val = raw();
+  uint32_t rhs_val = rhs.raw();
+
+   return (this_val == rhs_val);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DistanceData::operator!=(const DistanceData& rhs)
+{
+  return !operator==(rhs);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DistanceData::operator<(const DistanceData& rhs)
+{
+  uint32_t this_val = raw();
+  uint32_t rhs_val = rhs.raw();
+
+   return (this_val < rhs_val);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DistanceData::operator<=(const DistanceData& rhs)
+{
+  uint32_t this_val = raw();
+  uint32_t rhs_val = rhs.raw();
+
+   return (this_val <= rhs_val);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DistanceData::operator>(const DistanceData& rhs)
+{
+  uint32_t this_val = raw();
+  uint32_t rhs_val = rhs.raw();
+
+   return (this_val > rhs_val);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool DistanceData::operator>=(const DistanceData& rhs)
+{
+  uint32_t this_val = raw();
+  uint32_t rhs_val = rhs.raw();
+
+   return (this_val >= rhs_val);
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+DistanceData::operator String()
+{
+    String result;
+    result = Value;
+    
+    result += Core.FractDelimiter;
+    if(Fract < 10)
+      result += '0';
+
+     result += Fract;
+
+     return result;
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 // TemperatureData
 //--------------------------------------------------------------------------------------------------------------------------------------
 int32_t TemperatureData::raw() const
@@ -460,6 +534,15 @@ CoreSensor* CoreSensorsFactory::createSensor(CoreSensorType type)
       return NULL;
     #endif
 
+    case HCSR04:
+    
+    #ifdef CORE_HCSR04_ENABLED
+      return new CoreSensorHCSR04();
+    #else
+      return NULL;
+    #endif
+    
+
     case Si7021:
     
     #ifdef CORE_SI7021_ENABLED
@@ -590,6 +673,9 @@ String CoreSensor::getUnit(CoreDataType type, uint8_t anyFlag)
         return "Pa";
       else
         return "mm";
+
+    case Distance:
+      return "mm";
   }
 
   return "";
@@ -611,6 +697,9 @@ CoreDataType CoreSensor::getDataType(CoreSensorType type)
     case BH1750:
     case MAX44009:
       return Luminosity;
+
+    case HCSR04:
+      return Distance;
 
     case DS3231:
       return DateTime;
@@ -1127,6 +1216,56 @@ bool CoreSensorSi7021::read(uint8_t* buffer)
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_SI7021_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_HCSR04_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreSensorHCSR04::CoreSensorHCSR04() : CoreSensor(HCSR04)
+{
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint8_t CoreSensorHCSR04::getDataSize()
+{
+  return sizeof(DistanceData);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSensorHCSR04::begin(uint8_t* configData)
+{
+  triggerPin = *configData++;
+  echoPin = *configData;
+
+  pinMode(triggerPin, OUTPUT); 
+  pinMode(echoPin, INPUT); 
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreSensorHCSR04::read(uint8_t* buffer)
+{
+  DistanceData data;
+
+  int32_t duration;
+  float mm;
+  
+  digitalWrite(triggerPin, LOW); 
+  delayMicroseconds(2); 
+  
+  digitalWrite(triggerPin, HIGH); 
+  delayMicroseconds(10); 
+  
+  digitalWrite(triggerPin, LOW); 
+  duration = pulseIn(echoPin, HIGH); 
+  
+  mm = duration / 5.8;
+
+  uint32_t raw = mm*100;
+  data.Value = raw/100;
+  data.Fract = raw%100;
+
+  memcpy(buffer,&data,sizeof(DistanceData));
+  
+  return true;  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_HCSR04_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_DIGITALPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------

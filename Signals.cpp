@@ -578,6 +578,7 @@ bool SignalHandler::compare(const String& sensorName, SignalOperands operand, ui
 
       case Barometric: // это барометрические данные?
       case Pressure: // это давление?
+      case Distance: // это расстояние?
         return false; // пока не сравниваем
 
       case UserData: // пользовательские данные

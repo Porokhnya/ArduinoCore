@@ -373,6 +373,7 @@ struct CoreStoredData
   operator AnalogPortData() const; // возвращает данные, как состояние аналогового порта
   operator BarometricData() const; // возвращает данные как структуру показаний с барометрических датчиков
   operator PressureData() const; // возвращает данные как структуру показаний давления
+  operator DistanceData() const; // возвращает данные как структуру расстояния
   
   bool hasData() const {return data != NULL;}
 

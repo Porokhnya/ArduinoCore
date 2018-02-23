@@ -26,6 +26,7 @@ typedef enum // тип датчика
   MAX6675 = 10, // термопара MAX6675
   BMP180 = 11, // датчик BMP085 или BMP180
   MAX44009 = 12, // датчик освещённости MAX44009
+  HCSR04 = 13, // УЗ-датчик расстояния HC-SR04
   //TODO: Тут добавлять другие типы!!!
   
 } CoreSensorType;
@@ -43,6 +44,7 @@ typedef enum
   Pressure = 8, // давление
   Altitude = 9, // высота над уровнем моря
   Barometric = 10, // данные с барометрических датчиков
+  Distance = 11, // расстояние в мм
   
   //TODO: Тут добавлять другие типы!!!
   
@@ -51,10 +53,54 @@ typedef enum
 //--------------------------------------------------------------------------------------------------------------------------------------
 #pragma pack(push, 1)
 //--------------------------------------------------------------------------------------------------------------------------------------
+struct DistanceData
+{
+  uint32_t Value;
+  uint8_t Fract;
+
+  DistanceData()
+  {
+    Value = Fract = 0;
+  }
+
+  DistanceData(uint32_t v, uint8_t f)
+  {
+    Value = v;
+    Fract = f;
+  }
+
+  bool operator==(const DistanceData& rhs);
+  bool operator!=(const DistanceData& rhs);
+
+  bool operator<(const DistanceData& rhs);
+  bool operator<=(const DistanceData& rhs);
+
+  bool operator>(const DistanceData& rhs);
+  bool operator>=(const DistanceData& rhs);
+  
+  operator String();
+
+private:
+
+  uint32_t raw() const;
+  
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
 struct TemperatureData
 {
   int16_t Value;
   uint8_t Fract;
+
+  TemperatureData()
+  {
+    Value = Fract = 0;
+  }
+
+  TemperatureData(int16_t v, uint16_t f)
+  {
+    Value = v;
+    Fract = f;
+  }
 
   static TemperatureData ConvertToFahrenheit(const TemperatureData& from);
 
@@ -100,6 +146,19 @@ struct PressureData // структура, описывающая давлени
   int32_t Value;
   uint8_t Fract;
 
+  PressureData()
+  {
+    isInPA = true;
+    Value = Fract = 0;
+  }
+
+  PressureData(uint8_t isPA, int32_t v, uint8_t f)
+  {
+    isInPA = isPA;
+    Value = v;
+    Fract = f;
+  }
+
   bool operator==(const PressureData& rhs);
   bool operator!=(const PressureData& rhs);
 
@@ -130,6 +189,16 @@ struct LuminosityData
 {
   int32_t Value;
 
+  LuminosityData()
+  {
+    Value = 0;
+  }
+
+  LuminosityData(int32_t v)
+  {
+    Value = v;
+  }
+
   bool operator==(const LuminosityData& rhs) {return Value == rhs.Value; }
   bool operator!=(const LuminosityData& rhs) {return Value != rhs.Value; }
 
@@ -152,6 +221,17 @@ struct AnalogPortData
   uint8_t Pin;
   uint16_t Value;
 
+  AnalogPortData()
+  {
+    Pin = Value = 0;
+  }
+
+  AnalogPortData(uint8_t p, uint16_t v)
+  {
+    Pin = p;
+    Value = v;
+  }
+
   bool operator==(const AnalogPortData& rhs) {return Value == rhs.Value; }
   bool operator!=(const AnalogPortData& rhs) {return Value != rhs.Value; }
 
@@ -173,6 +253,17 @@ struct DigitalPortData
 {
   uint8_t Pin;
   uint8_t Value;
+
+  DigitalPortData()
+  {
+    Pin = Value = 0;
+  }
+
+  DigitalPortData(uint8_t p, uint8_t v)
+  {
+    Pin = p;
+    Value = v;
+  }
 
   bool operator==(const DigitalPortData& rhs) {return Value == rhs.Value; }
   bool operator!=(const DigitalPortData& rhs) {return Value != rhs.Value; }
@@ -381,6 +472,28 @@ class CoreSensorBMP180 : public CoreSensor
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_BMP180_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_HCSR04_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+class CoreSensorHCSR04 : public CoreSensor
+{
+  public:
+
+  CoreSensorHCSR04();
+
+  virtual void begin(uint8_t* configData); // инициализирует датчик
+  virtual bool read(uint8_t* buffer); // читает с датчика, возвращает false в случае, если с датчика не удалось прочитать
+  
+  virtual uint8_t getDataSize(); // возвращает размер данных буфера показаний с датчика
+
+  private:
+    
+   uint8_t triggerPin, echoPin;
+
+  
+};
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_HCSR04_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_DIGITALPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
