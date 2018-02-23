@@ -3,7 +3,7 @@
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool __isSPIInited = false;
 //--------------------------------------------------------------------------------------------------------------------------------------
-#if defined(CORE_DS3231_ENABLED) || defined(CORE_BH1750_ENABLED) || defined(CORE_SI7021_ENABLED) || defined(CORE_BMP180_ENABLED)
+#if defined(CORE_DS3231_ENABLED) || defined(CORE_BH1750_ENABLED) || defined(CORE_SI7021_ENABLED) || defined(CORE_BMP180_ENABLED) || defined(CORE_MAX44009_ENABLED)
 #include <Wire.h>
 //--------------------------------------------------------------------------------------------------------------------------------------
 TwoWire* getWireInterface(uint8_t i2cIndex)
@@ -452,6 +452,14 @@ CoreSensor* CoreSensorsFactory::createSensor(CoreSensorType type)
       return NULL;
     #endif
 
+    case MAX44009:
+    
+    #ifdef CORE_MAX44009_ENABLED
+      return new CoreSensorMAX44009();
+    #else
+      return NULL;
+    #endif
+
     case Si7021:
     
     #ifdef CORE_SI7021_ENABLED
@@ -601,6 +609,7 @@ CoreDataType CoreSensor::getDataType(CoreSensorType type)
       return Humidity;
       
     case BH1750:
+    case MAX44009:
       return Luminosity;
 
     case DS3231:
@@ -703,6 +712,76 @@ bool CoreSensorBH1750::read(uint8_t* buffer)
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #endif // CORE_BH1750_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+#ifdef CORE_MAX44009_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+// CORE_MAX44009_ENABLED
+//--------------------------------------------------------------------------------------------------------------------------------------
+CoreSensorMAX44009::CoreSensorMAX44009() : CoreSensor(MAX44009)
+{
+ i2cIndex = 0; 
+ deviceAddress = MAX44009_ADDRESS1;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSensorMAX44009::begin(uint8_t* configData)
+{
+  i2cIndex = *configData++;
+  deviceAddress = *configData;
+
+  TwoWire* wire = getWireInterface(i2cIndex);
+
+  wire->beginTransmission(deviceAddress);
+  
+  // выбираем регистр конфигурации
+  wire->write(0x02);
+  // пишем в него - непрерывный режим измерения, время интегрирования - 800 ms
+  wire->write(0x40);
+  
+  wire->endTransmission();   
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+uint8_t CoreSensorMAX44009::getDataSize()
+{
+  return sizeof(LuminosityData);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreSensorMAX44009::read(uint8_t* buffer)
+{
+
+  TwoWire* wire = getWireInterface(i2cIndex);
+     
+  unsigned int data[2] = {0};
+
+  wire->beginTransmission(deviceAddress);
+  
+  // регистр данных
+  wire->write(0x03);
+  wire->endTransmission();
+
+  // ждём два байта
+  if(wire->requestFrom(deviceAddress, uint8_t(2)) == uint8_t(2))
+  {
+    data[0] = wire->read();
+    data[1] = wire->read();
+  }
+  else
+    return false;
+
+  // Convert the data to lux
+  int exponent = (data[0] & 0xF0) >> 4;
+  int mantissa = ((data[0] & 0x0F) << 4) | (data[1] & 0x0F);
+  float luminosity = pow(2, exponent) * mantissa * 0.045;
+
+  LuminosityData lum;
+  lum.Value = luminosity; // пока отбрасываем дробную часть
+  memcpy(buffer,&lum,sizeof(LuminosityData));    
+
+  return true;
+  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+#endif // CORE_MAX44009_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_BMP180_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------

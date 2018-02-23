@@ -1995,6 +1995,13 @@ bool CoreClass::getSENSORS(const char* commandPassed, Stream* pStream)
     pStream->print(F("BMP180")); 
   #endif  
 
+  #ifdef CORE_MAX44009_ENABLED
+    if(written)
+      pStream->print(CORE_COMMAND_PARAM_DELIMITER);
+      
+    written++;
+    pStream->print(F("MAX44009")); 
+  #endif  
 
   pStream->println();
 

@@ -383,9 +383,9 @@ bool SignalHandler::compareLuminosity(LuminosityData& dataStored, SignalOperands
   
   // dataLength у нас равно 8, и в зависимости от операнда - там либо одно значение, либо - попадание в диапазон
   int32_t lumFrom, lumTo;
-  memcpy(&lumFrom,data,sizeof(long));
-  data += sizeof(long);
-  memcpy(&lumTo,data,sizeof(long));
+  memcpy(&lumFrom,data,sizeof(int32_t));
+  data += sizeof(int32_t);
+  memcpy(&lumTo,data,sizeof(int32_t));
 
   //DBG(F("SIG: compare luminosity, toCompare="));
   //DBG(lumFrom);
