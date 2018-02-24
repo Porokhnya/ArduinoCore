@@ -15,8 +15,15 @@ float Joystick::reflect(int16_t current, int16_t midpoint, uint8_t histeresis)
 
  float reflectedPos = current - midpoint;
 
-  return (reflectedPos/midpoint);
-    
+  float result = (reflectedPos/midpoint);
+
+  if(result < -1.0)
+    result = -1.0;
+  
+  if(result > 1.0)
+    result = 1.0;
+
+  return result;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void Joystick::begin(uint8_t xPin, uint8_t yPin, int16_t midPointX, int16_t midPointY, uint8_t _histeresis)
