@@ -5722,7 +5722,7 @@ void CoreSIM800Transport::update()
         {
           if(hasAnswerLine)
           {
-            if(SIM800TransportSettings.UsePowerKey)
+            if(SIM800TransportSettings.UseRebootPin)
             {
               // используем управление питанием, ждём загрузки модема
               if(*sim800ReceiveBuff == F("Call Ready") || *sim800ReceiveBuff == F("SMS Ready"))
