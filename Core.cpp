@@ -2878,7 +2878,6 @@ void CoreClass::begin()
   if(!configLoaded)
     return;
 
-  lastSerialCommandTimer = millis();
 
   #ifdef CORE_SD_SUPPORT_ENABLED
   
@@ -2904,7 +2903,7 @@ void CoreClass::begin()
           break;
         }
         else
-          delay(200);
+          delay(50);
        
       } // for
 
@@ -2966,6 +2965,9 @@ void CoreClass::begin()
   ON_CORE_BEGIN();
 
   printVersion(Serial);
+
+  lastSerialCommandTimer = millis();
+  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreClass::yieldCritical()
