@@ -5722,12 +5722,27 @@ void CoreSIM800Transport::update()
         {
           if(hasAnswerLine)
           {
-            if(*sim800ReceiveBuff == F("Call Ready") || *sim800ReceiveBuff == F("SMS Ready"))
+            if(SIM800TransportSettings.UsePowerKey)
             {
-              DBGLN(F("SIM800: BOOT FOUND, INIT!"));
-              restart();
+              // используем управление питанием, ждём загрузки модема
+              if(*sim800ReceiveBuff == F("Call Ready") || *sim800ReceiveBuff == F("SMS Ready"))
+              {
+                DBGLN(F("SIM800: BOOT FOUND, INIT!"));
+                restart();
+              }
             }
-          }
+            else
+            {
+              // управление питанием не используем, здесь не надо ждать загрузки модема - достаточно дождаться ответа на команду
+              if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+              {
+                DBGLN(F("SIM800: ANSWERED, INIT!"));
+                restart();
+              }
+               
+            } // else
+            
+          } // if(hasAnswerLine)
              
         }
         break; // sim800WaitBoot
