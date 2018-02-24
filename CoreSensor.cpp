@@ -1610,7 +1610,6 @@ void CoreSensorMAX6675::begin(uint8_t* configData)
     __isSPIInited = true;
     SPI.begin();
   }
-
   pinMode(cs, OUTPUT);
   digitalWrite(cs, HIGH);  
 }
@@ -1623,24 +1622,48 @@ double CoreSensorMAX6675::readCelsius()
 
   delayMicroseconds(1000);
 
-  #if TARGET_BOARD != DUE_BOARD
-   uint8_t oldSPCR = SPCR;
+  #if TARGET_BOARD == DUE_BOARD
+  
+    // поддержка медленного режима под Due
+    
+    uint8_t currentDivider = SPI_CLOCK_DIV4;
+    if(slow)
+    {
+      uint8_t spiChannel = BOARD_PIN_TO_SPI_CHANNEL(SPI_INTERFACE_ID);
+      uint32_t csr = SPI_INTERFACE->SPI_CSR[spiChannel];
+      currentDivider = (csr & SPI_CSR_SCBR_Msk) >> 8;
+      SPI.setClockDivider(SPI_CLOCK_DIV128);
+    }
+  #else
 
-   
-  if(slow)
-  {
-      oldSPCR = SPCR;
-      SPCR |= 3; // As slow as possible (clock/128 or clock/64 depending on SPI2X)
-  }
-   #endif
+     // AVR
+     uint8_t oldSPCR = SPCR;
+    
+    if(slow)
+    {
+        SPCR |= 3; // As slow as possible (clock/128 or clock/64 depending on SPI2X)
+    }
+  #endif
   
   v = SPI.transfer16(0);
 
-   #if TARGET_BOARD != DUE_BOARD    
-  if(slow)
-  {
-      SPCR = oldSPCR;
-  }
+  #if TARGET_BOARD == DUE_BOARD  
+  
+    // поддержка медленного режима под Due
+    
+    if(slow)
+    {
+      SPI.setClockDivider(currentDivider);
+    }
+    
+  #else
+  
+    // AVR    
+    if(slow)
+    {
+        SPCR = oldSPCR;
+    }
+    
   #endif
   
   digitalWrite(cs, HIGH);

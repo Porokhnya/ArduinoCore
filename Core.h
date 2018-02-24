@@ -8,8 +8,8 @@
 #include "CoreSensor.h"
 #include "CoreTransport.h"
 #include "CorePinScenario.h"
-#include "LoRa.h"
-#include "Signals.h"
+#include "CoreLoRa.h"
+#include "CoreSignals.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_SD_SUPPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
