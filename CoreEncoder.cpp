@@ -1,15 +1,16 @@
 #include "CoreEncoder.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
-Encoder::Encoder(byte p0, byte p1, byte pulsesPerClick)
+Encoder::Encoder(byte p0, byte p1, byte pulsesPerClick, bool _pullup)
 {
   pin0 = p0;
   pin1 = p1;
   ppc = pulsesPerClick;
   change = 0;
   state = 0;
+  pullup = _pullup;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void Encoder::begin(bool pullup)
+void Encoder::begin()
 {
   pinMode(pin0, INPUT);
   pinMode(pin1, INPUT);
@@ -47,7 +48,14 @@ void Encoder::update()
 //--------------------------------------------------------------------------------------------------------------------------------------
 unsigned int Encoder::readState()
 {
-  return (digitalRead(pin0) ? 1u : 0u) | (digitalRead(pin1) ? 2u : 0u);
+  if(pullup)
+  {
+    return (digitalRead(pin0) ? 1u : 0u) | (digitalRead(pin1) ? 2u : 0u);
+  }
+  else
+  {
+    return (!digitalRead(pin0) ? 1u : 0u) | (!digitalRead(pin1) ? 2u : 0u);    
+  }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 int Encoder::getChange()
