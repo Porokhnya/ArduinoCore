@@ -14,7 +14,7 @@ class Encoder
 public:
   Encoder(byte A, byte B, byte pulsesPerClick);
 
-  void begin();
+  void begin(bool pullup = true);
   void update();
   int getChange();
 };

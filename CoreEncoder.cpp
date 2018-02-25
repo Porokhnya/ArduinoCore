@@ -9,12 +9,15 @@ Encoder::Encoder(byte p0, byte p1, byte pulsesPerClick)
   state = 0;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void Encoder::begin()
+void Encoder::begin(bool pullup)
 {
   pinMode(pin0, INPUT);
   pinMode(pin1, INPUT);
-  digitalWrite(pin0, HIGH);   // включаем подтягивающие резисторы
-  digitalWrite(pin1, HIGH);
+  if(pullup)
+  {
+    digitalWrite(pin0, HIGH);   // включаем подтягивающие резисторы
+    digitalWrite(pin1, HIGH);
+  }
   change = 0;
   delay(10);                  // читаем состояние после небольшого ожидания
   state = readState();
