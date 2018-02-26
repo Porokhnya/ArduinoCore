@@ -3777,15 +3777,21 @@ void CoreDelayedEventClass::update()
         if(millis() - signals[i].timer > signals[i].duration)
         {
           // сигнал сработал
-          if(signals[i].handler)
-            signals[i].handler(signals[i].param);
+          CoreDelayedEventHandler handler = signals[i].handler;
+          void* param = signals[i].param;
 
+          // сначала мы убираем его из очереди
           for(size_t j=i+1; j< signals.size(); j++)
           {
             signals[j-1] = signals[j];
           }
 
           signals.pop();
+
+          // и только потом вызываем обработчик сигнала
+          if(handler)
+            handler(param);
+            
         } // if
         else
         {
