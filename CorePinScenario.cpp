@@ -48,7 +48,6 @@ void CorePinScenario::update()
    if(!timer)
    {
      // first call
-     pinMode(action->pin,OUTPUT);
      digitalWrite(action->pin,action->level);
      timer = millis();
      return;
@@ -62,7 +61,6 @@ void CorePinScenario::update()
         currentActionIndex = 0;
 
        action = &((*actions)[currentActionIndex]);
-       pinMode(action->pin,OUTPUT);
        digitalWrite(action->pin,action->level);
       
        timer = millis();
