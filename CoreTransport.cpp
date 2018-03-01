@@ -1520,7 +1520,7 @@ void CoreESPTransport::sendCommand(ESPCommands command)
     case cmdCWMODE:
     {
       DBGLN(F("ESP: softAP mode..."));
-      sendCommand(F("AT+CWMODE_DEF=3"));
+      sendCommand(F("AT+CWMODE_CUR=3"));
     }
     break;
 
@@ -1528,7 +1528,7 @@ void CoreESPTransport::sendCommand(ESPCommands command)
     {
         DBGLN(F("ESP: Creating the access point..."));
       
-        String com = F("AT+CWSAP_DEF=\"");
+        String com = F("AT+CWSAP_CUR=\"");
         com += ESPTransportSettings.APName;
         com += F("\",\"");
         com += ESPTransportSettings.APPassword;
@@ -1542,7 +1542,7 @@ void CoreESPTransport::sendCommand(ESPCommands command)
     {
       DBGLN(F("ESP: Connecting to the router..."));
               
-        String com = F("AT+CWJAP_DEF=\"");
+        String com = F("AT+CWJAP_CUR=\"");
         com += ESPTransportSettings.RouterID;
         com += F("\",\"");
         com += ESPTransportSettings.RouterPassword;
