@@ -1214,6 +1214,7 @@ CoreESPTransport::CoreESPTransport() : CoreTransport()
     clients[i] = NULL;
 
   wiFiReceiveBuff = new String();
+  flags.bPaused = false;
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -1735,7 +1736,7 @@ void CoreESPTransport::update()
   if(!ESPTransportSettings.enabled)
     return;
  
-  if(!workStream)
+  if(!workStream || paused())
     return;
 
   if(flags.onIdleTimer) // попросили подождать определённое время, в течение которого просто ничего не надо делать
@@ -2501,6 +2502,7 @@ void CoreESPTransport::restart()
   flags.connectedToRouter = false;
   flags.wantReconnect = false;
   flags.onIdleTimer = false;
+  flags.bPaused = false;
   
   timer = millis();
 
@@ -4406,6 +4408,7 @@ CoreSIM800Transport::CoreSIM800Transport() : CoreTransport()
 
   sim800ReceiveBuff = new String();
   smsToSend = new String();
+  flags.bPaused = false;
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -4848,7 +4851,7 @@ void CoreSIM800Transport::sendQueuedSMS()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::update()
 {
-  if(!SIM800TransportSettings.enabled || !workStream)
+  if(!SIM800TransportSettings.enabled || !workStream || paused())
     return;
  
   if(flags.onIdleTimer) // попросили подождать определённое время, в течение которого просто ничего не надо делать
@@ -5965,6 +5968,7 @@ void CoreSIM800Transport::restart()
   flags.onIdleTimer = false;
   flags.isModuleRegistered = false;
   flags.gprsAvailable = false;
+  flags.bPaused = false;
   
   timer = millis();
 

@@ -175,6 +175,10 @@ class CoreTransport
     CoreTransport();
     virtual ~CoreTransport();
 
+    virtual void pause() = 0;
+    virtual void resume() = 0;
+    virtual bool paused() = 0;
+
     // обновляем состояние транспорта
     virtual void update() = 0; 
 
@@ -380,6 +384,7 @@ typedef struct
   bool waitForDataWelcome   : 1; // флаг, что ждём приглашения на отсыл данных
   bool wantReconnect        : 1; // флаг, что мы должны переподсоединиться к роутеру
   bool onIdleTimer          : 1; // флаг, что мы в режиме простоя
+  bool bPaused              : 1; // флаг, что мы на паузе
   
 } CoreESPTransportFlags;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -429,6 +434,10 @@ class CoreESPTransport : public CoreTransport
 {
   public:
     CoreESPTransport();
+
+    virtual void pause(){ flags.bPaused = true; }
+    virtual void resume(){ flags.bPaused = false; }
+    virtual bool paused(){ return flags.bPaused; }    
 
     virtual void update(); // обновляем состояние транспорта
     virtual void begin(); // начинаем работу
@@ -960,6 +969,7 @@ typedef struct
   bool onIdleTimer          : 1; // флаг, что мы в режиме простоя
   bool gprsAvailable        : 1; //
   bool pduInNextLine        : 1; //
+  bool bPaused              : 1;
   
 } CoreSIM800TransportFlags;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -1056,6 +1066,10 @@ class CoreSIM800Transport : public CoreTransport
 {
   public:
     CoreSIM800Transport();
+
+    virtual void pause(){ flags.bPaused = true; }
+    virtual void resume(){ flags.bPaused = false; }
+    virtual bool paused(){ return flags.bPaused; }        
 
     virtual void update(); // обновляем состояние транспорта
     virtual void begin(); // начинаем работу
