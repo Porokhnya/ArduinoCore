@@ -1244,6 +1244,8 @@ bool CoreESPTransport::pingGoogle(bool& result)
       return false;
     }
 
+    pause();
+
         ESPKnownAnswer ka;
         workStream->println(F("AT+PING=\"google.com\""));
         // поскольку у нас serialEvent не основан на прерываниях, на самом-то деле (!),
@@ -1285,6 +1287,7 @@ bool CoreESPTransport::pingGoogle(bool& result)
           
         } // while(1)    
 
+  resume();
 
   return true;
 }
@@ -1296,6 +1299,8 @@ bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
       //DBGLN(F("ESP: BUSY!!!"));
       return false;
     }
+
+    pause();
 
         ESPKnownAnswer ka;
         workStream->println(F("AT+CIPSTAMAC?"));
@@ -1387,6 +1392,8 @@ bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
           
         } // while(1)
 
+    resume();
+
   return true;              
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -1397,6 +1404,8 @@ bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
       //DBGLN(F("ESP: BUSY!!!"));
       return false;
     }
+
+    pause();
 
     workStream->println(F("AT+CIFSR"));  
     
@@ -1472,6 +1481,8 @@ bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
       } // while
       
     } // while(1)
+
+    resume();
 
 
     return true;
