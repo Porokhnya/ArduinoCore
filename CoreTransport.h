@@ -495,6 +495,7 @@ class CoreESPTransport : public CoreTransport
       bool isClientInQueue(CoreTransportClient* client, ESPClientAction action); // тестирует - не в очереди ли уже клиент?
       void addClientToQueue(CoreTransportClient* client, ESPClientAction action, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
       void removeClientFromQueue(CoreTransportClient* client); // удаляет клиента из очереди  
+      void removeClientFromQueue(CoreTransportClient* client, ESPClientAction action); // удаляет клиента из очереди  
       
       void initClients();
     

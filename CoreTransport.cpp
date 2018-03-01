@@ -1747,10 +1747,6 @@ void CoreESPTransport::update()
       }
   } 
 
-  // Здесь проблема - мы не можем игнорировать входящие команды, мы не должны только обновлять очередь!
-  //if(flags.onIdleTimer) // мы в режиме простоя
-//    return;
-
   // флаг, что есть ответ от ESP, выставляется по признаку наличия хоть чего-то в буфере приёма
   bool hasAnswer = workStream->available() > 0;
 
@@ -2614,8 +2610,9 @@ void CoreESPTransport::addClientToQueue(CoreTransportClient* client, ESPClientAc
 {
   if(isClientInQueue(client, action))
   {
-    DBGLN(F("ESP: Client already in queue!"));
-    return;
+    DBGLN(F("ESP: Client with same action already in queue, remove it!"));
+    removeClientFromQueue(client, action);
+    //return;
   }
 
     ESPClientQueueData dt;
@@ -2631,6 +2628,26 @@ void CoreESPTransport::addClientToQueue(CoreTransportClient* client, ESPClientAc
     dt.port = port;
 
     clientsQueue.push_back(dt);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::removeClientFromQueue(CoreTransportClient* client, ESPClientAction action)
+{
+  for(size_t i=0;i<clientsQueue.size();i++)
+  {
+    if(clientsQueue[i].client == client && clientsQueue[i].action == action)
+    {
+      delete [] clientsQueue[i].ip;
+      
+        for(size_t j=i+1;j<clientsQueue.size();j++)
+        {
+          clientsQueue[j-1] = clientsQueue[j];
+        }
+        
+        clientsQueue.pop();
+        break;
+    } // if
+    
+  } // for  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::removeClientFromQueue(CoreTransportClient* client)
@@ -4008,9 +4025,7 @@ void CoreMQTT::update()
               
 
               #ifdef MQTT_REPORT_AS_JSON
-                // сперва убираем =, и заменяем его на |
-                //reportQueue[0]->replace("=", String(CORE_COMMAND_PARAM_DELIMITER));
-                // и конвертируем в JSON
+                // конвертируем в JSON
                 convertAnswerToJSON(*(reportQueue[0]),&data);
               #else
                 data = *(reportQueue[0]);            
