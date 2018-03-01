@@ -6079,8 +6079,9 @@ void CoreSIM800Transport::addClientToQueue(CoreTransportClient* client, SIM800Cl
 {
   if(isClientInQueue(client, action))
   {
-    DBGLN(F("SIM800: Client already in queue!"));
-    return;
+    DBGLN(F("SIM800: Client with same action, already in queue - remove it!"));
+    removeClientFromQueue(client,action);
+    //return;
   }
 
     SIM800ClientQueueData dt;
