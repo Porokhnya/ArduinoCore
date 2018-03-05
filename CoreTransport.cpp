@@ -2011,7 +2011,11 @@ void CoreESPTransport::update()
                       currentCommand = cmdCIPSEND;
 
                       size_t dataSize;
-                      dt.client->getBuffer(dataSize);
+                      uint8_t* buffer = dt.client->getBuffer(dataSize);
+
+                      clientsQueue[0].data = buffer;
+                      clientsQueue[0].dataLength = dataSize;
+                      dt.client->releaseBuffer();
 
                       String command = F("AT+CIPSENDBUF=");
                       command += clientID;
@@ -2186,10 +2190,14 @@ void CoreESPTransport::update()
 
                           DBGLN(F("ESP: > received, start write from client to ESP..."));
 
-                          size_t bufferSize;
-                          uint8_t* clientBuffer = dt.client->getBuffer(bufferSize);
+                          //size_t bufferSize;
+                          //uint8_t* clientBuffer = dt.client->getBuffer(bufferSize);
                           
-                          workStream->write(clientBuffer,bufferSize);
+                          workStream->write(dt.data,dt.dataLength);
+
+                          delete[] clientsQueue[0].data;
+                          clientsQueue[0].data = NULL;
+                          clientsQueue[0].dataLength = 0;
 
                           // очищаем данные у клиента сразу после отсыла
                           dt.client->clear();
@@ -2659,6 +2667,7 @@ void CoreESPTransport::removeClientFromQueue(CoreTransportClient* client, ESPCli
     if(clientsQueue[i].client == client && clientsQueue[i].action == action)
     {
       delete [] clientsQueue[i].ip;
+      delete [] clientsQueue[i].data;
       
         for(size_t j=i+1;j<clientsQueue.size();j++)
         {
@@ -2679,6 +2688,7 @@ void CoreESPTransport::removeClientFromQueue(CoreTransportClient* client)
     if(clientsQueue[i].client == client)
     {
       delete [] clientsQueue[i].ip;
+      delete [] clientsQueue[i].data;
       
         for(size_t j=i+1;j<clientsQueue.size();j++)
         {
@@ -5081,7 +5091,10 @@ void CoreSIM800Transport::update()
                       currentCommand = smaCIPSEND;
 
                       size_t dataSize;
-                      dt.client->getBuffer(dataSize);
+                      uint8_t* buffer = dt.client->getBuffer(dataSize);
+                      clientsQueue[0].data = buffer;
+                      clientsQueue[0].dataLength = dataSize;
+                      dt.client->releaseBuffer();
                       
                       String command = F("AT+CIPSEND=");
                       command += clientID;
@@ -5313,12 +5326,16 @@ void CoreSIM800Transport::update()
                           currentCommand = smaWaitSendDone;                          
                           SIM800ClientQueueData dt = clientsQueue[0];
 
-                          size_t bufferSize;
-                          uint8_t* clientBuffer = dt.client->getBuffer(bufferSize);                        
+                          //size_t bufferSize;
+                          //uint8_t* clientBuffer = dt.client->getBuffer(bufferSize);                        
 
                           DBGLN(F("SIM800: > received, start write from client to SIM800..."));
                           
-                          workStream->write(clientBuffer,bufferSize);
+                          workStream->write(dt.data,dt.dataLength);
+
+                          delete [] clientsQueue[0].data;
+                          clientsQueue[0].data = NULL;
+                          clientsQueue[0].dataLength = 0;
 
                           // очищаем данные у клиента сразу после отсыла
                            dt.client->clear();
@@ -6036,6 +6053,7 @@ void CoreSIM800Transport::removeClientFromQueue(CoreTransportClient* client, SIM
     if(clientsQueue[i].client == client && clientsQueue[i].action == action)
     {
       delete [] clientsQueue[i].ip;
+      delete [] clientsQueue[i].data;
       
         for(size_t j=i+1;j<clientsQueue.size();j++)
         {
@@ -6051,12 +6069,12 @@ void CoreSIM800Transport::removeClientFromQueue(CoreTransportClient* client, SIM
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::removeClientFromQueue(CoreTransportClient* client)
 {
-  
   for(size_t i=0;i<clientsQueue.size();i++)
   {
     if(clientsQueue[i].client == client)
     {
       delete [] clientsQueue[i].ip;
+      delete [] clientsQueue[i].data;
       
         for(size_t j=i+1;j<clientsQueue.size();j++)
         {

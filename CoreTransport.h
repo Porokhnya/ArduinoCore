@@ -290,6 +290,12 @@ class CoreTransportClient
       socket = NO_CLIENT_ID;
     }
 
+    void releaseBuffer()
+    {
+      dataBuffer = NULL;
+      dataBufferSize = 0;
+    }
+
 
     void clear();
     uint8_t* getBuffer(size_t& sz)
@@ -358,14 +364,24 @@ typedef enum
   
 } ESPClientAction;
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef struct
+struct ESPClientQueueData // данные по клиенту в очереди
 {
   ESPClientAction action; // действие, которое надо выполнить с клиентом
   CoreTransportClient* client; // ссылка на клиента
   char* ip; // IP для подсоединения
   uint16_t port; // порт для подсоединения
+  uint8_t* data;
+  size_t dataLength;
+
+  ESPClientQueueData()
+  {
+    client = NULL;
+    ip = NULL;
+    data = NULL;
+    dataLength = 0;
+  }
    
-} ESPClientQueueData; // данные по клиенту в очереди
+}; 
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<ESPClientQueueData> ESPClientsQueue; // очередь клиентов на совершение какой-либо исходящей операции (коннект, дисконнект, запись)
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -1033,14 +1049,24 @@ typedef enum
   
 } SIM800ClientAction;
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef struct
+struct SIM800ClientQueueData // данные по клиенту в очереди
 {
   SIM800ClientAction action; // действие, которое надо выполнить с клиентом
   CoreTransportClient* client; // ссылка на клиента
   char* ip; // IP для подсоединения
   uint16_t port; // порт для подсоединения
+  uint8_t* data;
+  size_t dataLength;
+
+  SIM800ClientQueueData()
+  {
+    client = NULL;
+    ip = NULL;
+    data = NULL;
+    dataLength = 0;
+  }
    
-} SIM800ClientQueueData; // данные по клиенту в очереди
+}; 
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<SIM800ClientQueueData> SIM800ClientsQueue; // очередь клиентов на совершение какой-либо исходящей операции (коннект, дисконнект, запись)
 //--------------------------------------------------------------------------------------------------------------------------------------
