@@ -2067,8 +2067,8 @@ void CoreESPTransport::update()
 
                   case cmdCIPCLOSE:
                   {
-                    // отсоединялись
-                    if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
+                    // отсоединялись. Ответа не ждём, т.к. может вклиниться всё, что угодно, пока мы ждём ответа
+                    //if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
                     {
                       if(clientsQueue.size())
                       {
@@ -2077,7 +2077,8 @@ void CoreESPTransport::update()
 
                         CoreTransportClient* thisClient = dt.client;
                         removeClientFromQueue(thisClient);
-                        notifyClientConnected(*thisClient,false,CT_ERROR_NONE);
+                        // и событие отсылать не надо, пока он не отконнектится
+                        //notifyClientConnected(*thisClient,false,CT_ERROR_NONE);
 
                       } // if(clientsQueue.size()) 
                       
@@ -5198,8 +5199,8 @@ void CoreSIM800Transport::update()
 
                   case smaCIPCLOSE:
                   {
-                    // отсоединялись
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    // отсоединялись. Ответа не ждём, т.к. может вклиниться всё, что угодно, пока мы ждём ответа
+                    //if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
                     {                      
                       if(clientsQueue.size())
                       {
@@ -5208,8 +5209,9 @@ void CoreSIM800Transport::update()
                         SIM800ClientQueueData dt = clientsQueue[0];                        
                         CoreTransportClient* thisClient = dt.client;
                         removeClientFromQueue(thisClient);
-                        
-                        notifyClientConnected(*thisClient,false,CT_ERROR_NONE);
+
+                      // и событие отсылать не надо, пока он не отконнектится
+                      //  notifyClientConnected(*thisClient,false,CT_ERROR_NONE);
                                                
                       } // if(clientsQueue.size()) 
                       
