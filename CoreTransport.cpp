@@ -1780,6 +1780,11 @@ void CoreESPTransport::processDisconnect(const String& line)
 {
   // клиент отсоединился
     int idx = wiFiReceiveBuff->indexOf(F(",CLOSED"));
+    if(idx == -1)
+      idx = wiFiReceiveBuff->indexOf(F(",CONNECT FAIL"));
+    if(idx == -1)
+      return;
+      
     String s = line.substring(0,idx);
     int16_t clientID = s.toInt();
     if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
@@ -1900,7 +1905,7 @@ void CoreESPTransport::update()
         processConnect(*wiFiReceiveBuff);
        } // if
        else 
-       if(wiFiReceiveBuff->endsWith(F(",CLOSED")))
+       if(wiFiReceiveBuff->endsWith(F(",CLOSED")) || wiFiReceiveBuff->endsWith(F(",CONNECT FAIL")))
        {
         processDisconnect(*wiFiReceiveBuff);
        } // if(idx != -1)
