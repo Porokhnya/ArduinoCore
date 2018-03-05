@@ -124,22 +124,6 @@ CoreTransport::CoreTransport(uint8_t clientsPoolSize)
   }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::reset()
-{
-  for(size_t i=0;i<pool.size();i++)
-  {
-    pool[i] = false;
-  }
-
-  for(size_t i=0;i<closedCatchList.size();i++)
-  {
-    closedCatchList[i]->clear();
-    closedCatchList[i]->release();
-  }
-
-  closedCatchList.empty();
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
 CoreTransport::~CoreTransport()
 {
   for(size_t i=0;i<pool.size();i++)
@@ -2576,8 +2560,6 @@ void CoreESPTransport::restart()
 
   currentCommand = cmdNone;
   machineState = espIdle;
-
-  reset();
 
   // инициализируем очередь командами по умолчанию
  createInitCommands(true);
@@ -5958,8 +5940,6 @@ void CoreSIM800Transport::restart()
 
   currentCommand = smaNone;
   machineState = sim800Idle;
-
-  reset();
 
   // инициализируем очередь командами по умолчанию
  createInitCommands(true);
