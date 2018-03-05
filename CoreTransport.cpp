@@ -26,9 +26,7 @@ ESPTransportSettingsClass ESPTransportSettings;
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreTransportClient::CoreTransportClient()
 {
-  clientID = 0xFF;
-  isConnected = false;
-  isBusy = false;
+  socket = NO_CLIENT_ID;
   dataBuffer = NULL;
   dataBufferSize = 0;
   parent = NULL;
@@ -36,67 +34,15 @@ CoreTransportClient::CoreTransportClient()
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreTransportClient::~CoreTransportClient()
 {
-  clearBuffer();
+  clear();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::setData(uint8_t* buff, size_t sz, bool copy)
+void CoreTransportClient::accept(CoreTransport* _parent)
 {
-  clearBuffer();
-  
-  dataBufferSize = sz;
-  
-  if(dataBufferSize)
-  {
-    if(copy) // попросили скопировать буфер
-    {
-      dataBuffer = new  uint8_t[dataBufferSize];
-      memcpy(dataBuffer,buff,dataBufferSize);
-    }
-    else // нам просто передали буфер, который выделил сам транспорт
-      dataBuffer = buff;
-  }
+  parent = _parent;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::setID(uint8_t id)
-{
-  clientID = id;
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::setConnected(bool flag, int16_t errorCode)
-{
-  // если была ошибка - по-любому постим событие с ошибкой
-  if(errorCode != CT_ERROR_NONE)
-  {
-     isConnected = flag;
-     raiseEvent(etConnect,errorCode);
-     return;
-  }
-
-  // здесь нет ошибки, постим событие, только если изменился флаг
-  if(isConnected != flag)
-  {
-    isConnected = flag;
-    // постим подписчикам событие
-    raiseEvent(etConnect,errorCode);
-  }
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::setBusy(bool flag)
-{
-  isBusy = flag;
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-size_t CoreTransportClient::getDataSize()
-{
-  return dataBufferSize;
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-const uint8_t* CoreTransportClient::getData()
-{
-  return dataBuffer;
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::clearBuffer()
+void CoreTransportClient::clear()
 {
     if(dataBuffer)
       delete [] dataBuffer; 
@@ -108,204 +54,224 @@ void CoreTransportClient::clearBuffer()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransportClient::disconnect()
 {
+  if(!parent)
+    return;
+  
     if(!connected())
       return;
 
-    parent->beginDisconnect(*this);
+    parent->doDisconnect(*this);
   
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-bool CoreTransportClient::busy()
-{
- return isBusy; 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransportClient::connect(const char* ip, uint16_t port)
 {
+  if(!parent)
+    return;
+  
     if(connected()) // уже присоединены, нельзя коннектится до отсоединения!!!
       return;
           
-    parent->beginConnect(*this,ip,port);
+    parent->doConnect(*this,ip,port);
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool CoreTransportClient::write(uint8_t* buff, size_t sz, bool takeBufferOwnership)
+bool CoreTransportClient::write(uint8_t* buff, size_t sz)
 {
-    if(!sz || !buff || !connected() || clientID == 0xFF)
+  if(!parent)
+    return false;
+  
+    if(!sz || !buff || !connected() || socket == NO_CLIENT_ID)
     {
-      DBGLN(F("Client - CAN'T WRITE!"));
+      DBGLN(F("CoreTransportClient - CAN'T WRITE!"));
       return false;
     }
-/*
-    DBG(F("Client #"));
-    DBG(clientID);
-    DBG(F(": write, data size="));
-    DBGLN(sz);
-*/
-    setData(buff,sz,!takeBufferOwnership);
-    parent->beginWrite(*this);
 
+  clear();
+  dataBufferSize = sz; 
+  if(dataBufferSize)
+  {
+      dataBuffer = new  uint8_t[dataBufferSize];
+      memcpy(dataBuffer,buff,dataBufferSize);
+  }
+
+    parent->doWrite(*this);
+    
    return true;
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-CoreTransportClient* CoreTransportClient::Create(CoreTransport* transport)
-{
-    CoreTransportClient* instance = new CoreTransportClient();
-    instance->parent = transport;
-    return instance;    
-  
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-CoreTransport* CoreTransportClient::getTransport()
-{
-   return parent;
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::Destroy()
-{
-  delete this;
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreTransportClient::connected() 
 {
-  return isConnected;
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-uint8_t CoreTransportClient::getID()
-{
-  return clientID;
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::notifyDataWritten(int16_t errorCode)
-{
-  // говорим, что данные записаны в поток
-  raiseEvent(etDataWritten, errorCode);
-
-  // и очищаем внутренний буфер с данными
- // clearBuffer(); 
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-int CoreTransportClient::getSubscriberIndex(IClientEventsSubscriber* subscriber)
-{
-  for(size_t i=0;i<subscribers.size();i++)
-  {
-    if(subscribers[i] == subscriber)
-      return i;
-  }
-
-  return -1;
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::subscribe(IClientEventsSubscriber* subscriber)
-{
-  if(!subscriber)
-    return;
+  if(!parent || socket == NO_CLIENT_ID)
+    return false;
     
-  int subIdx = getSubscriberIndex(subscriber);
-  if(subIdx != -1) // этот подписчик уже подписан
-    return;
-
-   subscribers.push_back(subscriber);
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::unsubscribe(IClientEventsSubscriber* subscriber)
-{
-  int subIdx = getSubscriberIndex(subscriber);
-  
-  if(subIdx == -1) // подписчик не найден
-    return;
-
-  for(size_t i=subIdx+1; i<subscribers.size();i++)
-  {
-    subscribers[i-1] = subscribers[i];
-  }
-
-  subscribers.pop();
-    
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::raiseEvent(ClientEventType et, int16_t errorCode)
-{
-  for(size_t i=0;i<subscribers.size();i++)
-  {
-    IClientEventsSubscriber* sub = subscribers[i];
-
-    switch(et)
-    {
-      case etConnect:
-        sub->OnClientConnect(*this,this->isConnected,errorCode);
-      break;
-
-      case etDataWritten:
-        sub->OnClientDataWritten(*this, errorCode);
-      break;
-
-      case etDataAvailable:
-        sub->OnClientDataAvailable(*this, errorCode);
-      break;
-      
-    } // switch
-  } // for
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransportClient::notifyDataAvailable(bool isDone)
-{
-  // сообщаем подписчикам, что у нас есть данные
-  raiseEvent(etDataAvailable,isDone);
-
+  return parent->connected(socket);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 // CoreTransport
 //--------------------------------------------------------------------------------------------------------------------------------------
-CoreTransport::CoreTransport()
+CoreTransport::CoreTransport(uint8_t clientsPoolSize)
 {
-  
+  for(uint8_t i=0;i<clientsPoolSize;i++)
+  {
+    CoreTransportClient* client = new CoreTransportClient();
+    client->accept(this);
+    client->bind(i);
+    
+    pool.push_back(client);
+    status.push_back(false);
+  }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreTransport::~CoreTransport()
 {
+  for(size_t i=0;i<pool.size();i++)
+  {
+    delete pool[i];
+  }
+  pool.empty();
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreTransport::connected(uint8_t socket)
+{
+  return status[socket];
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::doWrite(CoreTransportClient& client)
+{
+  if(!client.connected())
+    return;
+
+   beginWrite(client); 
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::doConnect(CoreTransportClient& client, const char* ip, uint16_t port)
+{
+  if(client.connected())
+    return;
+
+   // запоминаем нашего клиента
+   client.accept(this);
+
+  // если внешний клиент - будем следить за его статусом соединения/подсоединения
+   if(isExternalClient(client))
+    closedCatchList.push_back(&client);
+
+   beginConnect(client,ip,port); 
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::doDisconnect(CoreTransportClient& client)
+{
+  if(!client.connected())
+    return;
+
+    beginDisconnect(client);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::subscribe(IClientEventsSubscriber* subscriber)
+{
+  for(size_t i=0;i<subscribers.size();i++)
+  {
+    if(subscribers[i] == subscriber)
+      return;
+  }
+
+  subscribers.push_back(subscriber);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::unsubscribe(IClientEventsSubscriber* subscriber)
+{
+  for(size_t i=0;i<subscribers.size();i++)
+  {
+    if(subscribers[i] == subscriber)
+    {
+      for(size_t k=i+1;k<subscribers.size();k++)
+      {
+        subscribers[k-1] = subscribers[k];
+      }
+      subscribers.pop();
+      break;
+    }
+  }  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreTransport::isExternalClient(CoreTransportClient& client)
+{
+  // если клиент не в нашем пуле - это экземпляр внешнего клиента
+  for(size_t i=0;i<pool.size();i++)
+  {
+    if(pool[i] == &client)
+      return false;
+  }
+
+  return true;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::notifyClientConnected(CoreTransportClient& client, bool connected, int16_t errorCode)
+{
+
+   // тут надо синхронизировать с пулом клиентов
+   if(client.socket != NO_CLIENT_ID)
+   {
+      status[client.socket] = connected;
+   }
+  
+    for(size_t i=0;i<subscribers.size();i++)
+    {
+      subscribers[i]->OnClientConnect(client,connected,errorCode);
+    }
+
+
+      // возможно, это внешний клиент, надо проверить - есть ли он в списке слежения
+      if(!connected) // пришло что-то типа 1,CLOSED
+      { 
+        // клиент отсоединился, надо освободить его сокет
+        for(size_t i=0;i<closedCatchList.size();i++)
+        {
+          if(closedCatchList[i]->socket == client.socket)
+          {
+            closedCatchList[i]->release(); // освобождаем внешнему клиенту сокет
+            for(size_t k=i+1;k<closedCatchList.size();k++)
+            {
+              closedCatchList[k-1] = closedCatchList[k];
+            }
+            closedCatchList.pop();
+            break;
+          }
+        } // for
+      } // if(!connected)
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::subscribeClient(CoreTransportClient& client, IClientEventsSubscriber* subscriber)
+void CoreTransport::notifyDataWritten(CoreTransportClient& client, int16_t errorCode)
 {
-  client.subscribe(subscriber);
+    for(size_t i=0;i<subscribers.size();i++)
+    {
+      subscribers[i]->OnClientDataWritten(client,errorCode);
+    } 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::unsubscribeClient(CoreTransportClient& client, IClientEventsSubscriber* subscriber)
+void CoreTransport::notifyDataAvailable(CoreTransportClient& client, uint8_t* data, size_t dataSize, bool isDone)
 {
-  client.unsubscribe(subscriber);
+    for(size_t i=0;i<subscribers.size();i++)
+    {
+      subscribers[i]->OnClientDataAvailable(client,data,dataSize,isDone);
+    }  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::notifyClientDataWritten(CoreTransportClient& client,int16_t errorCode)
+CoreTransportClient* CoreTransport::getClient(uint8_t socket)
 {
-  client.notifyDataWritten(errorCode);
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::notifyClientDataAvailable(CoreTransportClient& client, bool isDone)
-{
-  client.notifyDataAvailable(isDone);
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::setClientBusy(CoreTransportClient& client,bool busy)
-{
-  client.setBusy(busy);
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::setClientID(CoreTransportClient& client, uint8_t id)
-{
-    client.setID(id);
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::setClientConnected(CoreTransportClient& client, bool isConnected, int16_t errorCode)
-{
-  client.setConnected(isConnected, errorCode);
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreTransport::setClientData(CoreTransportClient& client,uint8_t* buff, size_t sz)
-{
-  return client.setData(buff,sz,false);
+  if(socket != NO_CLIENT_ID)
+    return pool[socket];
+
+  for(size_t i=0;i<pool.size();i++)
+  {
+    if(!pool[i]->connected())
+      return pool[i];
+  }
+
+  return NULL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_RS485_TRANSPORT_ENABLED
@@ -1208,27 +1174,74 @@ void CoreRS485::sendData(uint8_t* data, uint16_t dataSize)
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreESPTransport ESP;
 //--------------------------------------------------------------------------------------------------------------------------------------
-CoreESPTransport::CoreESPTransport() : CoreTransport()
+CoreESPTransport::CoreESPTransport() : CoreTransport(ESP_MAX_CLIENTS)
 {
-  for(uint8_t i=0;i<ESP_MAX_CLIENTS;i++)
-    clients[i] = NULL;
-
   wiFiReceiveBuff = new String();
   flags.bPaused = false;
 
+  waitCipstartConnect = false;
+  cipstartConnectClient = NULL;
+
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::waitTransmitComplete()
+{
+  // ждём завершения передачи по UART
+ if(!workStream)
+    return;
+    
+  #if TARGET_BOARD == MEGA_BOARD
+
+    if(workStream == &Serial)
+      while(!(UCSR0A & _BV(TXC0) ));
+    else
+    if(workStream == &Serial1)
+      while(!(UCSR1A & _BV(TXC1) ));
+    else
+    if(workStream == &Serial2)
+      while(!(UCSR2A & _BV(TXC2) ));
+    else
+    if(workStream == &Serial3)
+      while(!(UCSR3A & _BV(TXC3) ));
+
+  #elif TARGET_BOARD == DUE_BOARD
+
+    if(workStream == &Serial)
+      while((UART->UART_SR & UART_SR_TXRDY) != UART_SR_TXRDY);
+    else
+    if(workStream == &Serial1)
+      while((USART0->US_CSR & US_CSR_TXEMPTY) == 0);
+    else
+    if(workStream == &Serial2)
+      while((USART1->US_CSR & US_CSR_TXEMPTY)  == 0);      
+    else
+    if(workStream == &Serial3)
+      while((USART3->US_CSR & US_CSR_TXEMPTY)  == 0);
+       
+  #elif TARGET_BOARD == ATMEGA328_BOARD
+  
+    if(workStream == &Serial)
+      while(!(UCSR0A & _BV(TXC0) ));
+      
+  #else
+    #error "Unknown target board!"
+  #endif  
+
+}
+//-------------------------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::sendCommand(const String& command, bool addNewLine)
 {
-  DBG(F("ESP: ==>> "));
-  DBGLN(command);
+   DBG(F("ESP: ==>> "));
+   DBGLN(command);
   
   workStream->write(command.c_str(),command.length());
   
   if(addNewLine)
   {
     workStream->println();
-  }  
+  }
+
+  waitTransmitComplete();
 
   machineState = espWaitAnswer; // говорим, что надо ждать ответа от ESP
   // запоминаем время отсылки последней команды
@@ -1629,16 +1642,16 @@ bool CoreESPTransport::isKnownAnswer(const String& line, ESPKnownAnswer& result)
   return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPTransport::processIPD()
+void CoreESPTransport::processIPD(const String& line)
 {
   DBG(F("ESP: start parse +IPD, received="));
-  DBGLN(*wiFiReceiveBuff);
-
-  // здесь в wiFiReceiveBuff лежит только команда вида +IPD,<id>,<len>:
+  DBGLN(line);
+  
+  // здесь в line лежит только команда вида +IPD,<id>,<len>:
   // все данные надо вычитывать из потока
         
-    int16_t idx = wiFiReceiveBuff->indexOf(F(",")); // ищем первую запятую после +IPD
-    const char* ptr = wiFiReceiveBuff->c_str();
+    int16_t idx = line.indexOf(F(",")); // ищем первую запятую после +IPD
+    const char* ptr = line.c_str();
     ptr += idx+1;
     // перешли за запятую, парсим ID клиента
     String connectedClientID = F("");
@@ -1662,14 +1675,7 @@ void CoreESPTransport::processIPD()
     if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
     {
 
-      /*
-      DBG(F("ESP: data for client  #"));
-      DBG(clientID);
-      DBG(F("; len="));
-      DBGLN(lengthOfData);
-      */
-
-       CoreTransportClient* client = clients[clientID];
+       CoreTransportClient* client = getClient(clientID);
 
        // у нас есть lengthOfData с данными для клиента, нам надо побить это на пакеты длиной N байт,
        // и последовательно вызывать событие прихода данных. Это нужно для того, чтобы не переполнить оперативку,
@@ -1678,7 +1684,7 @@ void CoreESPTransport::processIPD()
       // пусть у нас будет максимум 512 байт на пакет
       const uint16_t MAX_PACKET_SIZE = 512;
       
-      // если длина всех данных меньше 512 - просто тупо все сразу вычитаем
+      // если длина всех данных меньше MAX_PACKET_SIZE - просто тупо все сразу вычитаем
        uint16_t packetSize = min(MAX_PACKET_SIZE,lengthOfData);
 
         // теперь выделяем буфер под данные
@@ -1690,6 +1696,8 @@ void CoreESPTransport::processIPD()
         size_t packetWritten = 0; // записано в пакет
         size_t totalWritten = 0; // всего записано
 
+        pause();
+
             while(totalWritten < lengthOfData) // пока не запишем все данные с клиента
             {
                 if(workStream->available())
@@ -1698,17 +1706,19 @@ void CoreESPTransport::processIPD()
                   packetWritten++;
                   totalWritten++;
                 }
+                else
+                  continue;
 
                 if(packetWritten >= packetSize)
                 {
-                  // скопировали один пакет
-                  // передаём клиенту буфер, он сам его освободит, когда надо
-                  setClientData(*client,buff,packetWritten);
-    
+                  
+                  // скопировали один пакет    
                   // сообщаем подписчикам, что данные для клиента получены
-                  notifyClientDataAvailable(*client, totalWritten >= lengthOfData);
-    
-                   
+                  notifyDataAvailable(*client, buff, packetWritten, totalWritten >= lengthOfData);
+
+                  // чистим память
+                  delete [] buff;
+                      
                   // пересчитываем длину пакета, вдруг там мало осталось, и незачем выделять под несколько байт огромный буфер
                   packetSize =  min(MAX_PACKET_SIZE, lengthOfData - totalWritten);
                   buff = new uint8_t[packetSize];
@@ -1717,44 +1727,86 @@ void CoreESPTransport::processIPD()
                 }
               
             } // while
+            
+           resume();
 
             // проверяем - есть ли остаток?
             if(packetWritten > 0)
-            {
+            {            
               // после прохода цикла есть остаток данных, уведомляем клиента
-             // передаём клиенту буфер, он сам его освободит, когда надо
-              setClientData(*client,buff,packetWritten);
-
               // сообщаем подписчикам, что данные для клиента получены
-              notifyClientDataAvailable(*client, totalWritten >= lengthOfData);
-
+              notifyDataAvailable(*client, buff, packetWritten, totalWritten >= lengthOfData);
+              
             }
-            else
-            {
-                // нет остатка, чистим буфер
-                delete [] buff;
-            }
-                  
+            
+            delete [] buff;  
        
     } // if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
     
 
- // DBGLN(F("ESP: +IPD parsed."));  
+  DBGLN(F("ESP: +IPD parsed."));  
+
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::processConnect(const String& line)
+{
+     // клиент подсоединился
+    int idx = wiFiReceiveBuff->indexOf(F(",CONNECT"));
+    String s = line.substring(0,idx);
+    int16_t clientID = s.toInt();
+    if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
+    {
+        DBG(F("ESP: client connected - #"));
+        DBGLN(clientID);
+
+      // тут смотрим - посылали ли мы запрос на коннект?
+      if(waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
+      {
+        // есть клиент, для которого надо установить ID
+        cipstartConnectClient->bind(clientID);
+        waitCipstartConnect = false;
+        cipstartConnectClient = NULL;
+        cipstartConnectClientID = NO_CLIENT_ID;
+        
+      } // if            
+
+      // выставляем клиенту флаг, что он подсоединён
+      CoreTransportClient* client = getClient(clientID);            
+      notifyClientConnected(*client,true,CT_ERROR_NONE);
+    } 
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::processDisconnect(const String& line)
+{
+  // клиент отсоединился
+    int idx = wiFiReceiveBuff->indexOf(F(",CLOSED"));
+    String s = line.substring(0,idx);
+    int16_t clientID = s.toInt();
+    if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
+    {
+        DBG(F("ESP: client disconnected - #"));
+        DBGLN(clientID);
+        
+      // выставляем клиенту флаг, что он отсоединён
+      CoreTransportClient* client = getClient(clientID);            
+      notifyClientConnected(*client,false,CT_ERROR_NONE);
+      
+    }        
+          
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::update()
 {
   if(!ESPTransportSettings.enabled)
     return;
- 
-  if(!workStream || paused())
+
+ if(!workStream || paused()) // либо нет рабочего потока, либо кто-то нас попросил ничего не вычитывать пока из ESP
     return;
 
   if(flags.onIdleTimer) // попросили подождать определённое время, в течение которого просто ничего не надо делать
   {
       if(millis() - timer > idleTime)
       {
-        //DBGLN(F("ESP: idle done!"));
         flags.onIdleTimer = false;
       }
   } 
@@ -1777,11 +1829,9 @@ void CoreESPTransport::update()
 
      if(wiFiReceiveBuff->startsWith(F("+IPD")) && wiFiReceiveBuff->indexOf(":") != -1)
      {
-       // DBGLN(F("ESP: +IPD detected, parse!"));
        
-        processIPD();
+        processIPD(*wiFiReceiveBuff);
                 
-        hasAnswerLine = false; // говорим, что нет у нас строки с ответом, ибо нечего проверять ответ на +IPD - мы разобрали его сами
         delete wiFiReceiveBuff;
         wiFiReceiveBuff = new String();
         timer = millis();        
@@ -1811,7 +1861,7 @@ void CoreESPTransport::update()
         {
           *wiFiReceiveBuff += ch;
                          
-          if(wiFiReceiveBuff->length() > 2500) // буфер слишком длинный
+          if(wiFiReceiveBuff->length() > 512) // буфер слишком длинный
           {
             DBGLN(F("ESP: incoming data too long, skip it!"));
             delete wiFiReceiveBuff;
@@ -1826,31 +1876,51 @@ void CoreESPTransport::update()
   {
      timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
   }
-/*
-  #ifdef _CORE_DEBUG
 
-      if(hasAnswerLine && wiFiReceiveBuff->length())
-      {
-        
-        // выводим то, что получено, для теста
-        DBG(F("ESP: <<==(c:"));
-        DBG(currentCommand);
-        DBG(F(", m:"));        
-        DBG(machineState);
-        DBG(F(", l:"));
-        DBG(wiFiReceiveBuff->length());
-        DBG(F("): "));
-        DBGLN(*wiFiReceiveBuff);
-        
-      }
-  
-  #endif // _CORE_DEBUG
-*/
     if(hasAnswerLine && !wiFiReceiveBuff->length()) // пустая строка, не надо обрабатывать
       hasAnswerLine = false;
 
-    // при разборе ответа тут будет лежать тип ответа, чтобы часто не сравнивать со строкой
-    ESPKnownAnswer knownAnswer = kaNone;
+   #ifdef _CORE_DEBUG
+    if(hasAnswerLine)
+    {
+      DBG(F("<== ESP: "));
+      DBGLN(*wiFiReceiveBuff);
+    }
+   #endif
+
+
+    // тут анализируем ответ от ESP, если он есть, на предмет того - соединён ли клиент, отсоединён ли клиент и т.п.
+    // это нужно делать именно здесь, поскольку в этот момент в ESP может придти внешний коннект.
+    if(hasAnswerLine)
+    {
+      
+       // смотрим, подсоединился ли клиент?
+       if(wiFiReceiveBuff->endsWith(F(",CONNECT")))
+       {
+        processConnect(*wiFiReceiveBuff);
+       } // if
+       else 
+       if(wiFiReceiveBuff->endsWith(F(",CLOSED")))
+       {
+        processDisconnect(*wiFiReceiveBuff);
+       } // if(idx != -1)
+       else
+       if(*wiFiReceiveBuff == F("WIFI CONNECTED"))
+       {
+          flags.connectedToRouter = true;
+          DBGLN(F("ESP: connected to router!"));
+       }
+       else
+       if(*wiFiReceiveBuff == F("WIFI DISCONNECT"))
+       {
+          flags.connectedToRouter = false;
+          DBGLN(F("ESP: disconnected from router!"));
+       }
+           
+    } // if(hasAnswerLine)   
+
+  // при разборе ответа тут будет лежать тип ответа, чтобы часто не сравнивать со строкой
+  ESPKnownAnswer knownAnswer = kaNone;
 
   if(!flags.onIdleTimer) // только если мы не в режиме простоя
   {
@@ -1876,7 +1946,7 @@ void CoreESPTransport::update()
               {
                   // получаем первого клиента в очереди
                   ESPClientQueueData dt = clientsQueue[0];
-                  int clientID = dt.client->getID();
+                  int clientID = dt.client->socket;
                   
                   // смотрим, чего он хочет от нас
                   switch(dt.action)
@@ -1884,12 +1954,6 @@ void CoreESPTransport::update()
                     case actionDisconnect:
                     {
                       // хочет отсоединиться
-                      /*
-                      DBG(F("ESP: client #"));
-                      DBG(clientID);
-                      DBGLN(F(" wants to disconnect..."));
-                      */
-
                       currentCommand = cmdCIPCLOSE;
                       String cmd = F("AT+CIPCLOSE=");
                       cmd += clientID;
@@ -1900,12 +1964,14 @@ void CoreESPTransport::update()
 
                     case actionConnect:
                     {
-                      // хочет подсоединиться
-                      /*
-                      DBG(F("ESP: client #"));
-                      DBG(clientID);
-                      DBGLN(F(" want to connect..."));
-                      */
+
+                      // здесь надо искать первый свободный слот для клиента
+                      CoreTransportClient* freeSlot = getClient(NO_CLIENT_ID);
+                      clientID = freeSlot ? freeSlot->socket : NO_CLIENT_ID;
+
+                      waitCipstartConnect = true;
+                      cipstartConnectClient = dt.client;
+                      cipstartConnectClientID = clientID;
 
                       currentCommand = cmdCIPSTART;
                       String comm = F("AT+CIPSTART=");
@@ -1914,7 +1980,7 @@ void CoreESPTransport::update()
                       comm += dt.ip;
                       comm += F("\",");
                       comm += dt.port;
-              
+            
                       // и отсылаем её
                       sendCommand(comm);
                     }
@@ -1923,20 +1989,16 @@ void CoreESPTransport::update()
                     case actionWrite:
                     {
                       // хочет отослать данные
-                      /*
-                      DBG(F("ESP: client #"));
-                      DBG(clientID);
-                      DBG(F(" has data="));
-                      DBG(dt.client->getDataSize());
-                      DBGLN(F(" and wants to send it..."));
-                      */
 
                       currentCommand = cmdCIPSEND;
+
+                      size_t dataSize;
+                      dt.client->getBuffer(dataSize);
 
                       String command = F("AT+CIPSENDBUF=");
                       command += clientID;
                       command += F(",");
-                      command += dt.client->getDataSize();
+                      command += dataSize;
                       flags.waitForDataWelcome = true; // выставляем флаг, что мы ждём >
                       
                       sendCommand(command);
@@ -1957,7 +2019,6 @@ void CoreESPTransport::update()
                 static uint32_t hangTimer = 0;
                 if(millis() - hangTimer > 30000)
                 {
-                 // DBGLN(F("ESP: want to check modem availability..."));
                   hangTimer = millis();
                   sendCommand(cmdCheckModemHang);
                   
@@ -1979,7 +2040,6 @@ void CoreESPTransport::update()
                   case cmdNone:
                   {
                     // ничего не делаем
-                    DBGLN(F("ESP: NO COMMAND!!!!"));
                   }
                   break; // cmdNone
 
@@ -1990,16 +2050,13 @@ void CoreESPTransport::update()
                     {
                       if(clientsQueue.size())
                       {
-                       // DBGLN(F("ESP: Client disconnected."));
                         // клиент отсоединён, ставим ему соответствующий флаг, освобождаем его и удаляем из очереди
                         ESPClientQueueData dt = clientsQueue[0];
 
                         CoreTransportClient* thisClient = dt.client;
                         removeClientFromQueue(thisClient);
+                        notifyClientConnected(*thisClient,false,CT_ERROR_NONE);
 
-                        setClientBusy(*thisClient,false);
-                        setClientConnected(*thisClient,false,CT_ERROR_NONE);
-                        
                       } // if(clientsQueue.size()) 
                       
                         machineState = espIdle; // переходим к следующей команде
@@ -2009,7 +2066,8 @@ void CoreESPTransport::update()
 
                   case cmdCIPSTART:
                   {
-                    // соединялись
+                    // соединялись, коннект у нас только с внутреннего соединения, поэтому в очереди лежит по-любому
+                    // указатель на связанного с нами клиента, который использует внешний пользователь транспорта
                         if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
                         {
                           if(knownAnswer == kaOK)
@@ -2017,30 +2075,28 @@ void CoreESPTransport::update()
                             // законнектились удачно
                             if(clientsQueue.size())
                             {
-                             //  DBGLN(F("ESP: Client connected."));
                                ESPClientQueueData dt = clientsQueue[0];
-                               
-                               CoreTransportClient* thisClient = dt.client;
-                               removeClientFromQueue(dt.client);
-                               
-                               setClientBusy(*thisClient,false);
+                               removeClientFromQueue(dt.client);                               
                             }
                           }
                           else
                           {
                             // ошибка соединения
+                                                  
+                            waitCipstartConnect = false;
+                            cipstartConnectClient = NULL;
+                            
                             if(clientsQueue.size())
                             {
-                               DBG(F("ESP: Client connect ERROR, received: "));
-                               DBGLN(*wiFiReceiveBuff);
+                                DBG(F("ESP: Client connect ERROR, received: "));
+                                DBGLN(*wiFiReceiveBuff);
                                
                                ESPClientQueueData dt = clientsQueue[0];
 
                                CoreTransportClient* thisClient = dt.client;
                                removeClientFromQueue(thisClient);
                                
-                               setClientBusy(*thisClient,false);
-                               setClientConnected(*thisClient,false,CT_ERROR_CANT_CONNECT);
+                               notifyClientConnected(*thisClient,false,CT_ERROR_CANT_CONNECT);
                             }
                           }
                           machineState = espIdle; // переходим к следующей команде
@@ -2061,18 +2117,15 @@ void CoreESPTransport::update()
                           // send ok
                           if(clientsQueue.size())
                           {
-                             //DBGLN(F("ESP: data was sent."));
                              ESPClientQueueData dt = clientsQueue[0];
                              
                              CoreTransportClient* thisClient = dt.client;
                              removeClientFromQueue(thisClient);
 
-                             setClientBusy(*thisClient,false);
-
                              // очищаем данные у клиента
-                             setClientData(*thisClient,NULL,0);
+                             thisClient->clear();
 
-                             notifyClientDataWritten(*thisClient,CT_ERROR_NONE);
+                             notifyDataWritten(*thisClient,CT_ERROR_NONE);
                           }                     
                         } // send ok
                         else
@@ -2080,18 +2133,15 @@ void CoreESPTransport::update()
                           // send fail
                           if(clientsQueue.size())
                           {
-                             DBGLN(F("ESP: send data fail!"));
                              ESPClientQueueData dt = clientsQueue[0];
 
                              CoreTransportClient* thisClient = dt.client;
                              removeClientFromQueue(thisClient);
-                             
-                             setClientBusy(*thisClient,false);
-                             
+                                                          
                              // очищаем данные у клиента
-                             setClientData(*thisClient,NULL,0);
+                             thisClient->clear();
                              
-                             notifyClientDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
+                             notifyDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
                           }                     
                         } // else send fail
   
@@ -2117,11 +2167,14 @@ void CoreESPTransport::update()
                           ESPClientQueueData dt = clientsQueue[0];
 
                           DBGLN(F("ESP: > received, start write from client to ESP..."));
+
+                          size_t bufferSize;
+                          uint8_t* clientBuffer = dt.client->getBuffer(bufferSize);
                           
-                          workStream->write(dt.client->getData(),dt.client->getDataSize());
+                          workStream->write(clientBuffer,bufferSize);
 
                           // очищаем данные у клиента сразу после отсыла
-                          setClientData(*(dt.client),NULL,0);
+                          dt.client->clear();
                        }
                     } // if
                     else
@@ -2131,17 +2184,16 @@ void CoreESPTransport::update()
                       if(clientsQueue.size())
                       {
                          DBGLN(F("ESP: Client write ERROR!"));
+                         
                          ESPClientQueueData dt = clientsQueue[0];
 
                          CoreTransportClient* thisClient = dt.client;
                          removeClientFromQueue(thisClient);
 
-                         setClientBusy(*thisClient,false);
-                         
                          // очищаем данные у клиента
-                         setClientData(*thisClient,NULL,0);
+                         thisClient->clear();
 
-                         notifyClientDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
+                         notifyDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
                         
                       }                     
                       
@@ -2156,7 +2208,7 @@ void CoreESPTransport::update()
                   {
                     if(isESPBootFound(*wiFiReceiveBuff))
                     {
-                      DBGLN(F("ESP: BOOT FOUND!!!"));
+                      DBGLN(F("ESP: BOOT FOUND!!!"));                      
                       machineState = espIdle; // переходим к следующей команде
                     }
                   }
@@ -2198,6 +2250,7 @@ void CoreESPTransport::update()
                     {
                       DBGLN(F("ESP: CWJAP command processed."));
                       machineState = espIdle; // переходим к следующей команде
+                  
                     }  
                   }
                   break; // cmdCWJAP
@@ -2268,12 +2321,22 @@ void CoreESPTransport::update()
                      {
                         if(ESPTransportSettings.Flags.ConnectToRouter)
                         {
-                          DBGLN(F("ESP: No connect to router, want to reconnect..."));
+                           DBGLN(F("ESP: No connect to router, want to reconnect..."));
                           // нет соединения с роутером, надо переподсоединиться, как только это будет возможно.
                           flags.wantReconnect = true;
+                          flags.connectedToRouter = false;
                         }
                       
                      } // if
+                      else
+                      {
+                        // на случай, когда ESP не выдаёт WIFI CONNECTED в порт - проверяем статус коннекта тут,
+                        // как признак, что строчка содержит ID нашей сети, проще говоря - не равна No AP
+                        if(wiFiReceiveBuff->startsWith(F("+CWJAP")))
+                          flags.connectedToRouter = true;
+                        
+                      }
+                    
                   }
                   break; // cmdCheckModemHang
                                     
@@ -2291,9 +2354,11 @@ void CoreESPTransport::update()
           // ждём перезагрузки модема
           uint32_t powerOffTime = ESPTransportSettings.HangPowerOffTime;
           powerOffTime *= 1000;
+          
           if(millis() - timer > powerOffTime)
           {
             DBGLN(F("ESP: turn power ON!"));
+
             if(ESPTransportSettings.Flags.UseRebootPin)
             {
               pinMode(ESPTransportSettings.RebootPin,OUTPUT);
@@ -2324,68 +2389,13 @@ void CoreESPTransport::update()
   } // if(!flags.onIdleTimer)
 
 
-    // тут просто анализируем ответ от ESP, если он есть, на предмет того - соединён ли клиент, отсоединён ли клиент и т.п.
-    if(hasAnswerLine)
-    {
-      
-       // смотрим, подсоединился ли клиент?
-       int16_t idx = wiFiReceiveBuff->indexOf(F(",CONNECT"));
-       if(idx != -1)
-       {
-          // клиент подсоединился
-          String s = wiFiReceiveBuff->substring(0,idx);
-          int16_t clientID = s.toInt();
-          if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
-          {
-            DBG(F("ESP: client connected - #"));
-            DBGLN(clientID);
+  if(hasAnswerLine)
+  {
+    // не забываем чистить за собой
+      delete wiFiReceiveBuff;
+      wiFiReceiveBuff = new String();       
+  }
 
-            // выставляем клиенту флаг, что он подсоединён
-            CoreTransportClient* client = clients[clientID];
-            
-            setClientBusy(*client,false);
-            setClientConnected(*client,true,CT_ERROR_NONE);
-          }
-       } // if
-
-       idx = wiFiReceiveBuff->indexOf(F(",CLOSED"));
-       if(idx != -1)
-       {
-        // клиент отсоединился
-          String s = wiFiReceiveBuff->substring(0,idx);
-          int16_t clientID = s.toInt();
-          if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
-          {
-            DBG(F("ESP: client disconnected - #"));
-            DBGLN(clientID);
-
-            // выставляем клиенту флаг, что он подсоединён
-            CoreTransportClient* client = clients[clientID];
-            
-            setClientBusy(*client,false);
-            setClientConnected(*client,false,CT_ERROR_NONE);
-          }        
-        
-       } // if(idx != -1)
-
-       if(*wiFiReceiveBuff == F("WIFI CONNECTED"))
-       {
-          flags.connectedToRouter = true;
-          DBGLN(F("ESP: connected to router!"));
-       }
-       else
-       if(*wiFiReceiveBuff == F("WIFI DISCONNECT"))
-       {
-          flags.connectedToRouter = false;
-          DBGLN(F("ESP: disconnected from router!"));
-       }
-
-
-      // не забываем чистить за собой
-        delete wiFiReceiveBuff;
-        wiFiReceiveBuff = new String();   
-           
-    } // if(hasAnswerLine)
 
     if(!hasAnswer) // проверяем на зависание
     {
@@ -2393,12 +2403,11 @@ void CoreESPTransport::update()
       // нет ответа от ESP, проверяем, зависла ли она?
       uint32_t hangTime = ESPTransportSettings.HangTimeout;
       hangTime *= 1000;
-
       if(millis() - timer > hangTime)
       {
         DBGLN(F("ESP: modem not answering, reboot!"));
 
-        if(ESPTransportSettings.Flags.UseRebootPin)
+       if(ESPTransportSettings.Flags.UseRebootPin)
         {
           // есть пин, который надо использовать при зависании
           pinMode(ESPTransportSettings.RebootPin,OUTPUT);
@@ -2410,15 +2419,14 @@ void CoreESPTransport::update()
         
       } // if   
          
-    }
+    }    
     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::begin()
 {
-
-  
   workStream = NULL;
+  waitCipstartConnect = false;
 
   if(!ESPTransportSettings.enabled)
     return;
@@ -2428,8 +2436,6 @@ void CoreESPTransport::begin()
 
   DBGLN(F("ESP: begin."));
   
-  initClients();
-
   #ifdef CORE_ESP_WEB_SERVER
     subscribe(&ESPWebServer);
   #endif  
@@ -2504,7 +2510,7 @@ void CoreESPTransport::restart()
   wiFiReceiveBuff = new String();
 
   // очищаем очередь клиентов, заодно им рассылаем события
-  clearClientsQueue(true);  
+  clearClientsQueue(true);
 
   // т.к. мы ничего не инициализировали - говорим, что мы не готовы предоставлять клиентов
   flags.ready = false;
@@ -2530,8 +2536,6 @@ void CoreESPTransport::createInitCommands(bool addResetCommand)
   // очищаем очередь команд
   clearInitCommands();
 
-//  DBGLN(F("ESP: Create init queue..."));
-  
   if(ESPTransportSettings.Flags.ConnectToRouter) // коннектимся к роутеру
     initCommandsQueue.push_back(cmdCWJAP); // коннектимся к роутеру совсем в конце
   else  
@@ -2550,16 +2554,11 @@ void CoreESPTransport::createInitCommands(bool addResetCommand)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::clearInitCommands()
 {
- // DBGLN(F("ESP: Clear init queue..."));  
-
   initCommandsQueue.empty();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::clearClientsQueue(bool raiseEvents)
 {
-//  DBG(F("ESP: Clear clients queue: "));
-//  DBGLN(clientsQueue.size());
-  
   // тут попросили освободить очередь клиентов.
   // для этого нам надо выставить каждому клиенту флаг того, что он свободен,
   // плюс - сообщить, что текущее действие над ним не удалось.  
@@ -2573,38 +2572,27 @@ void CoreESPTransport::clearClientsQueue(bool raiseEvents)
           {
             case actionDisconnect:
                 // при дисконнекте всегда считаем, что ошибок нет
-                setClientConnected(*(dt.client),false,CT_ERROR_NONE);
+                notifyClientConnected(*(dt.client),false,CT_ERROR_NONE);
             break;
   
             case actionConnect:
                 // если было запрошено соединение клиента с адресом - говорим, что соединиться не можем
-                setClientConnected(*(dt.client),false,CT_ERROR_CANT_CONNECT);
+                notifyClientConnected(*(dt.client),false,CT_ERROR_CANT_CONNECT);
             break;
   
             case actionWrite:
               // если попросили записать данные - надо сообщить подписчикам, что не можем записать данные
-              notifyClientDataWritten(*(dt.client),CT_ERROR_CANT_WRITE);
+              notifyDataWritten(*(dt.client),CT_ERROR_CANT_WRITE);
+              notifyClientConnected(*(dt.client),false,CT_ERROR_NONE);
             break;
           } // switch
           
-        } // if(raiseEvents)
 
-        // освобождаем клиента
-        setClientBusy(*(dt.client),false);
+        } // if(raiseEvents)
+        
     } // for
 
   clientsQueue.empty();
-
-  // помимо этого - надо принудительно всем клиентам выставить статус "Отсоединён"
-  for(uint8_t i=0;i<ESP_MAX_CLIENTS;i++)
-  {
-    setClientBusy(*(clients[i]),false);
-    setClientConnected(*(clients[i]),false,CT_ERROR_NONE); 
-  }  
-
-//  DBGLN(F("ESP: clients queue cleared."));
-
-
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -2621,11 +2609,14 @@ bool CoreESPTransport::isClientInQueue(CoreTransportClient* client, ESPClientAct
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::addClientToQueue(CoreTransportClient* client, ESPClientAction action, const char* ip, uint16_t port)
 {
-  if(isClientInQueue(client, action))
+  while(isClientInQueue(client, action))
   {
-    DBGLN(F("ESP: Client with same action already in queue, remove it!"));
-    removeClientFromQueue(client, action);
-    //return;
+    DBG(F("ESP: Client #"));
+    DBG(client->socket);
+    DBG(F(" with same action already in queue, ACTION="));
+    DBG(action);
+    DBGLN(F(" - remove that client!"));
+    removeClientFromQueue(client,action);
   }
 
     ESPClientQueueData dt;
@@ -2683,112 +2674,42 @@ void CoreESPTransport::removeClientFromQueue(CoreTransportClient* client)
   } // for
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPTransport::initClients()
-{
-  for(uint8_t i=0;i<ESP_MAX_CLIENTS;i++)
-  {
-    if(clients[i])
-      continue;
-      
-    CoreTransportClient* client = CoreTransportClient::Create(this);
-    setClientID(*client,i);
-    clients[i] = client;
-  }
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPTransport::subscribe(IClientEventsSubscriber* subscriber)
-{
-  initClients();
-  
-  for(uint8_t i=0;i<ESP_MAX_CLIENTS;i++)
-  {
-    subscribeClient(*(clients[i]),subscriber);
-  }
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPTransport::unsubscribe(IClientEventsSubscriber* subscriber)
-{
-  initClients();
-  
-  for(uint8_t i=0;i<ESP_MAX_CLIENTS;i++)
-  {
-    unsubscribeClient(*(clients[i]),subscriber);
-  }
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-CoreTransportClient* CoreESPTransport::getFreeClient()
-{
-  if(!ready()) // если ещё не готовы к работе - ничего не возвращаем
-    return NULL;
-  
-  for(uint8_t i=0;i<ESP_MAX_CLIENTS;i++)
-  {
-    if(!clients[i]->connected() && !clients[i]->busy()) // возвращаем первого неподсоединённого и незанятого чем-либо клиента
-      return clients[i];
-  }
-
-  return NULL;
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::beginWrite(CoreTransportClient& client)
 {
-//  DBGLN(F("ESP: write from client..."));
-
   if(!client.connected())
   {
-    DBGLN(F("ESP: client not connected!"));
+     DBGLN(F("ESP: client not connected!"));
     return;
   }
-
-  //говорим, что клиент занят
-  setClientBusy(client,true);
   
   // добавляем клиента в очередь на запись
   addClientToQueue(&client, actionWrite);
 
-/*
-  DBG(F("ESP: Client #"));
-  DBG(client.getID());
-  DBG(F(" has data size: "));
-  DBGLN(client.getDataSize());
-*/
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с записью в поток с этого клиента
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::beginConnect(CoreTransportClient& client, const char* ip, uint16_t port)
 {
-//   DBGLN(F("ESP: connect client to IP..."));
-
   if(client.connected())
-  {
+  {    
     DBGLN(F("ESP: client already connected!"));
     return;
+    
   }
-
-  //говорим, что клиент занят
-  setClientBusy(client,true);
-
+  
   // добавляем клиента в очередь на соединение
   addClientToQueue(&client, actionConnect, ip, port);
 
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с соединением клиента
-
-  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::beginDisconnect(CoreTransportClient& client)
 {
- // DBGLN(F("ESP: Disconnect client..."));
-
   if(!client.connected())
   {
-//    DBGLN(F("ESP: client not connected!"));
     return;
   }
-
-  //говорим, что клиент занят
-  setClientBusy(client,true);
 
   // добавляем клиента в очередь на соединение
   addClientToQueue(&client, actionDisconnect);
@@ -2896,12 +2817,13 @@ void CoreESPWebServerClass::sendNextFileData(CoreWebServerPendingFileData* pfd)
   pfd->pendingBytes -= toSend;
 
   // посылаем новую порцию данных
-  if(!pfd->client->write(buff,toSend,true))
+  if(!pfd->client->write(buff,toSend))
   {
-    delete [] buff;
     pfd->client->disconnect();
     removePendingFileData(pfd->client);
   }
+  
+  delete [] buff;
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -3337,12 +3259,11 @@ CoreWebServerPendingFileData* CoreESPWebServerClass::getPendingFileData(CoreTran
   return NULL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
+void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, uint8_t* dt, size_t dataSize, bool isDone)
 {
+    char* data = (char*) dt;
+    
     // данные для клиента пришли
-    const char* data = (const char*) client.getData();
-    size_t dataSize = client.getDataSize();
-      
     if(!isOurClient(&client))
     {
       // нет в списке клиентов, проверяем, возможно, запрос к нам
@@ -3451,7 +3372,6 @@ CoreMQTT MQTT;
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreMQTT::CoreMQTT()
 {
-  currentClient = NULL;
   timer = 0;
   machineState = mqttWaitClient;
   currentTransport = NULL;
@@ -3464,10 +3384,10 @@ void CoreMQTT::reset()
 {
   // тут сброс - вызывается, когда конфиг перезагружается  
   // освобождаем клиента
-  currentClient = NULL;
   timer = 0;
   machineState = mqttWaitClient;
   currentTransport = NULL;
+  currentClient.accept(NULL);
   mqttMessageId = 0;
   currentStoreNumber = 0;
   clearReportsQueue();
@@ -3485,14 +3405,11 @@ void CoreMQTT::clearPublishQueue()
   publishList.empty();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreMQTT::processIncomingPacket(CoreTransportClient* client)
+void CoreMQTT::processIncomingPacket(CoreTransportClient* client, uint8_t* packet, size_t dataLen)
 {
-  const uint8_t* packet = client->getData();
-  size_t dataLen = client->getDataSize();
 
   if(!dataLen)
     return;
-
 
   if(dataLen > 0)
   {
@@ -3638,7 +3555,10 @@ void CoreMQTT::processIncomingPacket(CoreTransportClient* client)
 
               delete streamBuffer;
               streamBuffer = new String();
+
+              currentTransport->pause();
               Core.processCommand(topic,this);
+              currentTransport->resume();
 
               // тут получили ответ, и надо опубликовать его в брокер
               pushToReportQueue(streamBuffer);
@@ -3674,14 +3594,14 @@ void CoreMQTT::pushToReportQueue(String* toReport)
   reportQueue.push_back(newReport);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
+void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, uint8_t* data, size_t dataSize, bool isDone)
 {
-  if(!currentClient || &client != currentClient) // не наш клиент
+  if(!currentClient || client != currentClient) // не наш клиент
     return;
 
   timer = millis();
 
-//  DBGLN(F("MQTT: DATA FROM CLIENT !!!"));
+  DBGLN(F("MQTT: DATA FROM CLIENT !!!"));
 
   if(machineState == mqttWaitSendConnectPacketDone)
   {
@@ -3701,6 +3621,9 @@ void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
     // отсылали пакет публикации, тут к нам пришла обратка,
     // поскольку мы подписались на все топики для нашего клиента, на будущее
      machineState = mqttSendPublishPacket;
+
+    // по-любому обрабатываем обратку
+    processIncomingPacket(&currentClient, data, dataSize);     
   }
   else
   {
@@ -3709,7 +3632,7 @@ void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
 
       // тут разбираем, что пришло от брокера. Если мы здесь, значит данные от брокера
       // пришли в необрабатываемую ветку, т.е. это публикация прямо с брокера.
-      processIncomingPacket(currentClient);
+      processIncomingPacket(&currentClient, data, dataSize);
   }
     
 }
@@ -3717,7 +3640,7 @@ void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
 void CoreMQTT::OnClientDataWritten(CoreTransportClient& client, int16_t errorCode)
 {
   
-  if(!currentClient || &client != currentClient) // не наш клиент
+  if(!currentClient || client != currentClient) // не наш клиент
     return;
   
   timer = millis();
@@ -3727,7 +3650,6 @@ void CoreMQTT::OnClientDataWritten(CoreTransportClient& client, int16_t errorCod
     DBGLN(F("MQTT: Can't write to client!"));
     clearReportsQueue();
     clearPublishQueue();
-    currentClient = NULL;
     machineState = mqttWaitReconnect;
 
     return;
@@ -3738,7 +3660,7 @@ void CoreMQTT::OnClientDataWritten(CoreTransportClient& client, int16_t errorCod
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreMQTT::OnClientConnect(CoreTransportClient& client, bool connected, int16_t errorCode)
 {
-  if(!currentClient || &client != currentClient) // не наш клиент
+   if(!currentClient || client != currentClient) // не наш клиент
     return;
 
 //  DBG(F("MQTT: OnClientConnect, connected = "));
@@ -3750,7 +3672,6 @@ void CoreMQTT::OnClientConnect(CoreTransportClient& client, bool connected, int1
     DBGLN(F("MQTT: Can't connect to broker, try to reconnect..."));
     clearReportsQueue();
     clearPublishQueue();
-    currentClient = NULL;
     machineState = mqttWaitReconnect;
     timer = millis();    
   }
@@ -3863,20 +3784,9 @@ void CoreMQTT::update()
       {
         if(currentTransport->ready())
         {
-            currentClient = currentTransport->getFreeClient();
-            if(currentClient)
-            {
-              DBG(F("MQTT: Catch free client #"));
-              DBGLN(currentClient->getID());
-              DBG(F("MQTT: connect to "));
-              DBG(MQTTSettings.serverAddress);
-              DBG(":");
-              DBGLN(MQTTSettings.serverPort);
-
-              currentClient->connect(MQTTSettings.serverAddress.c_str(), MQTTSettings.serverPort);
-              machineState = mqttWaitConnection; 
-              timer = millis();
-            }
+            currentClient.connect(MQTTSettings.serverAddress.c_str(), MQTTSettings.serverPort);
+            machineState = mqttWaitConnection; 
+            timer = millis();
         } // if(currentTransport->ready())
       }
       break; // mqttWaitClient
@@ -3896,7 +3806,6 @@ void CoreMQTT::update()
           // долго ждали, переподсоединяемся
           clearReportsQueue();
           clearPublishQueue();
-          currentClient = NULL;
           machineState = mqttWaitReconnect;
           timer = millis();
         }
@@ -3910,7 +3819,6 @@ void CoreMQTT::update()
           DBGLN(F("MQTT: start reconnect!"));
           clearReportsQueue();
           clearPublishQueue();
-          currentClient = NULL;
           machineState = mqttWaitClient;
         }
       }
@@ -3918,7 +3826,7 @@ void CoreMQTT::update()
 
       case mqttSendConnectPacket:
       {
-        if(currentClient)
+        if(currentClient.connected())
         {
           DBGLN(F("MQTT: start send connect packet!"));
   
@@ -3939,7 +3847,7 @@ void CoreMQTT::update()
           machineState = mqttWaitSendConnectPacketDone;
           
           // сформировали пакет CONNECT, теперь отсылаем его брокеру
-          currentClient->write((uint8_t*) mqttBuffer.c_str(),mqttBufferLength);
+          currentClient.write((uint8_t*) mqttBuffer.c_str(),mqttBufferLength);
 
         //   DBGLN(F("MQTT: CONNECT packet written!"));
           
@@ -3959,7 +3867,7 @@ void CoreMQTT::update()
       {
         DBGLN(F("MQTT: Subscribe to topics!"));
 
-        if(currentClient)
+        if(currentClient.connected())
         {
           String mqttBuffer;
           int16_t mqttBufferLength;
@@ -3973,7 +3881,7 @@ void CoreMQTT::update()
           machineState = mqttWaitSendSubscribePacketDone;
           
           // сформировали пакет SUBSCRIBE, теперь отсылаем его брокеру
-          currentClient->write((uint8_t*) mqttBuffer.c_str(),mqttBufferLength);
+          currentClient.write((uint8_t*) mqttBuffer.c_str(),mqttBufferLength);
           timer = millis();
         }
         else
@@ -3997,7 +3905,7 @@ void CoreMQTT::update()
         {
           DBGLN(F("MQTT: SEND NEXT TOPIC!"));
 
-          if(currentClient)
+          if(currentClient.connected())
           {
             String mqttBuffer;
             int16_t mqttBufferLength;
@@ -4113,7 +4021,7 @@ void CoreMQTT::update()
                 machineState = mqttWaitSendPublishPacketDone;
               
                 // сформировали пакет PUBLISH, теперь отсылаем его брокеру
-                currentClient->write((uint8_t*) mqttBuffer.c_str(),mqttBufferLength);
+                currentClient.write((uint8_t*) mqttBuffer.c_str(),mqttBufferLength);
                 timer = millis();
               }
           }
@@ -4138,7 +4046,6 @@ void CoreMQTT::update()
           // долго ждали результата записи в клиента, переподсоединяемся
           clearReportsQueue();
           clearPublishQueue();
-          currentClient = NULL;
           machineState = mqttWaitReconnect;
           timer = millis();
         }        
@@ -4368,7 +4275,6 @@ void CoreMQTT::begin()
 {
   // попросили начать работу
   // для начала - освободим клиента
-  currentClient = NULL;
   machineState = mqttWaitClient;
   currentTransport = NULL;
   mqttMessageId = 0;
@@ -4382,12 +4288,14 @@ void CoreMQTT::begin()
       case workModeThroughESP:
         #ifdef CORE_ESP_TRANSPORT_ENABLED
           currentTransport = &ESP;
+          currentClient.accept(&ESP);
         #endif
       break;
 
       case workModeThroughSIM800:
       #ifdef CORE_SIM800_TRANSPORT_ENABLED
           currentTransport = &SIM800;
+          currentClient.accept(&SIM800);
       #endif
       break;
     }
@@ -4412,14 +4320,16 @@ SIM800TransportSettingsClass SIM800TransportSettings;
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreSIM800Transport SIM800;
 //--------------------------------------------------------------------------------------------------------------------------------------
-CoreSIM800Transport::CoreSIM800Transport() : CoreTransport()
+CoreSIM800Transport::CoreSIM800Transport() : CoreTransport(SIM800_MAX_CLIENTS)
 {
-  for(uint8_t i=0;i<SIM800_MAX_CLIENTS;i++)
-    clients[i] = NULL;
 
   sim800ReceiveBuff = new String();
   smsToSend = new String();
   flags.bPaused = false;
+
+  waitCipstartConnect = false;
+  cipstartConnectClient = NULL;
+  
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -4676,7 +4586,7 @@ void CoreSIM800Transport::processIPD()
       DBG(F("; len="));
       DBGLN(lengthOfData);
       */
-       CoreTransportClient* client = clients[clientID];
+       CoreTransportClient* client = getClient(clientID);
 
        // у нас есть lengthOfData с данными для клиента, нам надо побить это на пакеты длиной N байт,
        // и последовательно вызывать событие прихода данных. Это нужно для того, чтобы не переполнить оперативку,
@@ -4709,12 +4619,11 @@ void CoreSIM800Transport::processIPD()
                 if(packetWritten >= packetSize)
                 {
                   // скопировали один пакет
-                  // передаём клиенту буфер, он сам его освободит, когда надо
-                  setClientData(*client,buff,packetWritten);
-    
                   // сообщаем подписчикам, что данные для клиента получены
-                  notifyClientDataAvailable(*client, totalWritten >= lengthOfData);
-    
+                  notifyDataAvailable(*client, buff, packetWritten, totalWritten >= lengthOfData);
+
+                  // чистим память
+                  delete [] buff;    
                    
                   // пересчитываем длину пакета, вдруг там мало осталось, и незачем выделять под несколько байт огромный буфер
                   packetSize =  min(MAX_PACKET_SIZE, lengthOfData - totalWritten);
@@ -4729,18 +4638,11 @@ void CoreSIM800Transport::processIPD()
             if(packetWritten > 0)
             {
               // после прохода цикла есть остаток данных, уведомляем клиента
-             // передаём клиенту буфер, он сам его освободит, когда надо
-              setClientData(*client,buff,packetWritten);
-
               // сообщаем подписчикам, что данные для клиента получены
-              notifyClientDataAvailable(*client, totalWritten >= lengthOfData);
+               notifyDataAvailable(*client, buff, packetWritten, totalWritten >= lengthOfData);
 
             }
-            else
-            {
-                // нет остатка, чистим буфер
-                delete [] buff;
-            }
+            delete [] buff;
                   
        
     } // if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
@@ -4960,6 +4862,53 @@ void CoreSIM800Transport::update()
             return;
           
         }
+  
+         // смотрим, подсоединился ли клиент?
+         int16_t idx = sim800ReceiveBuff->indexOf(F(", CONNECT OK"));
+         if(idx != -1)
+         {
+            // клиент подсоединился
+            String s = sim800ReceiveBuff->substring(0,idx);
+            int16_t clientID = s.toInt();
+            if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
+            {
+              DBG(F("SIM800: client connected - #"));
+              DBGLN(clientID);
+
+              // тут смотрим - посылали ли мы запрос на коннект?
+              if(waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
+              {                
+                // есть клиент, для которого надо установить ID
+                cipstartConnectClient->bind(clientID);
+                waitCipstartConnect = false;
+                cipstartConnectClient = NULL;
+                cipstartConnectClientID = NO_CLIENT_ID;              
+              } // if                 
+  
+              // выставляем клиенту флаг, что он подсоединён
+              CoreTransportClient* client = getClient(clientID);              
+              notifyClientConnected(*client,true,CT_ERROR_NONE);
+            }
+         } // if
+  
+         idx = sim800ReceiveBuff->indexOf(F(", CLOSED"));
+         bool isConnectFail = sim800ReceiveBuff->endsWith(F("CONNECT FAIL"));
+         if(idx != -1 || isConnectFail)
+         {
+          // клиент отсоединился
+            String s = sim800ReceiveBuff->substring(0,idx);
+            int16_t clientID = s.toInt();
+            if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
+            {
+              DBG(F("SIM800: client disconnected - #"));
+              DBGLN(clientID);
+  
+              // выставляем клиенту флаг, что он отсоединён
+              CoreTransportClient* client = getClient(clientID);
+              notifyClientConnected(*client,false,CT_ERROR_NONE);
+            }        
+          
+         } // if(idx != -1)        
         
         /*
         // выводим то, что получено, для теста
@@ -5038,7 +4987,7 @@ void CoreSIM800Transport::update()
               {
                   // получаем первого клиента в очереди
                   SIM800ClientQueueData dt = clientsQueue[0];
-                  int16_t clientID = dt.client->getID();
+                  int16_t clientID = dt.client->socket;
                   
                   // смотрим, чего он хочет от нас
                   switch(dt.action)
@@ -5062,6 +5011,14 @@ void CoreSIM800Transport::update()
                     case sim800ConnectAction:
                     {
                       // хочет подсоединиться
+                      // здесь надо искать первый свободный слот для клиента
+                      CoreTransportClient* freeSlot = getClient(NO_CLIENT_ID);
+                      clientID = freeSlot ? freeSlot->socket : NO_CLIENT_ID;
+
+                      waitCipstartConnect = true;
+                      cipstartConnectClient = dt.client;
+                      cipstartConnectClientID = clientID;
+                      
                       /*
                       DBG(F("SIM800: client #"));
                       DBG(clientID);
@@ -5093,10 +5050,13 @@ void CoreSIM800Transport::update()
                       */
                       currentCommand = smaCIPSEND;
 
+                      size_t dataSize;
+                      dt.client->getBuffer(dataSize);
+                      
                       String command = F("AT+CIPSEND=");
                       command += clientID;
                       command += F(",");
-                      command += dt.client->getDataSize();
+                      command += dataSize;
                       flags.waitForDataWelcome = true; // выставляем флаг, что мы ждём >
                       
                       sendCommand(command);                      
@@ -5197,22 +5157,17 @@ void CoreSIM800Transport::update()
                   {
                     // отсоединялись
                     if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
-                    {
-                      int16_t clientID = sim800ReceiveBuff->toInt();
-                      
+                    {                      
                       if(clientsQueue.size())
                       {
                         DBGLN(F("SIM800: Client disconnected."));
-                        // клиент отсоединён, ставим ему соответствующий флаг, освобождаем его и удаляем из очереди
-                       CoreTransportClient* thisClient = getClientFromQueue(clientID,sim800DisconnectAction);
-                       if(!thisClient)
-                        thisClient = clients[clientID];
-                       
-                       removeClientFromQueue(thisClient, sim800DisconnectAction);
 
-                        setClientBusy(*thisClient,false);
-                        setClientConnected(*thisClient,false,CT_ERROR_NONE);
+                        SIM800ClientQueueData dt = clientsQueue[0];                        
+                        CoreTransportClient* thisClient = dt.client;
+                        removeClientFromQueue(thisClient);
                         
+                        notifyClientConnected(*thisClient,false,CT_ERROR_NONE);
+                                               
                       } // if(clientsQueue.size()) 
                       
                         machineState = sim800Idle; // переходим к следующей команде
@@ -5225,9 +5180,7 @@ void CoreSIM800Transport::update()
                     // соединялись
                     
                         if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
-                        {
-                          int16_t clientID = sim800ReceiveBuff->toInt();
-                                                                                                        
+                        {                                                                                                        
                           if(knownAnswer == gsmConnectOk)
                           {
                             // законнектились удачно
@@ -5235,14 +5188,8 @@ void CoreSIM800Transport::update()
                             {
                                DBGLN(F("SIM800: Client connected."));
                                
-                               CoreTransportClient* thisClient = getClientFromQueue(clientID,sim800ConnectAction);
-                               if(!thisClient)
-                                thisClient = clients[clientID];
-                               
-                               removeClientFromQueue(thisClient, sim800ConnectAction);
-                               
-                               setClientBusy(*thisClient,false);
-                               setClientConnected(*thisClient,true,CT_ERROR_NONE);
+                               SIM800ClientQueueData dt = clientsQueue[0];
+                               removeClientFromQueue(dt.client);       
                             }
                             machineState = sim800Idle; // переходим к следующей команде
                           } // gsmConnectOk
@@ -5252,15 +5199,16 @@ void CoreSIM800Transport::update()
                             if(clientsQueue.size())
                             {
                                DBGLN(F("SIM800: Client connect ERROR!"));
+
+                              waitCipstartConnect = false;
+                              cipstartConnectClient = NULL;                               
                                
-                               CoreTransportClient* thisClient = getClientFromQueue(clientID,sim800ConnectAction);
-                               if(!thisClient)
-                                thisClient = clients[clientID];
+                              SIM800ClientQueueData dt = clientsQueue[0];
+
+                               CoreTransportClient* thisClient = dt.client;
+                               removeClientFromQueue(thisClient);
                                
-                               removeClientFromQueue(thisClient, sim800ConnectAction);
-                               
-                               setClientBusy(*thisClient,false);
-                               setClientConnected(*thisClient,false,CT_ERROR_CANT_CONNECT);
+                               notifyClientConnected(*thisClient,false,CT_ERROR_CANT_CONNECT);
                             }
                             machineState = sim800Idle; // переходим к следующей команде
                           } // gsmConnectFail
@@ -5275,27 +5223,23 @@ void CoreSIM800Transport::update()
                     // дожидаемся конца отсыла данных от клиента в SIM800
                       
                       if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
-                      {
-                        int16_t clientID = sim800ReceiveBuff->toInt();
-                                                
+                      {                                                
                         if(knownAnswer == gsmSendOk)
                         {
                           // send ok
                           if(clientsQueue.size())
                           {
                              DBGLN(F("SIM800: data was sent."));
-                             CoreTransportClient* thisClient = getClientFromQueue(clientID,sim800WriteAction);
-                             if(!thisClient)
-                              thisClient = clients[clientID];
                              
-                             removeClientFromQueue(thisClient, sim800WriteAction);
-
-                             setClientBusy(*thisClient,false);
+                             SIM800ClientQueueData dt = clientsQueue[0];
+                             
+                             CoreTransportClient* thisClient = dt.client;
+                             removeClientFromQueue(thisClient);
 
                              // очищаем данные у клиента
-                             setClientData(*thisClient,NULL,0);
+                             thisClient->clear();
 
-                             notifyClientDataWritten(*thisClient,CT_ERROR_NONE);
+                             notifyDataWritten(*thisClient,CT_ERROR_NONE);
                           }                     
                         } // send ok
                         else
@@ -5305,18 +5249,16 @@ void CoreSIM800Transport::update()
                           {
                              DBGLN(F("SIM800: send data fail!"));
                              
-                             CoreTransportClient* thisClient = getClientFromQueue(clientID,sim800WriteAction);
-                             if(!thisClient)
-                              thisClient = clients[clientID];
-                             
-                             removeClientFromQueue(thisClient, sim800WriteAction);
-                             
-                             setClientBusy(*thisClient,false);
-                             
+                             SIM800ClientQueueData dt = clientsQueue[0];
+
+                             CoreTransportClient* thisClient = dt.client;
+                             removeClientFromQueue(thisClient);
+                                                          
                              // очищаем данные у клиента
-                             setClientData(*thisClient,NULL,0);
+                             thisClient->clear();
                              
-                             notifyClientDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
+                             notifyDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
+                             
                           }                     
                         } // else send fail
   
@@ -5341,12 +5283,15 @@ void CoreSIM800Transport::update()
                           currentCommand = smaWaitSendDone;                          
                           SIM800ClientQueueData dt = clientsQueue[0];
 
+                          size_t bufferSize;
+                          uint8_t* clientBuffer = dt.client->getBuffer(bufferSize);                        
+
                           DBGLN(F("SIM800: > received, start write from client to SIM800..."));
                           
-                          workStream->write(dt.client->getData(),dt.client->getDataSize());
+                          workStream->write(clientBuffer,bufferSize);
 
                           // очищаем данные у клиента сразу после отсыла
-                          setClientData(*(dt.client),NULL,0);
+                           dt.client->clear();
                        }
                     } // if
                     else
@@ -5361,14 +5306,12 @@ void CoreSIM800Transport::update()
                              SIM800ClientQueueData dt = clientsQueue[0];
     
                              CoreTransportClient* thisClient = dt.client;
-                             removeClientFromQueue(thisClient,sim800WriteAction);
+                             removeClientFromQueue(thisClient);
     
-                             setClientBusy(*thisClient,false);
-                             
                              // очищаем данные у клиента
-                             setClientData(*thisClient,NULL,0);
+                             thisClient->clear();
     
-                             notifyClientDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
+                             notifyDataWritten(*thisClient,CT_ERROR_CANT_WRITE);
                             
                           }
                           
@@ -5781,52 +5724,8 @@ void CoreSIM800Transport::update()
     } // if(!flags.onIdleTimer)
 
 
-    // тут просто анализируем ответ от SIM800, если он есть, на предмет того - соединён ли клиент, отсоединён ли клиент и т.п.
     if(hasAnswerLine)
-    {
-      
-       // смотрим, подсоединился ли клиент?
-       int16_t idx = sim800ReceiveBuff->indexOf(F(",CONNECT OK"));
-       if(idx != -1)
-       {
-          // клиент подсоединился
-          String s = sim800ReceiveBuff->substring(0,idx);
-          int16_t clientID = s.toInt();
-          if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
-          {
-            DBG(F("SIM800: client connected - #"));
-            DBGLN(clientID);
-
-            // выставляем клиенту флаг, что он подсоединён
-            CoreTransportClient* client = clients[clientID];
-            
-            setClientBusy(*client,false);
-            setClientConnected(*client,true,CT_ERROR_NONE);
-          }
-       } // if
-
-       idx = sim800ReceiveBuff->indexOf(F(",CLOSED"));
-       bool isConnectFail = sim800ReceiveBuff->endsWith(F("CONNECT FAIL"));
-       if(idx != -1 || isConnectFail)
-       {
-        // клиент отсоединился
-          String s = sim800ReceiveBuff->substring(0,idx);
-          int16_t clientID = s.toInt();
-          if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
-          {
-            DBG(F("SIM800: client disconnected - #"));
-            DBGLN(clientID);
-
-            // выставляем клиенту флаг, что он отсоединён
-            CoreTransportClient* client = clients[clientID];
-            
-            setClientBusy(*client,false);
-            setClientConnected(*client,false,CT_ERROR_NONE);
-          }        
-        
-       } // if(idx != -1)
-       
-
+    {      
       // не забываем чистить за собой
         delete sim800ReceiveBuff;
         sim800ReceiveBuff = new String();   
@@ -5862,6 +5761,7 @@ void CoreSIM800Transport::update()
 void CoreSIM800Transport::begin()
 {  
   workStream = NULL;
+  waitCipstartConnect = false;
 
   if(!SIM800TransportSettings.enabled)
     return;
@@ -5871,8 +5771,6 @@ void CoreSIM800Transport::begin()
 
   DBGLN(F("SIM800: begin."));
   
-  initClients();
-
   HardwareSerial* hs = NULL;
 
   #if (TARGET_BOARD == MEGA_BOARD) || (TARGET_BOARD == DUE_BOARD)
@@ -6030,53 +5928,34 @@ void CoreSIM800Transport::clearClientsQueue(bool raiseEvents)
 
     for(size_t i=0;i<clientsQueue.size();i++)
     {
-        SIM800ClientQueueData dt = clientsQueue[i];
+       SIM800ClientQueueData dt = clientsQueue[i];
         if(raiseEvents)
         {
           switch(dt.action)
           {
-
-            case sim800DisconnectAction:
+            case actionDisconnect:
                 // при дисконнекте всегда считаем, что ошибок нет
-                setClientConnected(*(dt.client),false,CT_ERROR_NONE); 
+                notifyClientConnected(*(dt.client),false,CT_ERROR_NONE);
             break;
   
-            case sim800ConnectAction:
+            case actionConnect:
                 // если было запрошено соединение клиента с адресом - говорим, что соединиться не можем
-                setClientConnected(*(dt.client),false,CT_ERROR_CANT_CONNECT);
+                notifyClientConnected(*(dt.client),false,CT_ERROR_CANT_CONNECT);
             break;
   
-            case sim800WriteAction:
+            case actionWrite:
               // если попросили записать данные - надо сообщить подписчикам, что не можем записать данные
-              notifyClientDataWritten(*(dt.client),CT_ERROR_CANT_WRITE);
+              notifyDataWritten(*(dt.client),CT_ERROR_CANT_WRITE);
+              notifyClientConnected(*(dt.client),false,CT_ERROR_NONE);
             break;
           } // switch
           
-        } // if(raiseEvents)
 
-        // освобождаем клиента
-        setClientBusy(*(dt.client),false);
+        } // if(raiseEvents)
+        
     } // for
 
   clientsQueue.empty();
-
-  // помимо этого - надо принудительно всем клиентам выставить статус "Отсоединён"
-   for(uint8_t i=0;i<SIM800_MAX_CLIENTS;i++)
-  {
-    setClientBusy(*(clients[i]),false);
-    setClientConnected(*(clients[i]),false,CT_ERROR_NONE); 
-  }  
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-CoreTransportClient* CoreSIM800Transport::getClientFromQueue(int16_t clientID, SIM800ClientAction action)
-{
-   for(size_t i=0;i<clientsQueue.size();i++)
-  {
-    if(clientsQueue[i].client->getID() == clientID && clientsQueue[i].action == action)
-      return clientsQueue[i].client;
-  } 
-
-  return NULL;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSIM800Transport::isClientInQueue(CoreTransportClient* client, SIM800ClientAction action)
@@ -6092,11 +5971,16 @@ bool CoreSIM800Transport::isClientInQueue(CoreTransportClient* client, SIM800Cli
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::addClientToQueue(CoreTransportClient* client, SIM800ClientAction action, const char* ip, uint16_t port)
 {
-  if(isClientInQueue(client, action))
+  while(isClientInQueue(client, action))
   {
-    DBGLN(F("SIM800: Client with same action, already in queue - remove it!"));
+    #ifdef WIFI_DEBUG
+      Serial.print(F("SIM800: Client #"));
+      Serial.print(client->socket);
+      Serial.print(F(" with same action already in queue, ACTION="));
+      Serial.print(action);
+      Serial.println(F(" - remove that client!"));
+    #endif
     removeClientFromQueue(client,action);
-    //return;
   }
 
     SIM800ClientQueueData dt;
@@ -6116,6 +6000,7 @@ void CoreSIM800Transport::addClientToQueue(CoreTransportClient* client, SIM800Cl
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::removeClientFromQueue(CoreTransportClient* client, SIM800ClientAction action)
 {
+  
   for(size_t i=0;i<clientsQueue.size();i++)
   {
     if(clientsQueue[i].client == client && clientsQueue[i].action == action)
@@ -6131,73 +6016,41 @@ void CoreSIM800Transport::removeClientFromQueue(CoreTransportClient* client, SIM
         break;
     } // if
     
-  } // for
+  } // for  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreSIM800Transport::initClients()
+void CoreSIM800Transport::removeClientFromQueue(CoreTransportClient* client)
 {
-  for(uint8_t i=0;i<SIM800_MAX_CLIENTS;i++)
-  {
-    if(clients[i])
-      continue;
-      
-    CoreTransportClient* client = CoreTransportClient::Create(this);
-    setClientID(*client,i);
-    clients[i] = client;
-  }
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreSIM800Transport::subscribe(IClientEventsSubscriber* subscriber)
-{
-  initClients();
-  for(uint8_t i=0;i<SIM800_MAX_CLIENTS;i++)
-  {
-    subscribeClient(*(clients[i]),subscriber);
-  }  
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-void CoreSIM800Transport::unsubscribe(IClientEventsSubscriber* subscriber)
-{
-  initClients();
-  for(uint8_t i=0;i<SIM800_MAX_CLIENTS;i++)
-  {
-    unsubscribeClient(*(clients[i]),subscriber);
-  }
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
-CoreTransportClient* CoreSIM800Transport::getFreeClient()
-{
-  if(!ready() || !flags.gprsAvailable) // если ещё не готовы к работе - ничего не возвращаем
-    return NULL;
   
-  for(uint8_t i=0;i<SIM800_MAX_CLIENTS;i++)
+  for(size_t i=0;i<clientsQueue.size();i++)
   {
-    if(!clients[i]->connected() && !clients[i]->busy()) // возвращаем первого неподсоединённого и незанятого чем-либо клиента
-      return clients[i];
-  }
-
-  return NULL;
+    if(clientsQueue[i].client == client)
+    {
+      delete [] clientsQueue[i].ip;
+      
+        for(size_t j=i+1;j<clientsQueue.size();j++)
+        {
+          clientsQueue[j-1] = clientsQueue[j];
+        }
+        
+        clientsQueue.pop();
+        break;
+    } // if
+    
+  } // for
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::beginWrite(CoreTransportClient& client)
 {
+
   if(!client.connected())
   {
     DBGLN(F("SIM800: client not connected!"));
     return;
   }
-
-  //говорим, что клиент занят
-  setClientBusy(client,true);
   
   // добавляем клиента в очередь на запись
   addClientToQueue(&client, sim800WriteAction);
-
-
-  DBG(F("SIM800: Client #"));
-  DBG(client.getID());
-  DBG(F(" has data size: "));
-  DBGLN(client.getDataSize());
 
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с записью в поток с этого клиента
   
@@ -6210,9 +6063,6 @@ void CoreSIM800Transport::beginConnect(CoreTransportClient& client, const char* 
     DBGLN(F("SIM800: client already connected!"));
     return;
   }
-
-  //говорим, что клиент занят
-  setClientBusy(client,true);
 
   // добавляем клиента в очередь на соединение
   addClientToQueue(&client, sim800ConnectAction, ip, port);
@@ -6229,9 +6079,6 @@ void CoreSIM800Transport::beginDisconnect(CoreTransportClient& client)
 //    DBGLN(F("SIM800: client not connected!"));
     return;
   }
-
-  //говорим, что клиент занят
-  setClientBusy(client,true);
 
   // добавляем клиента в очередь на соединение
   addClientToQueue(&client, sim800DisconnectAction);
@@ -6254,7 +6101,6 @@ CoreThingSpeak ThingSpeak;
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreThingSpeak::CoreThingSpeak()
 {
-  currentClient = NULL;
   currentTransport = NULL;
   timer = 0;
 }
@@ -6264,7 +6110,6 @@ void CoreThingSpeak::begin()
   DBGLN(F("TS: begin."));
   
   // попросили начать работу
-  currentClient = NULL;
   currentTransport = NULL;
   initSubstitutions();
 
@@ -6276,12 +6121,14 @@ void CoreThingSpeak::begin()
       case workModeThroughESP:
         #ifdef CORE_ESP_TRANSPORT_ENABLED
           currentTransport = &ESP;
+          currentClient.accept(&ESP);
         #endif
       break;
 
       case workModeThroughSIM800:
       #ifdef CORE_SIM800_TRANSPORT_ENABLED
           currentTransport = &SIM800;
+          currentClient.accept(&SIM800);
       #endif
       break;
     }
@@ -6302,8 +6149,8 @@ void CoreThingSpeak::reset()
 {
   DBGLN(F("TS: reset."));
   
-  currentClient = NULL;
   currentTransport = NULL;
+  currentClient.accept(NULL);
 
   initSubstitutions();
 
@@ -6385,8 +6232,7 @@ void CoreThingSpeak::update()
       case tsCatchClient:
       {
         // пытаемся подловить свободного клиента у транспорта
-        currentClient = currentTransport->getFreeClient();
-        if(currentClient)
+        if(currentTransport->ready())
         {
           DBGLN(F("TS: Free client acquired, connecting to ThingSpeak..."));
           machineState = tsStartConnect;
@@ -6405,7 +6251,7 @@ void CoreThingSpeak::update()
       case tsStartConnect:
       {
         // начинаем коннектиться к ThingSpeak
-        currentClient->connect("api.thingspeak.com",80);
+        currentClient.connect("api.thingspeak.com",80);
         machineState = tsConnectMode;
         timer = millis();
         
@@ -6430,10 +6276,10 @@ void CoreThingSpeak::update()
           
             timer = millis();
             
-            if(currentClient && currentClient->connected())
+            if(currentClient.connected())
             {
               machineState = tsDisconnectMode;
-              currentClient->disconnect();
+              currentClient.disconnect();
             }
             else
             {
@@ -6450,14 +6296,13 @@ void CoreThingSpeak::update()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreThingSpeak::OnClientConnect(CoreTransportClient& client, bool connected, int16_t errorCode)
 {
-  if(!currentClient || currentClient != &client) // не наш клиент
+  if(currentClient != client) // не наш клиент
     return;
 
   if(errorCode != CT_ERROR_NONE)
   {
       // ошибка соединения - по-любому переходим в режим ожидания интервала
       DBGLN(F("TS: OnClientConnect - ERROR detected!"));
-      currentClient = NULL;
       machineState = tsWaitingInterval;
       timer = millis();
 
@@ -6471,7 +6316,6 @@ void CoreThingSpeak::OnClientConnect(CoreTransportClient& client, bool connected
     {
       // отсоединились
       DBGLN(F("TS: work cicle done, switch to wait..."));
-      currentClient = NULL;
       machineState = tsWaitingInterval;
       timer = millis();
     }
@@ -6482,7 +6326,6 @@ void CoreThingSpeak::OnClientConnect(CoreTransportClient& client, bool connected
     {
       // error!
       DBGLN(F("TS: unable to connect to ThingSpeak!"));
-      currentClient = NULL;
       machineState = tsWaitingInterval;
       timer = millis();
     }
@@ -6499,7 +6342,6 @@ void CoreThingSpeak::OnClientConnect(CoreTransportClient& client, bool connected
     {
       // error!
       DBGLN(F("TS: disconnected during read/write mode!"));
-      currentClient = NULL;
       machineState = tsWaitingInterval;
       timer = millis();
     }    
@@ -6603,7 +6445,7 @@ void CoreThingSpeak::sendData()
    httpQuery += F(" HTTP/1.1\r\nHost: api.thingspeak.com\r\n\r\n");
 
    // запрос сформирован, отсылаем его в клиент
-   currentClient->write((uint8_t*)httpQuery.c_str(),httpQuery.length());
+   currentClient.write((uint8_t*)httpQuery.c_str(),httpQuery.length());
    timer = millis();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -6617,7 +6459,7 @@ void CoreThingSpeak::initSubstitutions()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreThingSpeak::OnClientDataWritten(CoreTransportClient& client, int16_t errorCode)
 {
-  if(!currentClient || currentClient != &client)
+  if(currentClient != client)
     return;
 
   // писали данные в клиента - проверяем
@@ -6627,16 +6469,16 @@ void CoreThingSpeak::OnClientDataWritten(CoreTransportClient& client, int16_t er
       DBGLN(F("TS: CLIENT WRITE ERROR, disconnecting..."));
       machineState = tsDisconnectMode;
       timer = millis();
-      currentClient->disconnect();
+      currentClient.disconnect();
       return;
   }
   DBGLN(F("TS: Client data written, wait for results..."));
   machineState = tsReadMode;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreThingSpeak::OnClientDataAvailable(CoreTransportClient& client, bool isDone)
+void CoreThingSpeak::OnClientDataAvailable(CoreTransportClient& client, uint8_t* data, size_t dataSize, bool isDone)
 {
-  if(!currentClient || currentClient != &client)
+  if(currentClient != client)
     return;
 
   if(isDone)
@@ -6644,7 +6486,7 @@ void CoreThingSpeak::OnClientDataAvailable(CoreTransportClient& client, bool isD
     DBGLN(F("TS: all data received, disconnect client..."));
     machineState = tsDisconnectMode;
     timer = millis();
-    currentClient->disconnect();
+    currentClient.disconnect();
   }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------

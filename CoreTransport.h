@@ -144,8 +144,11 @@ struct IClientEventsSubscriber
 {
   virtual void OnClientConnect(CoreTransportClient& client, bool connected, int16_t errorCode) = 0; // событие "Статус соединения клиента"
   virtual void OnClientDataWritten(CoreTransportClient& client, int16_t errorCode) = 0; // событие "Данные из клиента записаны в поток"
-  virtual void OnClientDataAvailable(CoreTransportClient& client, bool isDone) = 0; // событие "Для клиента поступили данные", флаг - все ли данные приняты
+  virtual void OnClientDataAvailable(CoreTransportClient& client, uint8_t* data, size_t dataSize, bool isDone) = 0; // событие "Для клиента поступили данные", флаг - все ли данные приняты
 };
+//--------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<IClientEventsSubscriber*> ClientSubscribers;
+#define NO_CLIENT_ID 0xFF
 //--------------------------------------------------------------------------------------------------------------------------------------
 // режимы работы клиентов через транспорт
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -172,7 +175,7 @@ class CoreTransport
 {
   public:
   
-    CoreTransport();
+    CoreTransport(uint8_t clientsPoolSize);
     virtual ~CoreTransport();
 
     virtual void pause() = 0;
@@ -188,36 +191,43 @@ class CoreTransport
     // проверяет, готов ли транспорт к работе (например, проведена ли первичная инициализация)
     virtual bool ready() = 0; 
 
-    // возвращает свободного клиента (не законнекченного и не занятого делами)
-    virtual CoreTransportClient* getFreeClient() = 0;
-
    // подписка на события клиентов
-   virtual void subscribe(IClientEventsSubscriber* subscriber) = 0;
+   void subscribe(IClientEventsSubscriber* subscriber);
    
    // отписка от событий клиентов
-   virtual void unsubscribe(IClientEventsSubscriber* subscriber) = 0;
+   void unsubscribe(IClientEventsSubscriber* subscriber);
+
+private:
+
+    ClientSubscribers subscribers;
+    Vector<CoreTransportClient*> pool;
+    Vector<bool> status;
+
+    Vector<CoreTransportClient*> closedCatchList;
+    bool isExternalClient(CoreTransportClient& client);   
 
 protected:
 
   friend class CoreTransportClient;
 
-  // подписка/отписка клиентов на события
-  void subscribeClient(CoreTransportClient& client, IClientEventsSubscriber* subscriber);
-  void unsubscribeClient(CoreTransportClient& client, IClientEventsSubscriber* subscriber);
+  bool connected(uint8_t socket);
 
-  void setClientID(CoreTransportClient& client, uint8_t id);
-  void setClientData(CoreTransportClient& client,uint8_t* data, size_t sz);
-  void setClientBusy(CoreTransportClient& client,bool busy);
-
-  // функции, косвенно вызывающие события на клиенте
-  void setClientConnected(CoreTransportClient& client, bool connected, int16_t errorCode);  
-  void notifyClientDataWritten(CoreTransportClient& client, int16_t errorCode);
-  void notifyClientDataAvailable(CoreTransportClient& client, bool isDone);
+  void doWrite(CoreTransportClient& client); // начинаем писать в транспорт с клиента
+  void doConnect(CoreTransportClient& client, const char* ip, uint16_t port); // начинаем коннектиться к адресу
+  void doDisconnect(CoreTransportClient& client); // начинаем отсоединение от адреса
   
+  CoreTransportClient* getClient(uint8_t socket);
+
+  // вызов событий для клиента
+  void notifyClientConnected(CoreTransportClient& client, bool connected, int16_t errorCode);  
+  void notifyDataWritten(CoreTransportClient& client, int16_t errorCode);
+  void notifyDataAvailable(CoreTransportClient& client, uint8_t* data, size_t dataSize, bool isDone);
+      
     
   virtual void beginWrite(CoreTransportClient& client) = 0; // начинаем писать в транспорт с клиента
   virtual void beginConnect(CoreTransportClient& client, const char* ip, uint16_t port) = 0; // начинаем коннектиться к адресу
   virtual void beginDisconnect(CoreTransportClient& client) = 0; // начинаем отсоединение от адреса
+
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -230,90 +240,73 @@ class CoreTransportClient
 {
   public:
 
-  static CoreTransportClient* Create(CoreTransport* transport);
-  void Destroy();
-
-  CoreTransport* getTransport(); // возвращает транспорт
-
+   CoreTransportClient();
+   virtual ~CoreTransportClient();
+  
   
    bool connected();     
-   uint8_t getID();
+   void accept(CoreTransport* _parent);
 
   operator bool()
   {
-    return  (clientID != 0xFF); 
+    return  (socket != NO_CLIENT_ID); 
   }
 
   bool operator==(const CoreTransportClient& rhs)
   {
-    return (rhs.clientID == clientID);
+    return (rhs.socket == socket);
   }
 
   bool operator!=(const CoreTransportClient& rhs)
   {
     return !(operator==(rhs));
   }
+  
 
   void connect(const char* ip, uint16_t port);
   void disconnect();
   
-  bool write(uint8_t* buff, size_t sz, bool takeBufferOwnership=false);  
-
-  bool busy(); // проверяет, занят ли клиент чем-либо  
-
-  const uint8_t* getData();
-  size_t getDataSize();
+  bool write(uint8_t* buff, size_t sz);  
 
 
  protected:
 
     friend class CoreTransport;
+    #ifdef CORE_ESP_TRANSPORT_ENABLED
+    friend class CoreESPTransport;
+    #endif
+    #ifdef CORE_SIM800_TRANSPORT_ENABLED
+    friend class CoreSIM800Transport;
+    #endif
 
-    void subscribe(IClientEventsSubscriber* subscriber); // подписка на события клиента
-    void unsubscribe(IClientEventsSubscriber* subscriber); // отписка от событий клиента
+    CoreTransport* parent;
 
-    // транспорт, когда надо - выставляет флаг занятоски клиента каким-то делом
-    void setBusy(bool flag);
+    void bind(uint8_t _socket)
+    {
+      socket = _socket;
+    }
+    void release()
+    {
+      socket = NO_CLIENT_ID;
+    }
 
-    // установка ID клиента транспортом
-    void setID(uint8_t id);
 
-    // транспорт может дёргать эту функцию, чтобы установить данные в клиент
-    void setData(uint8_t* buff, size_t sz, bool copy);
-
-    // транспорт дёргает эту функцию, чтобы клиент сообщил подписчикам статус соединения
-    void setConnected(bool isConnected, int16_t errorCode);
-
-    // транспорт дёргает эту функцию, чтобы клиент сообщил подписчикам, что данные с него записаны в транспорт
-    void notifyDataWritten(int16_t errorCode);
-
-    // транспорт дёргает эту функцию, чтобы клиент сообщил подписчикам, что в клиенте доступны данные
-    void notifyDataAvailable(bool isDone);
-
+    void clear();
+    uint8_t* getBuffer(size_t& sz)
+    {
+      sz =  dataBufferSize;
+      return dataBuffer;
+    }
 
  private:
 
     CoreTransportClient(const CoreTransportClient& rhs);
-    CoreTransportClient operator=(const CoreTransportClient& rhs);
-        
-   ~CoreTransportClient();
-    CoreTransportClient();
+    CoreTransportClient& operator=(const CoreTransportClient& rhs);
 
-
-    ClientSubscribers subscribers;
-    int getSubscriberIndex(IClientEventsSubscriber* subscriber);
-
-    void raiseEvent(ClientEventType et, int16_t errorCode);
- 
-    void clearBuffer();
-
-    uint8_t clientID;
-    bool isConnected;
-    bool isBusy;
-    CoreTransport* parent;
-  
     uint8_t* dataBuffer;
     size_t dataBufferSize;
+
+    uint8_t socket;
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -453,13 +446,7 @@ class CoreESPTransport : public CoreTransport
 
     virtual bool ready(); // проверяем на готовность к работе
 
-   // подписка на события клиентов
-   virtual void subscribe(IClientEventsSubscriber* subscriber);
-   
-   // отписка от событий клиентов
-   virtual void unsubscribe(IClientEventsSubscriber* subscriber);
-   
-    virtual CoreTransportClient* getFreeClient(); // возвращает свободного клиента (не законнекченного и не занятого делами)
+    void restart();
 
   protected:
 
@@ -470,8 +457,15 @@ class CoreESPTransport : public CoreTransport
   private:
 
 
-      void restart();
-      void processIPD();
+      void waitTransmitComplete();
+
+      bool waitCipstartConnect;
+      CoreTransportClient* cipstartConnectClient;
+      uint8_t cipstartConnectClientID;
+
+      void processIPD(const String& line);
+      void processConnect(const String& line);
+      void processDisconnect(const String& line);
 
       bool isESPBootFound(const String& line);
       bool isKnownAnswer(const String& line, ESPKnownAnswer& result);
@@ -494,9 +488,6 @@ class CoreESPTransport : public CoreTransport
 
       String* wiFiReceiveBuff;
 
-      // пул клиентов
-      CoreTransportClient* clients[ESP_MAX_CLIENTS];
-
       void clearClientsQueue(bool raiseEvents);
 
       ESPClientsQueue clientsQueue; // очередь действий с клиентами
@@ -507,6 +498,7 @@ class CoreESPTransport : public CoreTransport
       void removeClientFromQueue(CoreTransportClient* client, ESPClientAction action); // удаляет клиента из очереди  
       
       void initClients();
+
     
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -563,7 +555,7 @@ class CoreESPWebServerClass : public IClientEventsSubscriber, public Stream
   // IClientEventsSubscriber
   virtual void OnClientConnect(CoreTransportClient& client, bool connected, int16_t errorCode); // событие "Статус соединения клиента"
   virtual void OnClientDataWritten(CoreTransportClient& client, int16_t errorCode); // событие "Данные из клиента записаны в поток"
-  virtual void OnClientDataAvailable(CoreTransportClient& client, bool isDone); // событие "Для клиента поступили данные", флаг - все ли данные приняты
+  virtual void OnClientDataAvailable(CoreTransportClient& client, uint8_t* data, size_t dataSize, bool isDone); // событие "Для клиента поступили данные", флаг - все ли данные приняты
 
   // Stream
   virtual void flush(){}
@@ -760,7 +752,7 @@ class CoreMQTT : public IClientEventsSubscriber, public Stream
   // IClientEventsSubscriber
   virtual void OnClientConnect(CoreTransportClient& client, bool connected, int16_t errorCode); // событие "Статус соединения клиента"
   virtual void OnClientDataWritten(CoreTransportClient& client, int16_t errorCode); // событие "Данные из клиента записаны в поток"
-  virtual void OnClientDataAvailable(CoreTransportClient& client, bool isDone); // событие "Для клиента поступили данные", флаг - все ли данные приняты
+  virtual void OnClientDataAvailable(CoreTransportClient& client, uint8_t* data, size_t dataSize, bool isDone); // событие "Для клиента поступили данные", флаг - все ли данные приняты
 
   // Stream
   virtual void flush(){}
@@ -778,7 +770,7 @@ private:
   MQTTPublishList publishList;
   void clearPublishQueue();
 
-  CoreTransportClient* currentClient;
+  CoreTransportClient currentClient;
   CoreTransport* currentTransport;
   uint32_t timer;
 
@@ -802,7 +794,7 @@ private:
 
   void writePacket(MQTTBuffer& fixedHeader,MQTTBuffer& payload, String& mqttBuffer,int16_t& mqttBufferLength);
 
-  void processIncomingPacket(CoreTransportClient* client);
+  void processIncomingPacket(CoreTransportClient* client, uint8_t* packet, size_t dataLen);
 
   void convertAnswerToJSON(const String& answer, String* resultBuffer);
 };
@@ -883,14 +875,14 @@ class CoreThingSpeak : public IClientEventsSubscriber
     // IClientEventsSubscriber
     virtual void OnClientConnect(CoreTransportClient& client, bool connected, int16_t errorCode); // событие "Статус соединения клиента"
     virtual void OnClientDataWritten(CoreTransportClient& client, int16_t errorCode); // событие "Данные из клиента записаны в поток"
-    virtual void OnClientDataAvailable(CoreTransportClient& client, bool isDone); // событие "Для клиента поступили данные", флаг - все ли данные приняты
+    virtual void OnClientDataAvailable(CoreTransportClient& client, uint8_t* data, size_t dataSize, bool isDone); // событие "Для клиента поступили данные", флаг - все ли данные приняты
 
 private:
 
   CoreThingSpeakSubstitutions substitutions[8];
   void initSubstitutions();
 
-  CoreTransportClient* currentClient;
+  CoreTransportClient currentClient;
   CoreTransport* currentTransport;
   uint32_t timer;
   CoreThingSpeakMachineState machineState;
@@ -1076,14 +1068,6 @@ class CoreSIM800Transport : public CoreTransport
 
     virtual bool ready(); // проверяем на готовность к работе
 
-   // подписка на события клиентов
-   virtual void subscribe(IClientEventsSubscriber* subscriber);
-   
-   // отписка от событий клиентов
-   virtual void unsubscribe(IClientEventsSubscriber* subscriber);
-   
-    virtual CoreTransportClient* getFreeClient(); // возвращает свободного клиента (не законнекченного и не занятого делами)
-
     bool sendSMS(const String& phoneNumber, const String& message, bool isFlash);
 
   protected:
@@ -1099,6 +1083,11 @@ class CoreSIM800Transport : public CoreTransport
       void sendQueuedSMS();
 
       void restart();
+
+      bool waitCipstartConnect;
+      CoreTransportClient* cipstartConnectClient;
+      uint8_t cipstartConnectClientID;
+      
 
       void processIPD();
       void processCMT(const String& cmtInfo);
@@ -1127,20 +1116,15 @@ class CoreSIM800Transport : public CoreTransport
 
       int16_t gprsCheckingAttempts;
 
-      // пул клиентов
-      CoreTransportClient* clients[SIM800_MAX_CLIENTS];
-
       void clearClientsQueue(bool raiseEvents);
 
       SIM800ClientsQueue clientsQueue; // очередь действий с клиентами
 
-      CoreTransportClient* getClientFromQueue(int16_t clientID, SIM800ClientAction action);
       bool isClientInQueue(CoreTransportClient* client, SIM800ClientAction action); // тестирует - не в очереди ли уже клиент?
       void addClientToQueue(CoreTransportClient* client, SIM800ClientAction action, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
-      void removeClientFromQueue(CoreTransportClient* client,SIM800ClientAction action); // удаляет клиента из очереди  
-      
-      void initClients();
-    
+      void removeClientFromQueue(CoreTransportClient* client); // удаляет клиента из очереди
+      void removeClientFromQueue(CoreTransportClient* client, SIM800ClientAction action);
+          
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
 extern CoreSIM800Transport SIM800;
