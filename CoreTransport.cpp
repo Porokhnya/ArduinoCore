@@ -1698,8 +1698,16 @@ void CoreESPTransport::processIPD(const String& line)
 
         pause();
 
+        bool hasTimeout = false;
+        uint32_t startReadingTime = millis();
+
             while(totalWritten < lengthOfData) // пока не запишем все данные с клиента
             {
+              if(millis() - startReadingTime > 2000)
+              {
+                hasTimeout = true;
+                break;
+              }
                 if(workStream->available())
                 {                  
                   *writePtr++ = (uint8_t) workStream->read();
@@ -1735,7 +1743,7 @@ void CoreESPTransport::processIPD(const String& line)
             {            
               // после прохода цикла есть остаток данных, уведомляем клиента
               // сообщаем подписчикам, что данные для клиента получены
-              notifyDataAvailable(*client, buff, packetWritten, totalWritten >= lengthOfData);
+              notifyDataAvailable(*client, buff, packetWritten, hasTimeout ? true : totalWritten >= lengthOfData);
               
             }
             
