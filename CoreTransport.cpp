@@ -1795,6 +1795,19 @@ void CoreESPTransport::processDisconnect(const String& line)
       // выставляем клиенту флаг, что он отсоединён
       CoreTransportClient* client = getClient(clientID);            
       notifyClientConnected(*client,false,CT_ERROR_NONE);
+
+      // тут смотрим - посылали ли мы запрос на коннект?
+      if(waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
+      {
+        // есть клиент, для которого надо установить ID
+        cipstartConnectClient->bind(clientID);
+        notifyClientConnected(*cipstartConnectClient,false,CT_ERROR_NONE);
+        cipstartConnectClient->bind(NO_CLIENT_ID);
+        waitCipstartConnect = false;
+        cipstartConnectClient = NULL;
+        cipstartConnectClientID = NO_CLIENT_ID;
+        
+      } // if             
       
     }        
           
@@ -4911,6 +4924,18 @@ void CoreSIM800Transport::update()
               // выставляем клиенту флаг, что он отсоединён
               CoreTransportClient* client = getClient(clientID);
               notifyClientConnected(*client,false,CT_ERROR_NONE);
+
+              if(waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
+              {                
+                // есть клиент, для которого надо установить ID
+                cipstartConnectClient->bind(clientID);
+                notifyClientConnected(*cipstartConnectClient,false,CT_ERROR_NONE);
+                cipstartConnectClient->bind(NO_CLIENT_ID);
+                waitCipstartConnect = false;
+                cipstartConnectClient = NULL;
+                cipstartConnectClientID = NO_CLIENT_ID;
+                        
+              } // if                           
             }        
           
          } // if(idx != -1)        
@@ -6301,7 +6326,7 @@ void CoreThingSpeak::update()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreThingSpeak::OnClientConnect(CoreTransportClient& client, bool connected, int16_t errorCode)
 {
-  if(currentClient != client) // не наш клиент
+  if(!currentClient || currentClient != client) // не наш клиент
     return;
 
   if(errorCode != CT_ERROR_NONE)
@@ -6464,7 +6489,7 @@ void CoreThingSpeak::initSubstitutions()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreThingSpeak::OnClientDataWritten(CoreTransportClient& client, int16_t errorCode)
 {
-  if(currentClient != client)
+  if(!currentClient || currentClient != client)
     return;
 
   // писали данные в клиента - проверяем
@@ -6483,7 +6508,7 @@ void CoreThingSpeak::OnClientDataWritten(CoreTransportClient& client, int16_t er
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreThingSpeak::OnClientDataAvailable(CoreTransportClient& client, uint8_t* data, size_t dataSize, bool isDone)
 {
-  if(currentClient != client)
+  if(!currentClient || currentClient != client)
     return;
 
   if(isDone)
