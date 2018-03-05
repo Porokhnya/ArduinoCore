@@ -124,6 +124,22 @@ CoreTransport::CoreTransport(uint8_t clientsPoolSize)
   }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::reset()
+{
+  for(size_t i=0;i<pool.size();i++)
+  {
+    pool[i] = false;
+  }
+
+  for(size_t i=0;i<closedCatchList.size();i++)
+  {
+    closedCatchList[i]->clear();
+    closedCatchList[i]->release();
+  }
+
+  closedCatchList.empty();
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 CoreTransport::~CoreTransport()
 {
   for(size_t i=0;i<pool.size();i++)
@@ -1703,7 +1719,7 @@ void CoreESPTransport::processIPD(const String& line)
 
             while(totalWritten < lengthOfData) // пока не запишем все данные с клиента
             {
-              if(millis() - startReadingTime > 2000)
+              if(millis() - startReadingTime > 5000)
               {
                 hasTimeout = true;
                 break;
@@ -2560,6 +2576,8 @@ void CoreESPTransport::restart()
 
   currentCommand = cmdNone;
   machineState = espIdle;
+
+  reset();
 
   // инициализируем очередь командами по умолчанию
  createInitCommands(true);
@@ -5940,6 +5958,8 @@ void CoreSIM800Transport::restart()
 
   currentCommand = smaNone;
   machineState = sim800Idle;
+
+  reset();
 
   // инициализируем очередь командами по умолчанию
  createInitCommands(true);

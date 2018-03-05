@@ -210,6 +210,8 @@ protected:
 
   friend class CoreTransportClient;
 
+  void reset();
+
   bool connected(uint8_t socket);
 
   void doWrite(CoreTransportClient& client); // начинаем писать в транспорт с клиента
