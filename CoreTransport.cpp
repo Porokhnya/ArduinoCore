@@ -1703,13 +1703,14 @@ void CoreESPTransport::processIPD(const String& line)
 
             while(totalWritten < lengthOfData) // пока не запишем все данные с клиента
             {
-              if(millis() - startReadingTime > 5000)
+              if(millis() - startReadingTime > 500)
               {
                 hasTimeout = true;
                 break;
               }
                 if(workStream->available())
-                {                  
+                {
+                  startReadingTime = millis();                  
                   *writePtr++ = (uint8_t) workStream->read();
                   packetWritten++;
                   totalWritten++;
