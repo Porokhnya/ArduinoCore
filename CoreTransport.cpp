@@ -2645,6 +2645,8 @@ void CoreESPTransport::begin()
   workStream = NULL;
   waitCipstartConnect = false;
 
+  initPool();
+
   if(!ESPTransportSettings.enabled)
     return;
   
@@ -6014,6 +6016,8 @@ void CoreSIM800Transport::begin()
   workStream = NULL;
   waitCipstartConnect = false;
 
+  initPool();
+
   if(!SIM800TransportSettings.enabled)
     return;
   
@@ -6172,14 +6176,25 @@ void CoreSIM800Transport::clearInitCommands()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::clearClientsQueue(bool raiseEvents)
 {
-  
-  // тут попросили освободить очередь клиентов.
+ // тут попросили освободить очередь клиентов.
   // для этого нам надо выставить каждому клиенту флаг того, что он свободен,
   // плюс - сообщить, что текущее действие над ним не удалось.  
 
     for(size_t i=0;i<clientsQueue.size();i++)
     {
-       SIM800ClientQueueData dt = clientsQueue[i];
+        SIM800ClientQueueData dt = clientsQueue[i];
+        delete [] dt.data;
+        delete [] dt.ip;
+
+        // если здесь в очереди есть хоть один клиент с неназначенным ID (ждёт подсоединения) - то в события он не придёт,
+        // т.к. там сравнивается по назначенному ID. Поэтому мы назначаем ID клиенту в первый свободный слот.
+        if(dt.client->socket == NO_CLIENT_ID)
+        {
+          CoreTransportClient* cl = getClient(NO_CLIENT_ID);
+          if(cl)
+            dt.client->bind(cl->socket);
+        }
+        
         if(raiseEvents)
         {
           switch(dt.action)
@@ -6206,7 +6221,7 @@ void CoreSIM800Transport::clearClientsQueue(bool raiseEvents)
         
     } // for
 
-  clientsQueue.empty();
+  clientsQueue.clear();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSIM800Transport::isClientInQueue(CoreTransportClient* client, SIM800ClientAction action)
