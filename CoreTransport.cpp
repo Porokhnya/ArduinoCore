@@ -3618,7 +3618,7 @@ void CoreMQTT::reset()
   timer = 0;
   machineState = mqttWaitClient;
   currentTransport = NULL;
-  currentClient.accept(NULL);
+  currentClient.disconnect();
   mqttMessageId = 0;
   currentStoreNumber = 0;
   clearReportsQueue();
@@ -6395,7 +6395,7 @@ void CoreThingSpeak::reset()
   DBGLN(F("TS: reset."));
   
   currentTransport = NULL;
-  currentClient.accept(NULL);
+  currentClient.disconnect();
 
   initSubstitutions();
 
