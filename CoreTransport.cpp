@@ -1373,9 +1373,7 @@ bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
               
                  if(line.startsWith(F("+CIPSTAMAC:"))) // MAC станции
                  {
-                  #ifdef WIFI_DEBUG
-                    Serial.println(F("Station MAC found, parse..."));
-                  #endif  
+                  DBGLN(F("Station MAC found, parse..."));
             
                    staMAC = line.substring(11);                      
                   
@@ -1430,9 +1428,7 @@ bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
               
                  if(line.startsWith(F("+CIPAPMAC:"))) // MAC нашей точки доступа
                  {
-                   #ifdef WIFI_DEBUG
-                    Serial.println(F("softAP MAC found, parse..."));
-                   #endif
+                   DBGLN(F("softAP MAC found, parse..."));
             
                    apMAC = line.substring(10);                      
                   
@@ -1505,9 +1501,7 @@ bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
                      
             if(line.startsWith(F("+CIFSR:APIP"))) // IP нашей точки доступа
              {
-               #ifdef WIFI_DEBUG
-                Serial.println(F("AP IP found, parse..."));
-               #endif
+               DBGLN(F("AP IP found, parse..."));
         
                int idx = line.indexOf("\"");
                if(idx != -1)
@@ -1525,9 +1519,7 @@ bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
              else
               if(line.startsWith(F("+CIFSR:STAIP"))) // IP нашей точки доступа, назначенный роутером
              {
-                  #ifdef WIFI_DEBUG
-                    Serial.println(F("STA IP found, parse..."));
-                  #endif
+               DBGLN(F("STA IP found, parse..."));
         
                int idx = line.indexOf("\"");
                if(idx != -1)
@@ -6232,13 +6224,6 @@ void CoreSIM800Transport::addClientToQueue(CoreTransportClient* client, SIM800Cl
 {
   while(isClientInQueue(client, action))
   {
-    #ifdef WIFI_DEBUG
-      Serial.print(F("SIM800: Client #"));
-      Serial.print(client->socket);
-      Serial.print(F(" with same action already in queue, ACTION="));
-      Serial.print(action);
-      Serial.println(F(" - remove that client!"));
-    #endif
     removeClientFromQueue(client,action);
   }
 
