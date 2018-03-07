@@ -208,6 +208,8 @@ private:
 
 protected:
 
+  void initPool();
+
   friend class CoreTransportClient;
 
   bool connected(uint8_t socket);
@@ -436,6 +438,7 @@ typedef enum
   kaFail,           // FAIL
   kaSendOk,         // SEND OK
   kaSendFail,       // SEND FAIL
+  kaAlreadyConnected, // ALREADY CONNECTED
   
 } ESPKnownAnswer;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -472,13 +475,15 @@ class CoreESPTransport : public CoreTransport
 
   private:
 
-
       void waitTransmitComplete();
 
       bool waitCipstartConnect;
       CoreTransportClient* cipstartConnectClient;
       uint8_t cipstartConnectClientID;
+      bool cipstartConnectKnownAnswerFound;
 
+      bool checkIPD(const String& line);
+      void processKnownStatusFromESP(const String& line);
       void processIPD(const String& line);
       void processConnect(const String& line);
       void processDisconnect(const String& line);

@@ -133,6 +133,14 @@ CoreTransport::~CoreTransport()
   pool.empty();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreTransport::initPool()
+{
+  for(size_t i=0;i<status.size();i++)
+  {
+    status[i] = false;
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreTransport::connected(uint8_t socket)
 {
   return status[socket];
@@ -141,7 +149,10 @@ bool CoreTransport::connected(uint8_t socket)
 void CoreTransport::doWrite(CoreTransportClient& client)
 {
   if(!client.connected())
+  {
+    client.clear();
     return;
+  }
 
    beginWrite(client); 
 }
@@ -222,15 +233,15 @@ void CoreTransport::notifyClientConnected(CoreTransportClient& client, bool conn
       subscribers[i]->OnClientConnect(client,connected,errorCode);
     }
 
-
       // возможно, это внешний клиент, надо проверить - есть ли он в списке слежения
       if(!connected) // пришло что-то типа 1,CLOSED
-      { 
+      {         
         // клиент отсоединился, надо освободить его сокет
         for(size_t i=0;i<closedCatchList.size();i++)
         {
           if(closedCatchList[i]->socket == client.socket)
           {
+            closedCatchList[i]->clear();
             closedCatchList[i]->release(); // освобождаем внешнему клиенту сокет
             for(size_t k=i+1;k<closedCatchList.size();k++)
             {
@@ -1253,10 +1264,9 @@ bool CoreESPTransport::pingGoogle(bool& result)
 {
     if(machineState != espIdle || !workStream || !ready() || initCommandsQueue.size()) // чего-то делаем, не могём
     {
-      //DBGLN(F("ESP: BUSY!!!"));
       return false;
     }
-
+    
     pause();
 
         ESPKnownAnswer ka;
@@ -1268,7 +1278,9 @@ bool CoreESPTransport::pingGoogle(bool& result)
         bool  pingDone = false;
         
         char ch;
-        while(1)
+        uint32_t startTime = millis();
+        
+        while(millis() - startTime < 10000) // таймаут в 10 секунд
         { 
           if(pingDone) // получили ответ на PING
             break;
@@ -1276,6 +1288,7 @@ bool CoreESPTransport::pingGoogle(bool& result)
           while(workStream->available())
           {
             ch = workStream->read();
+            timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
         
             if(ch == '\r')
               continue;
@@ -1283,6 +1296,15 @@ bool CoreESPTransport::pingGoogle(bool& result)
             if(ch == '\n')
             {
               // получили строку, разбираем её
+              
+              // здесь надо обработать известные статусы
+                 if(checkIPD(line))
+                 {     
+                    processIPD(line);
+                    continue;
+                 }
+                 processKnownStatusFromESP(line);
+              
                  if(isKnownAnswer(line, ka))
                  {
                     result = (ka == kaOK);
@@ -1309,7 +1331,6 @@ bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
 {
     if(machineState != espIdle || !workStream || !ready() || initCommandsQueue.size()) // чего-то делаем, не могём
     {
-      //DBGLN(F("ESP: BUSY!!!"));
       return false;
     }
 
@@ -1324,7 +1345,9 @@ bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
         
         bool  apMACDone = false, staMACDone=false;
         char ch;
-        while(1)
+        uint32_t startTime = millis();
+        
+        while(millis() - startTime < 10000) // таймаут в 10 секунд
         { 
           if(staMACDone) // получили MAC-адрес станции
             break;
@@ -1332,6 +1355,7 @@ bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
           while(workStream->available())
           {
             ch = workStream->read();
+            timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
         
             if(ch == '\r')
               continue;
@@ -1339,9 +1363,19 @@ bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
             if(ch == '\n')
             {
               // получили строку, разбираем её
+              // здесь надо обработать известные статусы
+                 if(checkIPD(line))
+                 {     
+                    processIPD(line);
+                    continue;
+                 }
+                 processKnownStatusFromESP(line);
+              
                  if(line.startsWith(F("+CIPSTAMAC:"))) // MAC станции
                  {
-                    DBGLN(F("Station MAC found, parse..."));
+                  #ifdef WIFI_DEBUG
+                    Serial.println(F("Station MAC found, parse..."));
+                  #endif  
             
                    staMAC = line.substring(11);                      
                   
@@ -1365,8 +1399,11 @@ bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
 
         // теперь получаем MAC точки доступа
         workStream->println(F("AT+CIPAPMAC?"));
+        line = "";
+
+        startTime = millis();
         
-        while(1)
+        while(millis() - startTime < 10000) // таймаут в 10 секунд
         { 
           if(apMACDone) // получили MAC-адрес точки доступа
             break;
@@ -1374,6 +1411,7 @@ bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
           while(workStream->available())
           {
             ch = workStream->read();
+            timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
         
             if(ch == '\r')
               continue;
@@ -1381,9 +1419,20 @@ bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
             if(ch == '\n')
             {
               // получили строку, разбираем её
+              
+              // здесь надо обработать известные статусы
+                 if(checkIPD(line))
+                 {     
+                    processIPD(line);
+                    continue;
+                 }
+                 processKnownStatusFromESP(line);
+              
                  if(line.startsWith(F("+CIPAPMAC:"))) // MAC нашей точки доступа
                  {
-                   DBGLN(F("softAP MAC found, parse..."));
+                   #ifdef WIFI_DEBUG
+                    Serial.println(F("softAP MAC found, parse..."));
+                   #endif
             
                    apMAC = line.substring(10);                      
                   
@@ -1414,9 +1463,9 @@ bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
 {
     if(machineState != espIdle || !workStream || !ready() || initCommandsQueue.size()) // чего-то делаем, не могём
     {
-      //DBGLN(F("ESP: BUSY!!!"));
       return false;
     }
+
 
     pause();
 
@@ -1427,7 +1476,9 @@ bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
     ESPKnownAnswer ka;  
 
     char ch;
-    while(1)
+    uint32_t startTime = millis();
+    
+    while(millis() - startTime < 10000) // таймаут в 10 секунд
     { 
       if(knownAnswerFound) // получили оба IP
         break;
@@ -1435,6 +1486,7 @@ bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
       while(workStream->available())
       {
         ch = (char) workStream->read();
+        timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
     
         if(ch == '\r')
           continue;
@@ -1442,9 +1494,20 @@ bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
         if(ch == '\n')
         {
           // получили строку, разбираем её
+          
+          // здесь надо обработать известные статусы
+           if(checkIPD(line))
+           {     
+              processIPD(line);
+              continue;
+           }
+           processKnownStatusFromESP(line);
+                     
             if(line.startsWith(F("+CIFSR:APIP"))) // IP нашей точки доступа
              {
-               DBGLN(F("AP IP found, parse..."));
+               #ifdef WIFI_DEBUG
+                Serial.println(F("AP IP found, parse..."));
+               #endif
         
                int idx = line.indexOf("\"");
                if(idx != -1)
@@ -1462,7 +1525,9 @@ bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
              else
               if(line.startsWith(F("+CIFSR:STAIP"))) // IP нашей точки доступа, назначенный роутером
              {
-                  DBGLN(F("STA IP found, parse..."));
+                  #ifdef WIFI_DEBUG
+                    Serial.println(F("STA IP found, parse..."));
+                  #endif
         
                int idx = line.indexOf("\"");
                if(idx != -1)
@@ -1481,7 +1546,7 @@ bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
            if(isKnownAnswer(line,ka))
             knownAnswerFound = true;
          
-          line = F("");
+          line = "";
         } // ch == '\n'
         else
         {
@@ -1496,7 +1561,6 @@ bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
     } // while(1)
 
     resume();
-
 
     return true;
     
@@ -1519,6 +1583,10 @@ void CoreESPTransport::sendCommand(ESPCommands command)
     case cmdWantReady:
     {
       DBGLN(F("ESP: reset..."));
+      // принудительно очищаем очередь клиентов
+      clearClientsQueue(true);
+      // и говорим, что все слоты свободны
+      initPool();
       sendCommand(F("AT+RST"));
     }
     break;
@@ -1639,6 +1707,11 @@ bool CoreESPTransport::isKnownAnswer(const String& line, ESPKnownAnswer& result)
     result = kaSendFail;
     return true;
   }
+  if(line.endsWith(F("ALREADY CONNECTED")))
+  {
+    result = kaAlreadyConnected;
+    return true;
+  }  
   return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -1647,7 +1720,7 @@ void CoreESPTransport::processIPD(const String& line)
   DBG(F("ESP: start parse +IPD, received="));
   DBGLN(line);
   
-  // здесь в line лежит только команда вида +IPD,<id>,<len>:
+   // здесь в line лежит только команда вида +IPD,<id>,<len>:
   // все данные надо вычитывать из потока
         
     int16_t idx = line.indexOf(F(",")); // ищем первую запятую после +IPD
@@ -1698,19 +1771,19 @@ void CoreESPTransport::processIPD(const String& line)
 
         pause();
 
-        bool hasTimeout = false;
-        uint32_t startReadingTime = millis();
+            uint32_t startTime = millis();
+            bool hasTimeout = false;
 
             while(totalWritten < lengthOfData) // пока не запишем все данные с клиента
             {
-              if(millis() - startReadingTime > 500)
+              if(millis() - startTime > ESP_IPD_READING_TIMEOUT)
               {
                 hasTimeout = true;
                 break;
               }
                 if(workStream->available())
-                {
-                  startReadingTime = millis();                  
+                { 
+                  startTime = millis();               
                   *writePtr++ = (uint8_t) workStream->read();
                   packetWritten++;
                   totalWritten++;
@@ -1736,6 +1809,17 @@ void CoreESPTransport::processIPD(const String& line)
                 }
               
             } // while
+
+            #ifdef _CORE_DEBUG
+            if(hasTimeout)
+            {
+              DBG(F("DATA LENGTH="));
+              DBG(lengthOfData);
+              DBG(F("; READED="));
+              DBGLN(totalWritten);
+              DBGLN(F("TIMEOUT TIMEOUT TIMEOUT TIMEOUT TIMEOUT"));
+            }
+            #endif
             
            resume();
 
@@ -1745,13 +1829,13 @@ void CoreESPTransport::processIPD(const String& line)
               // после прохода цикла есть остаток данных, уведомляем клиента
               // сообщаем подписчикам, что данные для клиента получены
               notifyDataAvailable(*client, buff, packetWritten, hasTimeout ? true : totalWritten >= lengthOfData);
-              
             }
             
             delete [] buff;  
        
     } // if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
     
+
 
   DBGLN(F("ESP: +IPD parsed."));  
 
@@ -1760,9 +1844,15 @@ void CoreESPTransport::processIPD(const String& line)
 void CoreESPTransport::processConnect(const String& line)
 {
      // клиент подсоединился
-    int idx = wiFiReceiveBuff->indexOf(F(",CONNECT"));
+     
+    int idx = line.indexOf(F(",CONNECT"));
+    
+    if(idx == -1)
+      return;
+    
     String s = line.substring(0,idx);
     int16_t clientID = s.toInt();
+    
     if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
     {
         DBG(F("ESP: client connected - #"));
@@ -1771,55 +1861,132 @@ void CoreESPTransport::processConnect(const String& line)
       // тут смотрим - посылали ли мы запрос на коннект?
       if(waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
       {
-        // есть клиент, для которого надо установить ID
+        DBGLN(F("ESP: WAIT CIPSTART CONNECT, CATCH OUTGOING CLIENT!"));
+        // есть клиент, для которого надо установить ID.
+        // тут у нас может возникнуть коллизия, когда придёт коннект с внешнего адреса.
+        // признаком этой коллизии является тот факт, что если мы в этой ветке - мы ОБЯЗАНЫ
+        // получить один из известных ответов OK, ERROR, ALREADY CONNECTED
+        // ДО ТОГО, как придёт статус ID,CONNECT
         cipstartConnectClient->bind(clientID);
-        waitCipstartConnect = false;
-        cipstartConnectClient = NULL;
-        cipstartConnectClientID = NO_CLIENT_ID;
         
-      } // if            
+        if(!cipstartConnectKnownAnswerFound)
+        {
+          DBGLN(F("ESP: WAIT CIPSTART CONNECT, NO OK FOUND!"));
+          
+          // не найдено ни одного ответа из известных. Проблема в том, что у внешнего клиента ещё нет слота,
+          // но там надо ему временно выставить слот (мы это сделали выше), потом вызвать событие отсоединения, потом - очистить ему слот
+          removeClientFromQueue(cipstartConnectClient);
+          notifyClientConnected(*cipstartConnectClient,false,CT_ERROR_CANT_CONNECT);
+          cipstartConnectClient->release();
 
-      // выставляем клиенту флаг, что он подсоединён
-      CoreTransportClient* client = getClient(clientID);            
-      notifyClientConnected(*client,true,CT_ERROR_NONE);
-    } 
+          // при этом, поскольку мы освободили нашего клиента на внешнее соединение и это коллизия,
+          // мы должны сообщить, что клиент от ESP подсоединился
+          CoreTransportClient* client = getClient(clientID);            
+          notifyClientConnected(*client,true,CT_ERROR_NONE);
+          
+          // поскольку строка ID,CONNECT пришла ДО известного ответа - это коллизия, и мы в ветке cmdCIPSTART,
+          // поэтому мы здесь сами должны удалить клиента из очереди и переключиться на ожидание
+          machineState = espIdle;
+        }
+        else
+        {
+        DBGLN(F("ESP: WAIT CIPSTART CONNECT, CLIENT CONNECTED!"));
+          // если вы здесь - ответ OK получен сразу после команды AT+CIPSTART,
+          // клиент из очереди удалён, и, раз мы получили ID,CONNECT - мы можем сообщать, что клиент подсоединён
+          CoreTransportClient* client = getClient(clientID);    
+          notifyClientConnected(*client,true,CT_ERROR_NONE);          
+        }
+      
+          waitCipstartConnect = false;
+          cipstartConnectClient = NULL;
+          cipstartConnectClientID = NO_CLIENT_ID;
+          cipstartConnectKnownAnswerFound = false;
+        
+      } // if
+      else
+      {            
+        // если мы здесь - то мы не ждём подсоединения клиента на исходящий адрес
+        // просто выставляем клиенту флаг, что он подсоединён
+        CoreTransportClient* client = getClient(clientID);            
+        notifyClientConnected(*client,true,CT_ERROR_NONE);
+      }
+      
+    } // if
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::processDisconnect(const String& line)
 {
   // клиент отсоединился
-    int idx = wiFiReceiveBuff->indexOf(F(",CLOSED"));
+    int idx = line.indexOf(F(",CLOSED"));
+    
     if(idx == -1)
-      idx = wiFiReceiveBuff->indexOf(F(",CONNECT FAIL"));
+      idx = line.indexOf(F(",CONNECT FAIL"));
+      
     if(idx == -1)
       return;
       
     String s = line.substring(0,idx);
     int16_t clientID = s.toInt();
+    
     if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
     {
         DBG(F("ESP: client disconnected - #"));
         DBGLN(clientID);
-        
+
       // выставляем клиенту флаг, что он отсоединён
       CoreTransportClient* client = getClient(clientID);            
       notifyClientConnected(*client,false,CT_ERROR_NONE);
-
-      // тут смотрим - посылали ли мы запрос на коннект?
-      if(waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
-      {
-        // есть клиент, для которого надо установить ID
-        cipstartConnectClient->bind(clientID);
-        notifyClientConnected(*cipstartConnectClient,false,CT_ERROR_NONE);
-        cipstartConnectClient->bind(NO_CLIENT_ID);
-        waitCipstartConnect = false;
-        cipstartConnectClient = NULL;
-        cipstartConnectClientID = NO_CLIENT_ID;
-        
-      } // if             
       
-    }        
-          
+    }
+
+    // тут смотрим - посылали ли мы запрос на коннект?
+    if(waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
+    {
+        DBG(F("ESP: waitCipstartConnect - #"));
+        DBGLN(clientID);
+      
+      // есть клиент, для которого надо установить ID
+      cipstartConnectClient->bind(clientID);
+      notifyClientConnected(*cipstartConnectClient,false,CT_ERROR_NONE);
+      cipstartConnectClient->release();
+      removeClientFromQueue(cipstartConnectClient);
+      
+      waitCipstartConnect = false;
+      cipstartConnectClient = NULL;
+      cipstartConnectClientID = NO_CLIENT_ID;
+      
+    } // if           
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::processKnownStatusFromESP(const String& line)
+{
+   // смотрим, подсоединился ли клиент?
+   if(line.endsWith(F(",CONNECT")))
+   {
+    processConnect(line);
+   } // if
+   else 
+   if(line.endsWith(F(",CLOSED")) || line.endsWith(F(",CONNECT FAIL")))
+   {
+    processDisconnect(line);
+   } // if(idx != -1)
+   else
+   if(line == F("WIFI CONNECTED"))
+   {
+      flags.connectedToRouter = true;
+      DBGLN(F("ESP: connected to router!"));
+   }
+   else
+   if(line == F("WIFI DISCONNECT"))
+   {
+      flags.connectedToRouter = false;
+      DBGLN(F("ESP: disconnected from router!"));
+   }  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreESPTransport::checkIPD(const String& line)
+{
+  return line.startsWith(F("+IPD")) && (line.indexOf(":") != -1);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::update()
@@ -1853,10 +2020,8 @@ void CoreESPTransport::update()
     // если пришли данные - мы должны вычитать их длину, и уже после этого - отправить данные клиенту,
     // напрямую читая из потока. Это нужно, потому что данные могут быть бинарными, и мы никогда в них не дождёмся
     // перевода строки.
-
-     if(wiFiReceiveBuff->startsWith(F("+IPD")) && wiFiReceiveBuff->indexOf(":") != -1)
-     {
-       
+     if(checkIPD(*wiFiReceiveBuff))
+     {     
         processIPD(*wiFiReceiveBuff);
                 
         delete wiFiReceiveBuff;
@@ -1919,32 +2084,7 @@ void CoreESPTransport::update()
     // тут анализируем ответ от ESP, если он есть, на предмет того - соединён ли клиент, отсоединён ли клиент и т.п.
     // это нужно делать именно здесь, поскольку в этот момент в ESP может придти внешний коннект.
     if(hasAnswerLine)
-    {
-      
-       // смотрим, подсоединился ли клиент?
-       if(wiFiReceiveBuff->endsWith(F(",CONNECT")))
-       {
-        processConnect(*wiFiReceiveBuff);
-       } // if
-       else 
-       if(wiFiReceiveBuff->endsWith(F(",CLOSED")) || wiFiReceiveBuff->endsWith(F(",CONNECT FAIL")))
-       {
-        processDisconnect(*wiFiReceiveBuff);
-       } // if(idx != -1)
-       else
-       if(*wiFiReceiveBuff == F("WIFI CONNECTED"))
-       {
-          flags.connectedToRouter = true;
-          DBGLN(F("ESP: connected to router!"));
-       }
-       else
-       if(*wiFiReceiveBuff == F("WIFI DISCONNECT"))
-       {
-          flags.connectedToRouter = false;
-          DBGLN(F("ESP: disconnected from router!"));
-       }
-           
-    } // if(hasAnswerLine)   
+      processKnownStatusFromESP(*wiFiReceiveBuff);
 
   // при разборе ответа тут будет лежать тип ответа, чтобы часто не сравнивать со строкой
   ESPKnownAnswer knownAnswer = kaNone;
@@ -1995,21 +2135,37 @@ void CoreESPTransport::update()
                       // здесь надо искать первый свободный слот для клиента
                       CoreTransportClient* freeSlot = getClient(NO_CLIENT_ID);
                       clientID = freeSlot ? freeSlot->socket : NO_CLIENT_ID;
-
-                      waitCipstartConnect = true;
-                      cipstartConnectClient = dt.client;
-                      cipstartConnectClientID = clientID;
-
-                      currentCommand = cmdCIPSTART;
-                      String comm = F("AT+CIPSTART=");
-                      comm += clientID;
-                      comm += F(",\"TCP\",\"");
-                      comm += dt.ip;
-                      comm += F("\",");
-                      comm += dt.port;
-            
-                      // и отсылаем её
-                      sendCommand(comm);
+                      
+                      if(flags.connectedToRouter)
+                      {
+                        waitCipstartConnect = true;
+                        cipstartConnectClient = dt.client;
+                        cipstartConnectClientID = clientID;
+                        cipstartConnectKnownAnswerFound = false;
+  
+                        currentCommand = cmdCIPSTART;
+                        String comm = F("AT+CIPSTART=");
+                        comm += clientID;
+                        comm += F(",\"TCP\",\"");
+                        comm += dt.ip;
+                        comm += F("\",");
+                        comm += dt.port;
+  
+                        delete [] clientsQueue[0].ip;
+                        clientsQueue[0].ip = NULL;
+              
+                        // и отсылаем её
+                        sendCommand(comm);
+                      } // flags.connectedToRouter
+                      else
+                      {
+                        // не законнекчены к роутеру, не можем устанавливать внешние соединения!!!
+                        removeClientFromQueue(dt.client);
+                        dt.client->bind(clientID);
+                        notifyClientConnected(*(dt.client),false,CT_ERROR_CANT_CONNECT);
+                        dt.client->release();
+                        
+                      }
                     }
                     break; // actionConnect
 
@@ -2021,10 +2177,10 @@ void CoreESPTransport::update()
 
                       size_t dataSize;
                       uint8_t* buffer = dt.client->getBuffer(dataSize);
+                      dt.client->releaseBuffer();
 
                       clientsQueue[0].data = buffer;
                       clientsQueue[0].dataLength = dataSize;
-                      dt.client->releaseBuffer();
 
                       String command = F("AT+CIPSENDBUF=");
                       command += clientID;
@@ -2076,7 +2232,7 @@ void CoreESPTransport::update()
 
                   case cmdCIPCLOSE:
                   {
-                    // отсоединялись. Ответа не ждём, т.к. может вклиниться всё, что угодно, пока мы ждём ответа
+                    // отсоединялись. Здесь не надо ждать известного ответа, т.к. ответ может придти асинхронно
                     //if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
                     {
                       if(clientsQueue.size())
@@ -2086,7 +2242,8 @@ void CoreESPTransport::update()
 
                         CoreTransportClient* thisClient = dt.client;
                         removeClientFromQueue(thisClient);
-                        // и событие отсылать не надо, пока он не отконнектится
+
+                        // событие здесь не надо отсылать, т.к. в ветке обработки ...,CLOSED оно само обработается
                         //notifyClientConnected(*thisClient,false,CT_ERROR_NONE);
 
                       } // if(clientsQueue.size()) 
@@ -2100,40 +2257,51 @@ void CoreESPTransport::update()
                   {
                     // соединялись, коннект у нас только с внутреннего соединения, поэтому в очереди лежит по-любому
                     // указатель на связанного с нами клиента, который использует внешний пользователь транспорта
+                    
                         if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
                         {
+                          if(knownAnswer == kaOK || knownAnswer == kaError || knownAnswer == kaAlreadyConnected)
+                          {
+                            cipstartConnectKnownAnswerFound = true;
+                          }
+                            
                           if(knownAnswer == kaOK)
                           {
-                            // законнектились удачно
+                            // законнектились удачно, после этого должна придти строка ID,CONNECT
                             if(clientsQueue.size())
                             {
                                ESPClientQueueData dt = clientsQueue[0];
-                               removeClientFromQueue(dt.client);                               
+                               removeClientFromQueue(dt.client);                              
                             }
                           }
                           else
                           {
-                            // ошибка соединения
-                                                  
-                            waitCipstartConnect = false;
-                            cipstartConnectClient = NULL;
-                            
+                              
                             if(clientsQueue.size())
                             {
-                                DBG(F("ESP: Client connect ERROR, received: "));
-                                DBGLN(*wiFiReceiveBuff);
+                               DBG(F("ESP: Client connect ERROR, received: "));
+                               DBGLN(*wiFiReceiveBuff);
                                
                                ESPClientQueueData dt = clientsQueue[0];
 
                                CoreTransportClient* thisClient = dt.client;
                                removeClientFromQueue(thisClient);
-                               
+
+                               // если мы здесь, то мы получили ERROR или ALREADY CONNECTED сразу после команды
+                               // AT+CIPSTART. Это значит, что пока у внешнего клиента нет ID, мы его должны
+                               // временно назначить, сообщить клиенту, и освободить этот ID.
+                               thisClient->bind(cipstartConnectClientID);                               
                                notifyClientConnected(*thisClient,false,CT_ERROR_CANT_CONNECT);
+                               thisClient->release();
                             }
-                          }
+
+                            // ошибка соединения, строка ID,CONNECT нас уже не волнует
+                            waitCipstartConnect = false;
+                            cipstartConnectClient = NULL;
+                            
+                          } // else
                           machineState = espIdle; // переходим к следующей команде
-                        }                    
-                    
+                        }       
                   }
                   break; // cmdCIPSTART
 
@@ -2153,6 +2321,9 @@ void CoreESPTransport::update()
                              
                              CoreTransportClient* thisClient = dt.client;
                              removeClientFromQueue(thisClient);
+
+                              DBG(F("Clear buffer on client #"));
+                              DBGLN(thisClient->socket);
 
                              // очищаем данные у клиента
                              thisClient->clear();
@@ -2181,7 +2352,6 @@ void CoreESPTransport::update()
                         
                       } // if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
                        
-
                   }
                   break; // cmdWaitSendDone
 
@@ -2198,15 +2368,19 @@ void CoreESPTransport::update()
                           currentCommand = cmdWaitSendDone;                          
                           ESPClientQueueData dt = clientsQueue[0];
 
-                          DBGLN(F("ESP: > received, start write from client to ESP..."));
+                          DBG(F("ESP: > RECEIVED, CLIENT #"));
+                          DBG(dt.client->socket);
+                          DBG(F("; LENGTH="));
+                          DBGLN(dt.dataLength);
 
-                          //size_t bufferSize;
-                          //uint8_t* clientBuffer = dt.client->getBuffer(bufferSize);
-                          
                           workStream->write(dt.data,dt.dataLength);
 
-                          delete[] clientsQueue[0].data;
+                          waitTransmitComplete();
+
+                          delete [] clientsQueue[0].data;
+                          delete [] clientsQueue[0].ip;
                           clientsQueue[0].data = NULL;
+                          clientsQueue[0].ip = NULL;
                           clientsQueue[0].dataLength = 0;
 
                           // очищаем данные у клиента сразу после отсыла
@@ -2219,12 +2393,14 @@ void CoreESPTransport::update()
                        // всё плохо, не получилось ничего записать
                       if(clientsQueue.size())
                       {
-                         DBGLN(F("ESP: Client write ERROR!"));
                          
                          ESPClientQueueData dt = clientsQueue[0];
 
                          CoreTransportClient* thisClient = dt.client;
                          removeClientFromQueue(thisClient);
+
+                         DBG(F("ESP: CLIENT WRITE ERROR #"));
+                         DBGLN(thisClient->socket);
 
                          // очищаем данные у клиента
                          thisClient->clear();
@@ -2236,6 +2412,7 @@ void CoreESPTransport::update()
                       machineState = espIdle; // переходим к следующей команде
               
                     } // else can't write
+                    
                     
                   }
                   break; // cmdCIPSEND
@@ -2284,8 +2461,20 @@ void CoreESPTransport::update()
                   {                    
                     if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
                     {
-                      DBGLN(F("ESP: CWJAP command processed."));
+
                       machineState = espIdle; // переходим к следующей команде
+
+                      if(knownAnswer != kaOK)
+                      {
+                        // ошибка подсоединения к роутеру
+                        DBGLN(F("ESP: CWJAP command FAIL, RESTART!"));
+                        restart();
+                      }
+                      else
+                      {
+                        // подсоединились успешно
+                        DBGLN(F("ESP: CWJAP command processed."));
+                      }
                   
                     }  
                   }
@@ -2595,13 +2784,25 @@ void CoreESPTransport::clearInitCommands()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::clearClientsQueue(bool raiseEvents)
 {
-  // тут попросили освободить очередь клиентов.
+ // тут попросили освободить очередь клиентов.
   // для этого нам надо выставить каждому клиенту флаг того, что он свободен,
   // плюс - сообщить, что текущее действие над ним не удалось.  
 
     for(size_t i=0;i<clientsQueue.size();i++)
     {
         ESPClientQueueData dt = clientsQueue[i];
+        delete [] dt.data;
+        delete [] dt.ip;
+
+        // если здесь в очереди есть хоть один клиент с неназначенным ID (ждёт подсоединения) - то в события он не придёт,
+        // т.к. там сравнивается по назначенному ID. Поэтому мы назначаем ID клиенту в первый свободный слот.
+        if(dt.client->socket == NO_CLIENT_ID)
+        {
+          CoreTransportClient* cl = getClient(NO_CLIENT_ID);
+          if(cl)
+            dt.client->bind(cl->socket);
+        }
+        
         if(raiseEvents)
         {
           switch(dt.action)
@@ -2628,7 +2829,7 @@ void CoreESPTransport::clearClientsQueue(bool raiseEvents)
         
     } // for
 
-  clientsQueue.empty();
+  clientsQueue.clear();
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
