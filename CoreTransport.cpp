@@ -44,12 +44,10 @@ void CoreTransportClient::accept(CoreTransport* _parent)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransportClient::clear()
 {
-    if(dataBuffer)
-      delete [] dataBuffer; 
-
-    dataBufferSize = 0;
+    delete [] dataBuffer; 
     dataBuffer = NULL;
-  
+
+    dataBufferSize = 0;  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransportClient::disconnect()
@@ -2909,11 +2907,6 @@ void CoreESPTransport::removeClientFromQueue(CoreTransportClient* client)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::beginWrite(CoreTransportClient& client)
 {
-  if(!client.connected())
-  {
-     DBGLN(F("ESP: client not connected!"));
-    return;
-  }
   
   // добавляем клиента в очередь на запись
   addClientToQueue(&client, actionWrite);
