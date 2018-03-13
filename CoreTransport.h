@@ -19,6 +19,7 @@ extern "C" {
   void ON_INCOMING_CALL(const String& phoneNumber, bool isKnownNumber, bool& shouldHangUp);
   void ON_SMS_RECEIVED(const String& phoneNumber,const String& message, bool isKnownNumber);
   void ON_RS485_DATA_RECEIVED(Stream* stream, uint16_t dataToRead);
+  void ON_CUSD_RECEIVED(const String& cusd);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 // типы пакетов, гоняющихся по транспортам
@@ -171,17 +172,30 @@ typedef enum
 // методы connect и write класса CoreTransportClient являются неблокирующими, поэтому запись вызовом
 // write следует осуществлять только, если клиент соединён, т.е. вызов connected() возвращает true.
 //--------------------------------------------------------------------------------------------------------------------------------------
+class RecursionCounter
+{
+  private:
+    uint16_t* thisCntr;
+  public:
+    RecursionCounter(uint16_t* cntr)
+    {
+      thisCntr = cntr;
+      (*thisCntr)++;
+    }
+   ~RecursionCounter()
+   {
+     (*thisCntr)--;
+   }
+  
+};
+//--------------------------------------------------------------------------------------------------------------------------------
 class CoreTransport
 {
   public:
   
     CoreTransport(uint8_t clientsPoolSize);
     virtual ~CoreTransport();
-
-    virtual void pause() = 0;
-    virtual void resume() = 0;
-    virtual bool paused() = 0;
-
+    
     // обновляем состояние транспорта
     virtual void update() = 0; 
 
@@ -203,8 +217,8 @@ private:
     Vector<CoreTransportClient*> pool;
     Vector<bool> status;
 
-    Vector<CoreTransportClient*> closedCatchList;
-    bool isExternalClient(CoreTransportClient& client);   
+    Vector<CoreTransportClient*> externalClients;
+    bool isExternalClient(CoreTransportClient& client);
 
 protected:
 
@@ -229,7 +243,6 @@ protected:
   virtual void beginWrite(CoreTransportClient& client) = 0; // начинаем писать в транспорт с клиента
   virtual void beginConnect(CoreTransportClient& client, const char* ip, uint16_t port) = 0; // начинаем коннектиться к адресу
   virtual void beginDisconnect(CoreTransportClient& client) = 0; // начинаем отсоединение от адреса
-
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -318,6 +331,37 @@ class CoreTransportClient
   
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
+typedef enum
+{
+  
+  actionDisconnect, // запрошено отсоединение клиента
+  actionConnect, // запрошено подсоединение клиента
+  actionWrite, // запрошена запись из клиента в транспорт
+  
+} TransportClientAction;
+//--------------------------------------------------------------------------------------------------------------------------------
+struct TransportClientQueueData // данные по клиенту в очереди
+{
+  TransportClientAction action; // действие, которое надо выполнить с клиентом
+  CoreTransportClient* client; // ссылка на клиента
+  char* ip; // IP для подсоединения
+  uint16_t port; // порт для подсоединения
+  size_t dataLength;
+  uint8_t* data;
+
+  TransportClientQueueData()
+  {
+   client = NULL;
+   ip = NULL;
+   data = NULL;
+  }
+   
+};
+//--------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<TransportClientQueueData> TransportClientsQueue; // очередь клиентов на совершение какой-либо исходящей операции (коннект, дисконнект, запись)
+//--------------------------------------------------------------------------------------------------------------------------------
+typedef Vector<uint8_t> TransportReceiveBuffer;
+//--------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_ESP_TRANSPORT_ENABLED
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
@@ -357,36 +401,6 @@ extern ESPTransportSettingsClass ESPTransportSettings;
 //--------------------------------------------------------------------------------------------------------------------------------------
 #define ESP_MAX_CLIENTS 4 // наш пул клиентов
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef enum
-{
-  
-  actionDisconnect, // запрошено отсоединение клиента
-  actionConnect, // запрошено подсоединение клиента
-  actionWrite, // запрошена запись из клиента в ESP
-  
-} ESPClientAction;
-//--------------------------------------------------------------------------------------------------------------------------------------
-struct ESPClientQueueData // данные по клиенту в очереди
-{
-  ESPClientAction action; // действие, которое надо выполнить с клиентом
-  CoreTransportClient* client; // ссылка на клиента
-  char* ip; // IP для подсоединения
-  uint16_t port; // порт для подсоединения
-  uint8_t* data;
-  size_t dataLength;
-
-  ESPClientQueueData()
-  {
-    client = NULL;
-    ip = NULL;
-    data = NULL;
-    dataLength = 0;
-  }
-   
-}; 
-//--------------------------------------------------------------------------------------------------------------------------------------
-typedef Vector<ESPClientQueueData> ESPClientsQueue; // очередь клиентов на совершение какой-либо исходящей операции (коннект, дисконнект, запись)
-//--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
   bool ready                : 1; // флаг готовности
@@ -395,7 +409,11 @@ typedef struct
   bool waitForDataWelcome   : 1; // флаг, что ждём приглашения на отсыл данных
   bool wantReconnect        : 1; // флаг, что мы должны переподсоединиться к роутеру
   bool onIdleTimer          : 1; // флаг, что мы в режиме простоя
-  bool bPaused              : 1; // флаг, что мы на паузе
+  bool waitCipstartConnect  : 1;
+  bool cipstartConnectKnownAnswerFound : 1;
+
+  bool specialCommandDone : 1;
+  bool pad : 7;
   
 } CoreESPTransportFlags;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -416,7 +434,9 @@ typedef enum
   cmdCIPSTART, // соединяемся
   cmdCIPSEND, // начинаем слать данные
   cmdWaitSendDone, // ждём окончания отсылки данных
-  
+  cmdPING, // команда пингования
+  cmdCIFSR, // команда получения MAC-адресов и IP
+    
 } ESPCommands;
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<ESPCommands> ESPCommandsList;
@@ -447,10 +467,6 @@ class CoreESPTransport : public CoreTransport
   public:
     CoreESPTransport();
 
-    virtual void pause(){ flags.bPaused = true; }
-    virtual void resume(){ flags.bPaused = false; }
-    virtual bool paused(){ return flags.bPaused; }    
-
     virtual void update(); // обновляем состояние транспорта
     virtual void begin(); // начинаем работу
 
@@ -464,8 +480,9 @@ class CoreESPTransport : public CoreTransport
     bool pingGoogle(bool& result);
 
     virtual bool ready(); // проверяем на готовность к работе
-
+       
     void restart();
+    void readFromStream();
 
   protected:
 
@@ -475,16 +492,16 @@ class CoreESPTransport : public CoreTransport
 
   private:
 
-      void waitTransmitComplete();
 
-      bool waitCipstartConnect;
+      // буфер для приёма команд от ESP
+      TransportReceiveBuffer receiveBuffer;
+      uint16_t recursionGuard;
+      
       CoreTransportClient* cipstartConnectClient;
       uint8_t cipstartConnectClientID;
-      bool cipstartConnectKnownAnswerFound;
 
-      bool checkIPD(const String& line);
+      bool checkIPD(const TransportReceiveBuffer& buff);
       void processKnownStatusFromESP(const String& line);
-      void processIPD(const String& line);
       void processConnect(const String& line);
       void processDisconnect(const String& line);
 
@@ -496,7 +513,7 @@ class CoreESPTransport : public CoreTransport
 
       ESPCommands currentCommand;
       ESPCommandsList initCommandsQueue; // очередь команд на инициализацию
-      uint32_t timer; // общий таймер
+      uint32_t timer, idleTimer; // общий таймер
       uint32_t idleTime; // время, которое нам надо подождать, ничего не делая
       
       void clearInitCommands();
@@ -507,19 +524,18 @@ class CoreESPTransport : public CoreTransport
       
       Stream* workStream; // поток, с которым мы работаем (читаем/пишем в/из него)
 
-      String* wiFiReceiveBuff;
+      TransportClientsQueue clientsQueue; // очередь действий с клиентами
+
+      Vector<String*> specialCommandResults;
+      void clearSpecialCommandResults();
 
       void clearClientsQueue(bool raiseEvents);
-
-      ESPClientsQueue clientsQueue; // очередь действий с клиентами
-
-      bool isClientInQueue(CoreTransportClient* client, ESPClientAction action); // тестирует - не в очереди ли уже клиент?
-      void addClientToQueue(CoreTransportClient* client, ESPClientAction action, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
+      bool isClientInQueue(CoreTransportClient* client, TransportClientAction action); // тестирует - не в очереди ли уже клиент?
+      void addClientToQueue(CoreTransportClient* client, TransportClientAction action, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
       void removeClientFromQueue(CoreTransportClient* client); // удаляет клиента из очереди  
-      void removeClientFromQueue(CoreTransportClient* client, ESPClientAction action); // удаляет клиента из очереди  
+      void removeClientFromQueue(CoreTransportClient* client, TransportClientAction action); // удаляет клиента из очереди  
       
       void initClients();
-
     
 };
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -982,7 +998,7 @@ typedef struct
   bool onIdleTimer          : 1; // флаг, что мы в режиме простоя
   bool gprsAvailable        : 1; //
   bool pduInNextLine        : 1; //
-  bool bPaused              : 1;
+  bool waitCipstartConnect  : 1;
   
 } CoreSIM800TransportFlags;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -1012,7 +1028,8 @@ typedef enum
   smaCMGS,
   smaWaitSMSSendDone,
   smaWaitForSMSClearance,
-  
+  smaCUSD,
+    
 } SIM800Commands;
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<SIM800Commands> SIM800CommandsList;
@@ -1045,36 +1062,6 @@ typedef enum
 //--------------------------------------------------------------------------------------------------------------------------------------
 #define SIM800_MAX_CLIENTS 5
 //--------------------------------------------------------------------------------------------------------------------------------------
-typedef enum
-{
-  
-  sim800DisconnectAction, // запрошено отсоединение клиента
-  sim800ConnectAction, // запрошено подсоединение клиента
-  sim800WriteAction, // запрошена запись из клиента в SIM800
-  
-} SIM800ClientAction;
-//--------------------------------------------------------------------------------------------------------------------------------------
-struct SIM800ClientQueueData // данные по клиенту в очереди
-{
-  SIM800ClientAction action; // действие, которое надо выполнить с клиентом
-  CoreTransportClient* client; // ссылка на клиента
-  char* ip; // IP для подсоединения
-  uint16_t port; // порт для подсоединения
-  uint8_t* data;
-  size_t dataLength;
-
-  SIM800ClientQueueData()
-  {
-    client = NULL;
-    ip = NULL;
-    data = NULL;
-    dataLength = 0;
-  }
-   
-}; 
-//--------------------------------------------------------------------------------------------------------------------------------------
-typedef Vector<SIM800ClientQueueData> SIM800ClientsQueue; // очередь клиентов на совершение какой-либо исходящей операции (коннект, дисконнект, запись)
-//--------------------------------------------------------------------------------------------------------------------------------------
 typedef struct
 {
   bool isFlash;
@@ -1090,9 +1077,6 @@ class CoreSIM800Transport : public CoreTransport
   public:
     CoreSIM800Transport();
 
-    virtual void pause(){ flags.bPaused = true; }
-    virtual void resume(){ flags.bPaused = false; }
-    virtual bool paused(){ return flags.bPaused; }        
 
     virtual void update(); // обновляем состояние транспорта
     virtual void begin(); // начинаем работу
@@ -1100,6 +1084,10 @@ class CoreSIM800Transport : public CoreTransport
     virtual bool ready(); // проверяем на готовность к работе
 
     bool sendSMS(const String& phoneNumber, const String& message, bool isFlash);
+    void sendCUSD(const String& cusd);
+
+    void restart();
+    void readFromStream();
 
   protected:
 
@@ -1109,20 +1097,28 @@ class CoreSIM800Transport : public CoreTransport
 
   private:
 
+
+      Vector<String*> cusdList;
+      void sendQueuedCUSD();
+
       SIM800OutgoingSMSList outgoingSMSList;
       String* smsToSend;
       void sendQueuedSMS();
 
-      void restart();
-
-      bool waitCipstartConnect;
+      // буфер для приёма команд от SIM800
+      TransportReceiveBuffer receiveBuffer;
+      uint16_t recursionGuard;
+  
       CoreTransportClient* cipstartConnectClient;
       uint8_t cipstartConnectClientID;
-      
 
-      void processIPD();
+      void GetAPNUserPass(String& user, String& pass);
+      String GetAPN();
+      
+      bool checkIPD(const TransportReceiveBuffer& buff);
       void processCMT(const String& cmtInfo);
       void processIncomingCall(const String& call);
+      void processKnownStatusFromSIM800(const String& line);
 
       bool isKnownAnswer(const String& line, SIM800KnownAnswer& result);
 
@@ -1132,7 +1128,7 @@ class CoreSIM800Transport : public CoreTransport
       SIM800Commands currentCommand;
       SIM800CommandsList initCommandsQueue; // очередь команд на инициализацию
       
-      uint32_t timer; // общий таймер
+      uint32_t timer, idleTimer; // общий таймер
       uint32_t idleTime; // время, которое нам надо подождать, ничего не делая
       
       void clearInitCommands();
@@ -1143,18 +1139,16 @@ class CoreSIM800Transport : public CoreTransport
       
       Stream* workStream; // поток, с которым мы работаем (читаем/пишем в/из него)
 
-      String* sim800ReceiveBuff;
-
       int16_t gprsCheckingAttempts;
 
       void clearClientsQueue(bool raiseEvents);
 
-      SIM800ClientsQueue clientsQueue; // очередь действий с клиентами
+      TransportClientsQueue clientsQueue; // очередь действий с клиентами
 
-      bool isClientInQueue(CoreTransportClient* client, SIM800ClientAction action); // тестирует - не в очереди ли уже клиент?
-      void addClientToQueue(CoreTransportClient* client, SIM800ClientAction action, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
+      bool isClientInQueue(CoreTransportClient* client, TransportClientAction action); // тестирует - не в очереди ли уже клиент?
+      void addClientToQueue(CoreTransportClient* client, TransportClientAction action, const char* ip=NULL, uint16_t port=0); // добавляет клиента в очередь
       void removeClientFromQueue(CoreTransportClient* client); // удаляет клиента из очереди
-      void removeClientFromQueue(CoreTransportClient* client, SIM800ClientAction action);
+      void removeClientFromQueue(CoreTransportClient* client, TransportClientAction action);
           
 };
 //--------------------------------------------------------------------------------------------------------------------------------------

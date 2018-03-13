@@ -34,6 +34,28 @@ public:
         return *this;
     }; // Needed for memory management
 
+    int indexOf(Data const &x)
+    {
+      if(!d_size)
+        return -1;
+
+      for(size_t i=0;i<d_size;i++)
+      {
+        if(d_data[i] == x)
+          return (int) i;
+      }
+      return -1;
+    }
+
+    void remove(size_t index, size_t count)
+    {
+      if (index >= d_size) { return; }
+      if (count > (d_size - index) ) { count = d_size - index; }
+      Data *writeTo = (d_data + index);
+      d_size = (d_size - count);
+      memmove(writeTo, d_data + index + count,d_size - index);
+    } 
+
     void push_back(Data const &x)
     {
         if (d_capacity == d_size) //when he pushes data onto the heap, he checks to see if the storage is full

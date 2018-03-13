@@ -6,12 +6,14 @@ static void __nolora(uint8_t* b, int dummy){}
 static void __noincomingcall(const String& phoneNumber, bool isKnownNumber, bool& shouldHangUp) {}
 static void __nosmsreceived(const String& phoneNumber, const String& message, bool isKnownNumber) {}
 static void __nors485received(Stream* stream, uint16_t dataToRead){}
+static void __nocusdreceived(const String& cusd){}
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void ON_LORA_RECEIVE(uint8_t*, int16_t) __attribute__ ((weak, alias("__nolora")));
 void ON_INCOMING_CALL(const String& phoneNumber, bool isKnownNumber, bool& shouldHangUp) __attribute__ ((weak, alias("__noincomingcall")));
 void ON_SMS_RECEIVED(const String& phoneNumber,const String& message, bool isKnownNumber) __attribute__ ((weak, alias("__nosmsreceived")));
 void ON_RS485_DATA_RECEIVED(Stream* stream, uint16_t dataToRead) __attribute__ ((weak, alias("__nors485received")));
+void ON_CUSD_RECEIVED(const String& cusd) __attribute__ ((weak, alias("__nocusdreceived")));
 //--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_RS485_TRANSPORT_ENABLED
 CoreRS485Settings RS485Settings;
@@ -133,9 +135,17 @@ CoreTransport::~CoreTransport()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransport::initPool()
 {
+  Vector<CoreTransportClient*> tmp = externalClients;
+  for(size_t i=0;i<tmp.size();i++)
+  {
+    notifyClientConnected(*(tmp[i]),false,CT_ERROR_NONE);
+    tmp[i]->release();
+  }
+  
   for(size_t i=0;i<status.size();i++)
   {
     status[i] = false;
+    pool[i]->clear(); // очищаем внутренних клиентов
   }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -165,9 +175,9 @@ void CoreTransport::doConnect(CoreTransportClient& client, const char* ip, uint1
 
   // если внешний клиент - будем следить за его статусом соединения/подсоединения
    if(isExternalClient(client))
-    closedCatchList.push_back(&client);
+    externalClients.push_back(&client);
 
-   beginConnect(client,ip,port); 
+   beginConnect(client,ip,port);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransport::doDisconnect(CoreTransportClient& client)
@@ -219,7 +229,6 @@ bool CoreTransport::isExternalClient(CoreTransportClient& client)
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreTransport::notifyClientConnected(CoreTransportClient& client, bool connected, int16_t errorCode)
 {
-
    // тут надо синхронизировать с пулом клиентов
    if(client.socket != NO_CLIENT_ID)
    {
@@ -235,17 +244,18 @@ void CoreTransport::notifyClientConnected(CoreTransportClient& client, bool conn
       if(!connected) // пришло что-то типа 1,CLOSED
       {         
         // клиент отсоединился, надо освободить его сокет
-        for(size_t i=0;i<closedCatchList.size();i++)
+        for(size_t i=0;i<externalClients.size();i++)
         {
-          if(closedCatchList[i]->socket == client.socket)
+          if(externalClients[i]->socket == client.socket)
           {
-            closedCatchList[i]->clear();
-            closedCatchList[i]->release(); // освобождаем внешнему клиенту сокет
-            for(size_t k=i+1;k<closedCatchList.size();k++)
+            externalClients[i]->clear();                        
+            externalClients[i]->release(); // освобождаем внешнему клиенту сокет
+            
+            for(size_t k=i+1;k<externalClients.size();k++)
             {
-              closedCatchList[k-1] = closedCatchList[k];
+              externalClients[k-1] = externalClients[k];
             }
-            closedCatchList.pop();
+            externalClients.pop();
             break;
           }
         } // for
@@ -1185,72 +1195,56 @@ CoreESPTransport ESP;
 //--------------------------------------------------------------------------------------------------------------------------------------
 CoreESPTransport::CoreESPTransport() : CoreTransport(ESP_MAX_CLIENTS)
 {
-  wiFiReceiveBuff = new String();
-  flags.bPaused = false;
-
-  waitCipstartConnect = false;
+  recursionGuard = 0;
+  flags.waitCipstartConnect = false;
   cipstartConnectClient = NULL;
+  workStream = NULL;
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPTransport::waitTransmitComplete()
+void CoreESPTransport::readFromStream()
 {
-  // ждём завершения передачи по UART
- if(!workStream)
+  if(!workStream)
     return;
     
-  #if TARGET_BOARD == MEGA_BOARD
-
-    if(workStream == &Serial)
-      while(!(UCSR0A & _BV(TXC0) ));
-    else
-    if(workStream == &Serial1)
-      while(!(UCSR1A & _BV(TXC1) ));
-    else
-    if(workStream == &Serial2)
-      while(!(UCSR2A & _BV(TXC2) ));
-    else
-    if(workStream == &Serial3)
-      while(!(UCSR3A & _BV(TXC3) ));
-
-  #elif TARGET_BOARD == DUE_BOARD
-
-    if(workStream == &Serial)
-      while((UART->UART_SR & UART_SR_TXRDY) != UART_SR_TXRDY);
-    else
-    if(workStream == &Serial1)
-      while((USART0->US_CSR & US_CSR_TXEMPTY) == 0);
-    else
-    if(workStream == &Serial2)
-      while((USART1->US_CSR & US_CSR_TXEMPTY)  == 0);      
-    else
-    if(workStream == &Serial3)
-      while((USART3->US_CSR & US_CSR_TXEMPTY)  == 0);
-       
-  #elif TARGET_BOARD == ATMEGA328_BOARD
-  
-    if(workStream == &Serial)
-      while(!(UCSR0A & _BV(TXC0) ));
-      
-  #else
-    #error "Unknown target board!"
-  #endif  
-
+  while(workStream->available())
+  {
+    receiveBuffer.push_back((uint8_t) workStream->read());
+  }
 }
-//-------------------------------------------------------------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::sendCommand(const String& command, bool addNewLine)
-{
-   DBG(F("ESP: ==>> "));
-   DBGLN(command);
-  
-  workStream->write(command.c_str(),command.length());
-  
+{ 
+  size_t len = command.length();
+  for(size_t i=0;i<len;i++)
+  {
+    // записали байтик
+    workStream->write(command[i]);
+
+    // прочитали, что пришло от ESP
+    readFromStream();
+
+   #ifdef CORE_SIM800_TRANSPORT_ENABLED
+     // и модуль GSM тоже тут обновим
+     SIM800.readFromStream();
+   #endif     
+  }
+    
   if(addNewLine)
   {
     workStream->println();
   }
+  
+  // прочитали, что пришло от ESP
+  readFromStream();
 
-  waitTransmitComplete();
+   #ifdef CORE_SIM800_TRANSPORT_ENABLED
+   // и модуль GSM тоже тут обновим
+   SIM800.readFromStream();
+   #endif   
+
+   DBG(F("ESP: ==> "));
+   DBGLN(command);
 
   machineState = espWaitAnswer; // говорим, что надо ждать ответа от ESP
   // запоминаем время отсылки последней команды
@@ -1260,69 +1254,32 @@ void CoreESPTransport::sendCommand(const String& command, bool addNewLine)
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreESPTransport::pingGoogle(bool& result)
 {
-    if(machineState != espIdle || !workStream || !ready() || initCommandsQueue.size()) // чего-то делаем, не могём
+     if(machineState != espIdle || !workStream || !ready() || initCommandsQueue.size()) // чего-то делаем, не могём
     {
       return false;
     }
-    
-    pause();
 
-        ESPKnownAnswer ka;
-        workStream->println(F("AT+PING=\"google.com\""));
-        // поскольку у нас serialEvent не основан на прерываниях, на самом-то деле (!),
-        // то мы должны получить ответ вот прямо вот здесь, и разобрать его.
+    flags.specialCommandDone = false;
+    clearSpecialCommandResults();
+    initCommandsQueue.push_back(cmdPING);
 
-        String line; // тут принимаем данные до конца строки
-        bool  pingDone = false;
-        
-        char ch;
-        uint32_t startTime = millis();
-        
-        while(millis() - startTime < 10000) // таймаут в 10 секунд
-        { 
-          if(pingDone) // получили ответ на PING
-            break;
-            
-          while(workStream->available())
-          {
-            ch = workStream->read();
-            timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
-        
-            if(ch == '\r')
-              continue;
-            
-            if(ch == '\n')
-            {
-              // получили строку, разбираем её
-              
-              // здесь надо обработать известные статусы
-                 if(checkIPD(line))
-                 {     
-                    processIPD(line);
-                    continue;
-                 }
-                 processKnownStatusFromESP(line);
-              
-                 if(isKnownAnswer(line, ka))
-                 {
-                    result = (ka == kaOK);
-                    pingDone = true;
-                 }
-             line = "";
-            } // ch == '\n'
-            else
-              line += ch;
-        
-          if(pingDone) // получили ответ на PING
-              break;
- 
-          } // while
-          
-        } // while(1)    
+    while(!flags.specialCommandDone)
+    {     
+      update();
+      if(flags.wantReconnect || machineState == espReboot)
+        break;
+    }
 
-  resume();
+    if(!specialCommandResults.size())
+    {
+      return false;
+    }
 
-  return true;
+    result = *(specialCommandResults[0]) == F("OK");
+
+    clearSpecialCommandResults();
+
+    return true;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
@@ -1332,225 +1289,104 @@ bool CoreESPTransport::getMAC(String& staMAC, String& apMAC)
       return false;
     }
 
-    pause();
+    staMAC = '-';
+    apMAC = '-';    
 
-        ESPKnownAnswer ka;
-        workStream->println(F("AT+CIPSTAMAC?"));
+    flags.specialCommandDone = false;
+    clearSpecialCommandResults();
+    initCommandsQueue.push_back(cmdCIFSR);
 
-        String line; // тут принимаем данные до конца строки
-        staMAC = "-";
-        apMAC = "-";
-        
-        bool  apMACDone = false, staMACDone=false;
-        char ch;
-        uint32_t startTime = millis();
-        
-        while(millis() - startTime < 10000) // таймаут в 10 секунд
-        { 
-          if(staMACDone) // получили MAC-адрес станции
-            break;
-            
-          while(workStream->available())
-          {
-            ch = workStream->read();
-            timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
-        
-            if(ch == '\r')
-              continue;
-            
-            if(ch == '\n')
-            {
-              // получили строку, разбираем её
-              // здесь надо обработать известные статусы
-                 if(checkIPD(line))
-                 {     
-                    processIPD(line);
-                    continue;
-                 }
-                 processKnownStatusFromESP(line);
-              
-                 if(line.startsWith(F("+CIPSTAMAC:"))) // MAC станции
-                 {
-                  DBGLN(F("Station MAC found, parse..."));
-            
-                   staMAC = line.substring(11);                      
-                  
-                 } // if(line.startsWith
-                 else
-                 if(isKnownAnswer(line, ka))
-                 {
-                    staMACDone = true;
-                 }
-             line = "";
-            } // ch == '\n'
-            else
-              line += ch;
-        
-          if(staMACDone) // получили MAC станции
-              break;
- 
-          } // while
-          
-        } // while(1)
+    while(!flags.specialCommandDone)
+    {     
+      update();
+      if(flags.wantReconnect || machineState == espReboot)
+        break;
+    }
 
-        // теперь получаем MAC точки доступа
-        workStream->println(F("AT+CIPAPMAC?"));
-        line = "";
+    if(!specialCommandResults.size())
+    {
+      return false;
+    }
 
-        startTime = millis();
-        
-        while(millis() - startTime < 10000) // таймаут в 10 секунд
-        { 
-          if(apMACDone) // получили MAC-адрес точки доступа
-            break;
-            
-          while(workStream->available())
-          {
-            ch = workStream->read();
-            timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
-        
-            if(ch == '\r')
-              continue;
-            
-            if(ch == '\n')
-            {
-              // получили строку, разбираем её
-              
-              // здесь надо обработать известные статусы
-                 if(checkIPD(line))
-                 {     
-                    processIPD(line);
-                    continue;
-                 }
-                 processKnownStatusFromESP(line);
-              
-                 if(line.startsWith(F("+CIPAPMAC:"))) // MAC нашей точки доступа
-                 {
-                   DBGLN(F("softAP MAC found, parse..."));
-            
-                   apMAC = line.substring(10);                      
-                  
-                 } // if(line.startsWith
-                 else
-                 if(isKnownAnswer(line,ka))
-                 {
-                    apMACDone = true;
-                 }
-             line = "";
-            } // ch == '\n'
-            else
-              line += ch;
-        
-          if(apMACDone) // получили MAC точки доступа
-              break;
- 
-          } // while
-          
-        } // while(1)
+    for(size_t i=0;i<specialCommandResults.size();i++)
+    {
+      String* s = specialCommandResults[i];
+      
+      int idx = s->indexOf(F("STAMAC,"));
+      if(idx != -1)
+      {
+        const char* stamacPtr = s->c_str() + idx + 7;
+        staMAC = stamacPtr;
+      }
+      else
+      {
+        idx = s->indexOf(F("APMAC,"));
+        if(idx != -1)
+        {
+          const char* apmacPtr = s->c_str() + idx + 6;
+          apMAC = apmacPtr;
+        }
+      }
+      
+      
+    } // for
 
-    resume();
+    clearSpecialCommandResults();
 
-  return true;              
+    return true;     
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreESPTransport::getIP(String& stationCurrentIP, String& apCurrentIP)
 {
+ 
     if(machineState != espIdle || !workStream || !ready() || initCommandsQueue.size()) // чего-то делаем, не могём
     {
       return false;
     }
 
+    stationCurrentIP = '-';
+    apCurrentIP = '-';    
 
-    pause();
+    flags.specialCommandDone = false;
+    clearSpecialCommandResults();
+    initCommandsQueue.push_back(cmdCIFSR);
 
-    workStream->println(F("AT+CIFSR"));  
-    
-    String line; // тут принимаем данные до конца строки
-    bool knownAnswerFound = false;
-    ESPKnownAnswer ka;  
-
-    char ch;
-    uint32_t startTime = millis();
-    
-    while(millis() - startTime < 10000) // таймаут в 10 секунд
-    { 
-      if(knownAnswerFound) // получили оба IP
+    while(!flags.specialCommandDone)
+    {     
+      update();
+      if(flags.wantReconnect || machineState == espReboot)
         break;
-        
-      while(workStream->available())
-      {
-        ch = (char) workStream->read();
-        timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
-    
-        if(ch == '\r')
-          continue;
-        
-        if(ch == '\n')
-        {
-          // получили строку, разбираем её
-          
-          // здесь надо обработать известные статусы
-           if(checkIPD(line))
-           {     
-              processIPD(line);
-              continue;
-           }
-           processKnownStatusFromESP(line);
-                     
-            if(line.startsWith(F("+CIFSR:APIP"))) // IP нашей точки доступа
-             {
-               DBGLN(F("AP IP found, parse..."));
-        
-               int idx = line.indexOf("\"");
-               if(idx != -1)
-               {
-                  apCurrentIP = line.substring(idx+1);
-                  idx = apCurrentIP.indexOf("\"");
-                  if(idx != -1)
-                    apCurrentIP = apCurrentIP.substring(0,idx);
-                  
-               }
-               else
-                apCurrentIP = F("0.0.0.0");
+    }
 
-             } // if(line.startsWith(F("+CIFSR:APIP")))
-             else
-              if(line.startsWith(F("+CIFSR:STAIP"))) // IP нашей точки доступа, назначенный роутером
-             {
-               DBGLN(F("STA IP found, parse..."));
-        
-               int idx = line.indexOf("\"");
-               if(idx != -1)
-               {
-                  stationCurrentIP = line.substring(idx+1);
-                  idx = stationCurrentIP.indexOf("\"");
-                  if(idx != -1)
-                    stationCurrentIP = stationCurrentIP.substring(0,idx);
-                  
-               }
-               else
-                stationCurrentIP = F("0.0.0.0");
+    if(!specialCommandResults.size())
+    {
+      return false;
+    }
 
-             } // if(line.startsWith(F("+CIFSR:STAIP")))
-
-           if(isKnownAnswer(line,ka))
-            knownAnswerFound = true;
-         
-          line = "";
-        } // ch == '\n'
-        else
-        {
-              line += ch;
-        }
-    
-     if(knownAnswerFound) // получили оба IP
-        break;
-
-      } // while
+    for(size_t i=0;i<specialCommandResults.size();i++)
+    {
+      String* s = specialCommandResults[i];
       
-    } // while(1)
+      int idx = s->indexOf(F("STAIP,"));
+      if(idx != -1)
+      {
+        const char* staipPtr = s->c_str() + idx + 6;
+        stationCurrentIP = staipPtr;
+      }
+      else
+      {
+        idx = s->indexOf(F("APIP,"));
+        if(idx != -1)
+        {
+          const char* apipPtr = s->c_str() + idx + 5;
+          apCurrentIP = apipPtr;
+        }
+      }
+      
+      
+    } // for
 
-    resume();
+    clearSpecialCommandResults();
 
     return true;
     
@@ -1569,6 +1405,21 @@ void CoreESPTransport::sendCommand(ESPCommands command)
     case cmdCIPSEND:
     case cmdWaitSendDone:
     break;
+
+    case cmdPING:
+    {
+      DBGLN(F("ESP: PING GOOGLE..."));
+      sendCommand(F("AT+PING=\"google.com\""));     
+    }
+    break;
+
+    case cmdCIFSR:
+    {
+      DBGLN(F("ESP: REQUEST CIFSR..."));
+      sendCommand(F("AT+CIFSR"));
+      
+    }
+    break;      
 
     case cmdWantReady:
     {
@@ -1705,132 +1556,6 @@ bool CoreESPTransport::isKnownAnswer(const String& line, ESPKnownAnswer& result)
   return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPTransport::processIPD(const String& line)
-{
-  DBG(F("ESP: start parse +IPD, received="));
-  DBGLN(line);
-  
-   // здесь в line лежит только команда вида +IPD,<id>,<len>:
-  // все данные надо вычитывать из потока
-        
-    int16_t idx = line.indexOf(F(",")); // ищем первую запятую после +IPD
-    const char* ptr = line.c_str();
-    ptr += idx+1;
-    // перешли за запятую, парсим ID клиента
-    String connectedClientID = F("");
-    while(*ptr != ',')
-    {
-      connectedClientID += (char) *ptr;
-      ptr++;
-    }
-    ptr++; // за запятую
-    String dataLen;
-    while(*ptr != ':')
-    {
-      dataLen += (char) *ptr;
-      ptr++; // перешли на начало данных
-    }
-
-    // получили ID клиента и длину его данных, которые - пока в потоке, и надо их быстро попакетно вычитать
-    int16_t clientID = connectedClientID.toInt();
-    size_t lengthOfData = dataLen.toInt();
-    
-    if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
-    {
-
-       CoreTransportClient* client = getClient(clientID);
-
-       // у нас есть lengthOfData с данными для клиента, нам надо побить это на пакеты длиной N байт,
-       // и последовательно вызывать событие прихода данных. Это нужно для того, чтобы не переполнить оперативку,
-       // поскольку у нас её - не вагон.
-
-      // пусть у нас будет максимум 512 байт на пакет
-      const uint16_t MAX_PACKET_SIZE = 512;
-      
-      // если длина всех данных меньше MAX_PACKET_SIZE - просто тупо все сразу вычитаем
-       uint16_t packetSize = min(MAX_PACKET_SIZE,lengthOfData);
-
-        // теперь выделяем буфер под данные
-        uint8_t* buff = new uint8_t[packetSize];
-
-        // у нас есть буфер, в него надо скопировать данные из потока
-        uint8_t* writePtr = buff;
-        
-        size_t packetWritten = 0; // записано в пакет
-        size_t totalWritten = 0; // всего записано
-
-        pause();
-
-            uint32_t startTime = millis();
-            bool hasTimeout = false;
-
-            while(totalWritten < lengthOfData) // пока не запишем все данные с клиента
-            {
-              if(millis() - startTime > ESP_IPD_READING_TIMEOUT)
-              {
-                hasTimeout = true;
-                break;
-              }
-                if(workStream->available())
-                { 
-                  startTime = millis();               
-                  *writePtr++ = (uint8_t) workStream->read();
-                  packetWritten++;
-                  totalWritten++;
-                }
-                else
-                  continue;
-
-                if(packetWritten >= packetSize)
-                {
-                  
-                  // скопировали один пакет    
-                  // сообщаем подписчикам, что данные для клиента получены
-                  notifyDataAvailable(*client, buff, packetWritten, totalWritten >= lengthOfData);
-
-                  // чистим память
-                  delete [] buff;
-                      
-                  // пересчитываем длину пакета, вдруг там мало осталось, и незачем выделять под несколько байт огромный буфер
-                  packetSize =  min(MAX_PACKET_SIZE, lengthOfData - totalWritten);
-                  buff = new uint8_t[packetSize];
-                  writePtr = buff; // на начало буфера
-                  packetWritten = 0;
-                }
-              
-            } // while
-
-            #ifdef _CORE_DEBUG
-            if(hasTimeout)
-            {
-              DBG(F("DATA LENGTH="));
-              DBG(lengthOfData);
-              DBG(F("; READED="));
-              DBGLN(totalWritten);
-              DBGLN(F("TIMEOUT TIMEOUT TIMEOUT TIMEOUT TIMEOUT"));
-            }
-            #endif
-            
-           resume();
-
-            // проверяем - есть ли остаток?
-            if(packetWritten > 0)
-            {            
-              // после прохода цикла есть остаток данных, уведомляем клиента
-              // сообщаем подписчикам, что данные для клиента получены
-              notifyDataAvailable(*client, buff, packetWritten, hasTimeout ? true : totalWritten >= lengthOfData);
-            }
-            
-            delete [] buff;  
-       
-    } // if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
-    
-
-
-  DBGLN(F("ESP: +IPD parsed."));  
-
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::processConnect(const String& line)
 {
      // клиент подсоединился
@@ -1846,10 +1571,10 @@ void CoreESPTransport::processConnect(const String& line)
     if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
     {
         DBG(F("ESP: client connected - #"));
-        DBGLN(clientID);
+        DBGLN(String(clientID));
 
       // тут смотрим - посылали ли мы запрос на коннект?
-      if(waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
+      if(flags.waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
       {
         DBGLN(F("ESP: WAIT CIPSTART CONNECT, CATCH OUTGOING CLIENT!"));
         // есть клиент, для которого надо установить ID.
@@ -1859,12 +1584,12 @@ void CoreESPTransport::processConnect(const String& line)
         // ДО ТОГО, как придёт статус ID,CONNECT
         cipstartConnectClient->bind(clientID);
         
-        if(!cipstartConnectKnownAnswerFound)
+        if(!flags.cipstartConnectKnownAnswerFound)
         {
           DBGLN(F("ESP: WAIT CIPSTART CONNECT, NO OK FOUND!"));
           
           // не найдено ни одного ответа из известных. Проблема в том, что у внешнего клиента ещё нет слота,
-          // но там надо ему временно выставить слот (мы это сделали выше), потом вызвать событие отсоединения, потом - очистить ему слот
+          // но нам надо ему временно выставить слот (мы это сделали выше), потом вызвать событие отсоединения, потом - очистить ему слот
           removeClientFromQueue(cipstartConnectClient);
           notifyClientConnected(*cipstartConnectClient,false,CT_ERROR_CANT_CONNECT);
           cipstartConnectClient->release();
@@ -1881,16 +1606,17 @@ void CoreESPTransport::processConnect(const String& line)
         else
         {
         DBGLN(F("ESP: WAIT CIPSTART CONNECT, CLIENT CONNECTED!"));
+          
           // если вы здесь - ответ OK получен сразу после команды AT+CIPSTART,
           // клиент из очереди удалён, и, раз мы получили ID,CONNECT - мы можем сообщать, что клиент подсоединён
           CoreTransportClient* client = getClient(clientID);    
           notifyClientConnected(*client,true,CT_ERROR_NONE);          
         }
       
-          waitCipstartConnect = false;
+          flags.waitCipstartConnect = false;
           cipstartConnectClient = NULL;
           cipstartConnectClientID = NO_CLIENT_ID;
-          cipstartConnectKnownAnswerFound = false;
+          flags.cipstartConnectKnownAnswerFound = false;
         
       } // if
       else
@@ -1902,6 +1628,7 @@ void CoreESPTransport::processConnect(const String& line)
       }
       
     } // if
+
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::processDisconnect(const String& line)
@@ -1921,7 +1648,7 @@ void CoreESPTransport::processDisconnect(const String& line)
     if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
     {
         DBG(F("ESP: client disconnected - #"));
-        DBGLN(clientID);
+        DBGLN(String(clientID));
 
       // выставляем клиенту флаг, что он отсоединён
       CoreTransportClient* client = getClient(clientID);            
@@ -1930,10 +1657,10 @@ void CoreESPTransport::processDisconnect(const String& line)
     }
 
     // тут смотрим - посылали ли мы запрос на коннект?
-    if(waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
+    if(flags.waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
     {
-        DBG(F("ESP: waitCipstartConnect - #"));
-        DBGLN(clientID);
+       DBG(F("ESP: waitCipstartConnect - #"));
+       DBGLN(String(clientID));
       
       // есть клиент, для которого надо установить ID
       cipstartConnectClient->bind(clientID);
@@ -1941,11 +1668,11 @@ void CoreESPTransport::processDisconnect(const String& line)
       cipstartConnectClient->release();
       removeClientFromQueue(cipstartConnectClient);
       
-      waitCipstartConnect = false;
+      flags.waitCipstartConnect = false;
       cipstartConnectClient = NULL;
       cipstartConnectClientID = NO_CLIENT_ID;
       
-    } // if           
+    } // if      
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::processKnownStatusFromESP(const String& line)
@@ -1974,9 +1701,22 @@ void CoreESPTransport::processKnownStatusFromESP(const String& line)
    }  
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool CoreESPTransport::checkIPD(const String& line)
+bool CoreESPTransport::checkIPD(const TransportReceiveBuffer& buff)
 {
-  return line.startsWith(F("+IPD")) && (line.indexOf(":") != -1);
+  if(buff.size() < 9) // минимальная длина для IPD, на примере +IPD,1,1:
+    return false;
+
+  if(buff[0] == '+' && buff[1] == 'I' && buff[2] == 'P' && buff[3] == 'D')
+  {
+    size_t to = min(buff.size(),20); // заглядываем вперёд на 20 символов, не больше
+    for(size_t i=4;i<to;i++)
+    {
+      if(buff[i] == ':') // буфер начинается на +IPD и содержит дальше ':', т.е. за ним уже идут данные
+        return true;
+    }
+  }
+
+  return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::update()
@@ -1984,97 +1724,178 @@ void CoreESPTransport::update()
   if(!ESPTransportSettings.enabled)
     return;
 
- if(!workStream || paused()) // либо нет рабочего потока, либо кто-то нас попросил ничего не вычитывать пока из ESP
-    return;
-
-  if(flags.onIdleTimer) // попросили подождать определённое время, в течение которого просто ничего не надо делать
+ if(flags.onIdleTimer) // попросили подождать определённое время, в течение которого просто ничего не надо делать
   {
-      if(millis() - timer > idleTime)
+      if(millis() - idleTimer > idleTime)
       {
         flags.onIdleTimer = false;
       }
-  } 
+  }
 
-  // флаг, что есть ответ от ESP, выставляется по признаку наличия хоть чего-то в буфере приёма
-  bool hasAnswer = workStream->available() > 0;
+  // читаем из потока всё, что там есть
+  readFromStream();
+
+   #ifdef CORE_SIM800_TRANSPORT_ENABLED
+   // и модуль GSM тоже тут обновим
+   SIM800.readFromStream();
+   #endif   
+
+  RecursionCounter recGuard(&recursionGuard);
+
+  if(recursionGuard > 1) // рекурсивный вызов - просто вычитываем из потока - и всё.
+  {
+    DBGLN(F("ESP: RECURSION!"));
+    return;
+  }
+  
+  bool hasAnswer = receiveBuffer.size();
+
+  if(!hasAnswer)
+  {
+      // нет ответа от ESP, проверяем, зависла ли она?
+      uint32_t hangTime = ESPTransportSettings.HangTimeout;
+      hangTime *= 1000;
+      if(millis() - timer > hangTime)
+      {
+          DBGLN(F("ESP: modem not answering, reboot!"));
+
+       if(ESPTransportSettings.Flags.UseRebootPin)
+        {
+          // есть пин, который надо использовать при зависании
+          pinMode(ESPTransportSettings.RebootPin,OUTPUT);
+          digitalWrite(ESPTransportSettings.RebootPin,!ESPTransportSettings.PowerOnLevel);
+        }
+       
+        machineState = espReboot;
+        timer = millis();
+        
+      } // if 
+  }
+  else // есть ответ
+  {
+   // timer = millis();
+  }
 
   // выставляем флаг, что мы хотя бы раз получили хоть чего-то от ESP
   flags.isAnyAnswerReceived = flags.isAnyAnswerReceived || hasAnswer;
 
-  bool hasAnswerLine = false; // флаг, что мы получили строку ответа от модема
+  bool hasAnswerLine = false; // флаг, что мы получили строку ответа от модема    
 
-  char ch;
-  while(workStream->available())
+  String thisCommandLine;
+
+  // тут проверяем, есть ли чего интересующего в буфере?
+  if(checkIPD(receiveBuffer))
   {
-    // здесь мы должны детектировать - пришло IPD или нет.
-    // если пришли данные - мы должны вычитать их длину, и уже после этого - отправить данные клиенту,
-    // напрямую читая из потока. Это нужно, потому что данные могут быть бинарными, и мы никогда в них не дождёмся
-    // перевода строки.
-     if(checkIPD(*wiFiReceiveBuff))
-     {     
-        processIPD(*wiFiReceiveBuff);
-                
-        delete wiFiReceiveBuff;
-        wiFiReceiveBuff = new String();
-        timer = millis();        
-        return; // надо вывалится из цикла, поскольку мы уже всё отослали клиенту, для которого пришли данные
-     }
-    
-    ch = workStream->read();
+      
+    // в буфере лежит +IPD,ID,DATA_LEN:
+      int16_t idx = receiveBuffer.indexOf(','); // ищем первую запятую после +IPD
+      uint8_t* ptr = receiveBuffer.pData();
+      ptr += idx+1;
+      // перешли за запятую, парсим ID клиента
+      String connectedClientID;
+      while(*ptr != ',')
+      {
+        connectedClientID += (char) *ptr;
+        ptr++;
+      }
+      ptr++; // за запятую
+      String dataLen;
+      while(*ptr != ':')
+      {
+        dataLen += (char) *ptr;
+        ptr++;
+      }
+  
+      // получили ID клиента и длину его данных, которые - пока в потоке, и надо их быстро попакетно вычитать
+      int ipdClientID = connectedClientID.toInt();
+      size_t ipdClientDataLength = dataLen.toInt();
 
-    if(ch == '\r') // ненужный нам символ
-      continue;
-    else
-    if(ch == '\n')
-    {   
-        hasAnswerLine = true; // выставляем флаг, что у нас есть строка ответа от ESP  
-        break; // выходим из цикла, остальное дочитаем позже, если это потребуется кому-либо
-    }
-    else
-    {     
-        if(flags.waitForDataWelcome && ch == '>') // ждём команду >  (на ввод данных)
-        {
-          flags.waitForDataWelcome = false;
-          *wiFiReceiveBuff = F(">");
-          hasAnswerLine = true;
-          break; // выходим из цикла, получили приглашение на ввод данных
-        }
-        else
-        {
-          *wiFiReceiveBuff += ch;
-                         
-          if(wiFiReceiveBuff->length() > 512) // буфер слишком длинный
-          {
-            DBGLN(F("ESP: incoming data too long, skip it!"));
-            delete wiFiReceiveBuff;
-            wiFiReceiveBuff = new String();
-          }
-        }
-    } // any char except '\r' and '\n' 
-    
-  } // while(workStream->available())
+      DBG(F("+IPD DETECTED, CLIENT #"));
+      DBG(String(ipdClientID));
+      DBG(F(", LENGTH="));
+      DBGLN(String(ipdClientDataLength));
 
-  if(hasAnswer)
+      // удаляем +IPD,ID,DATA_LEN:
+      receiveBuffer.remove(0,receiveBuffer.indexOf(':')+1);
+
+      // вычисляем, сколько надо дочитать из потока
+      while(receiveBuffer.size() < ipdClientDataLength)
+      {
+        // данных не хватает, дочитываем
+        if(!workStream->available())
+          continue;
+
+        receiveBuffer.push_back((uint8_t) workStream->read());
+
+        #ifdef CORE_SIM800_TRANSPORT_ENABLED
+          SIM800.readFromStream();
+        #endif
+      } // while
+
+      // дочитали всё из потока, теперь все данные уже лежат в памяти
+     CoreTransportClient* cl = getClient(ipdClientID);
+     notifyDataAvailable(*cl, receiveBuffer.pData(), ipdClientDataLength, true);
+
+     // уведомили клиентов, даже если и был рекурсивный вызов - мы просто вычитали из потока недостающее,
+     // и тут можем безопасно удалять голову.
+     receiveBuffer.remove(0,ipdClientDataLength);  
+    
+  } // if(checkIPD(receiveBuffer))
+  else if(flags.waitForDataWelcome && receiveBuffer[0] == '>')
   {
-     timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
+    flags.waitForDataWelcome = false;
+    thisCommandLine = '>';
+    hasAnswerLine = true;
+
+    receiveBuffer.remove(0,1);
   }
+  else // любые другие ответы от ESP
+  {
+    // ищем до первого перевода строки
+    size_t cntr = 0;
+    for(;cntr<receiveBuffer.size();cntr++)
+    {
+      if(receiveBuffer[cntr] == '\n')
+      {          
+        hasAnswerLine = true;
+        cntr++;
+        break;
+      }
+    } // for
 
-    if(hasAnswerLine && !wiFiReceiveBuff->length()) // пустая строка, не надо обрабатывать
-      hasAnswerLine = false;
+    if(hasAnswerLine) // нашли перевод строки в потоке
+    {
+      for(size_t i=0;i<cntr;i++)
+      {
+        if(receiveBuffer[i] != '\r' && receiveBuffer[i] != '\n')
+          thisCommandLine += (char) receiveBuffer[i];
+      } // for
 
-   #ifdef _CORE_DEBUG
+      receiveBuffer.remove(0,cntr);
+      
+    } // if(hasAnswerLine)
+  } // else
+
+  // если в приёмном буфере ничего нету - просто почистим память
+  if(!receiveBuffer.size())
+    receiveBuffer.clear();
+
+
+  if(hasAnswerLine && !thisCommandLine.length()) // пустая строка, не надо обрабатывать
+    hasAnswerLine = false;
+
     if(hasAnswerLine)
     {
       DBG(F("<== ESP: "));
-      DBGLN(*wiFiReceiveBuff);
+      DBGLN(thisCommandLine);
     }
-   #endif
-
 
     // тут анализируем ответ от ESP, если он есть, на предмет того - соединён ли клиент, отсоединён ли клиент и т.п.
     // это нужно делать именно здесь, поскольку в этот момент в ESP может придти внешний коннект.
     if(hasAnswerLine)
-      processKnownStatusFromESP(*wiFiReceiveBuff);
+    {
+      processKnownStatusFromESP(thisCommandLine);
+    }
 
   // при разборе ответа тут будет лежать тип ответа, чтобы часто не сравнивать со строкой
   ESPKnownAnswer knownAnswer = kaNone;
@@ -2090,6 +1911,7 @@ void CoreESPTransport::update()
             if(initCommandsQueue.size())
             {
                 DBGLN(F("ESP: process next init command..."));
+                
                 currentCommand = initCommandsQueue[initCommandsQueue.size()-1];
                 initCommandsQueue.pop();
                 sendCommand(currentCommand);
@@ -2102,7 +1924,7 @@ void CoreESPTransport::update()
               if(clientsQueue.size())
               {
                   // получаем первого клиента в очереди
-                  ESPClientQueueData dt = clientsQueue[0];
+                  TransportClientQueueData dt = clientsQueue[0];
                   int clientID = dt.client->socket;
                   
                   // смотрим, чего он хочет от нас
@@ -2128,10 +1950,10 @@ void CoreESPTransport::update()
                       
                       if(flags.connectedToRouter)
                       {
-                        waitCipstartConnect = true;
+                        flags.waitCipstartConnect = true;
                         cipstartConnectClient = dt.client;
                         cipstartConnectClientID = clientID;
-                        cipstartConnectKnownAnswerFound = false;
+                        flags.cipstartConnectKnownAnswerFound = false;
   
                         currentCommand = cmdCIPSTART;
                         String comm = F("AT+CIPSTART=");
@@ -2220,26 +2042,49 @@ void CoreESPTransport::update()
                   }
                   break; // cmdNone
 
+                  case cmdPING:
+                  {
+                    // ждали ответа на пинг
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
+                    {
+                      flags.specialCommandDone = true;
+                      specialCommandResults.push_back(new String(thisCommandLine.c_str()));
+                      machineState = espIdle; // переходим к следующей команде
+                    }
+                    
+                  }
+                  break; // cmdPING
+
+                  case cmdCIFSR:
+                  {
+                    // ждём выполнения команды CIFSR
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
+                    {
+                      flags.specialCommandDone = true;
+                      machineState = espIdle; // переходим к следующей команде
+                    }
+                    else if(thisCommandLine.startsWith(F("+CIFSR:")))
+                    {
+                      specialCommandResults.push_back(new String(thisCommandLine.c_str()));
+                    }
+                  }
+                  break; // cmdCIFSR
+
                   case cmdCIPCLOSE:
                   {
                     // отсоединялись. Здесь не надо ждать известного ответа, т.к. ответ может придти асинхронно
-                    //if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
-                    {
                       if(clientsQueue.size())
                       {
                         // клиент отсоединён, ставим ему соответствующий флаг, освобождаем его и удаляем из очереди
-                        ESPClientQueueData dt = clientsQueue[0];
+                        TransportClientQueueData dt = clientsQueue[0];
 
                         CoreTransportClient* thisClient = dt.client;
                         removeClientFromQueue(thisClient);
 
-                        // событие здесь не надо отсылать, т.к. в ветке обработки ...,CLOSED оно само обработается
-                        //notifyClientConnected(*thisClient,false,CT_ERROR_NONE);
-
                       } // if(clientsQueue.size()) 
                       
                         machineState = espIdle; // переходим к следующей команде
-                    }
+
                   }
                   break; // cmdCIPCLOSE
 
@@ -2248,11 +2093,11 @@ void CoreESPTransport::update()
                     // соединялись, коннект у нас только с внутреннего соединения, поэтому в очереди лежит по-любому
                     // указатель на связанного с нами клиента, который использует внешний пользователь транспорта
                     
-                        if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
+                        if(isKnownAnswer(thisCommandLine,knownAnswer))
                         {
                           if(knownAnswer == kaOK || knownAnswer == kaError || knownAnswer == kaAlreadyConnected)
                           {
-                            cipstartConnectKnownAnswerFound = true;
+                            flags.cipstartConnectKnownAnswerFound = true;
                           }
                             
                           if(knownAnswer == kaOK)
@@ -2260,7 +2105,7 @@ void CoreESPTransport::update()
                             // законнектились удачно, после этого должна придти строка ID,CONNECT
                             if(clientsQueue.size())
                             {
-                               ESPClientQueueData dt = clientsQueue[0];
+                               TransportClientQueueData dt = clientsQueue[0];
                                removeClientFromQueue(dt.client);                              
                             }
                           }
@@ -2269,10 +2114,10 @@ void CoreESPTransport::update()
                               
                             if(clientsQueue.size())
                             {
-                               DBG(F("ESP: Client connect ERROR, received: "));
-                               DBGLN(*wiFiReceiveBuff);
+                                DBG(F("ESP: Client connect ERROR, received: "));
+                                DBGLN(thisCommandLine);
                                
-                               ESPClientQueueData dt = clientsQueue[0];
+                               TransportClientQueueData dt = clientsQueue[0];
 
                                CoreTransportClient* thisClient = dt.client;
                                removeClientFromQueue(thisClient);
@@ -2286,12 +2131,13 @@ void CoreESPTransport::update()
                             }
 
                             // ошибка соединения, строка ID,CONNECT нас уже не волнует
-                            waitCipstartConnect = false;
+                            flags.waitCipstartConnect = false;
                             cipstartConnectClient = NULL;
                             
                           } // else
                           machineState = espIdle; // переходим к следующей команде
-                        }       
+                        }                    
+                    
                   }
                   break; // cmdCIPSTART
 
@@ -2300,20 +2146,17 @@ void CoreESPTransport::update()
                   {
                     // дожидаемся результата отсыла данных
                       
-                      if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
+                      if(isKnownAnswer(thisCommandLine,knownAnswer))
                       {
                         if(knownAnswer == kaSendOk)
                         {
                           // send ok
                           if(clientsQueue.size())
                           {
-                             ESPClientQueueData dt = clientsQueue[0];
+                             TransportClientQueueData dt = clientsQueue[0];
                              
                              CoreTransportClient* thisClient = dt.client;
                              removeClientFromQueue(thisClient);
-
-                              DBG(F("Clear buffer on client #"));
-                              DBGLN(thisClient->socket);
 
                              // очищаем данные у клиента
                              thisClient->clear();
@@ -2326,7 +2169,7 @@ void CoreESPTransport::update()
                           // send fail
                           if(clientsQueue.size())
                           {
-                             ESPClientQueueData dt = clientsQueue[0];
+                             TransportClientQueueData dt = clientsQueue[0];
 
                              CoreTransportClient* thisClient = dt.client;
                              removeClientFromQueue(thisClient);
@@ -2342,13 +2185,14 @@ void CoreESPTransport::update()
                         
                       } // if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
                        
+
                   }
                   break; // cmdWaitSendDone
 
                   case cmdCIPSEND:
                   {
                     // тут отсылали запрос на запись данных с клиента
-                    if(*wiFiReceiveBuff == F(">"))
+                    if(thisCommandLine == F(">"))
                     {
                        // дождались приглашения, можем писать в ESP
                        // тут пишем напрямую
@@ -2356,17 +2200,24 @@ void CoreESPTransport::update()
                        {
                           // говорим, что ждём окончания отсыла данных
                           currentCommand = cmdWaitSendDone;                          
-                          ESPClientQueueData dt = clientsQueue[0];
+                          TransportClientQueueData dt = clientsQueue[0];
 
                           DBG(F("ESP: > RECEIVED, CLIENT #"));
-                          DBG(dt.client->socket);
+                          DBG(String(dt.client->socket));
                           DBG(F("; LENGTH="));
-                          DBGLN(dt.dataLength);
+                          DBGLN(String(dt.dataLength));
 
-                          workStream->write(dt.data,dt.dataLength);
+                          for(size_t kk=0;kk<dt.dataLength;kk++)
+                          {
+                            workStream->write(dt.data[kk]);
+                            readFromStream();
 
-                          waitTransmitComplete();
-
+                             #ifdef CORE_SIM800_TRANSPORT_ENABLED
+                             // и модуль GSM тоже тут обновим
+                             SIM800.readFromStream();
+                             #endif                             
+                          }
+                          
                           delete [] clientsQueue[0].data;
                           delete [] clientsQueue[0].ip;
                           clientsQueue[0].data = NULL;
@@ -2378,19 +2229,19 @@ void CoreESPTransport::update()
                        }
                     } // if
                     else
-                    if(wiFiReceiveBuff->indexOf(F("FAIL")) != -1 || wiFiReceiveBuff->indexOf(F("ERROR")) != -1)
+                    if(thisCommandLine.indexOf(F("FAIL")) != -1 || thisCommandLine.indexOf(F("ERROR")) != -1)
                     {
                        // всё плохо, не получилось ничего записать
                       if(clientsQueue.size())
                       {
                          
-                         ESPClientQueueData dt = clientsQueue[0];
+                         TransportClientQueueData dt = clientsQueue[0];
 
                          CoreTransportClient* thisClient = dt.client;
                          removeClientFromQueue(thisClient);
 
-                         DBG(F("ESP: CLIENT WRITE ERROR #"));
-                         DBGLN(thisClient->socket);
+                          DBG(F("ESP: CLIENT WRITE ERROR #"));
+                          DBGLN(String(thisClient->socket));
 
                          // очищаем данные у клиента
                          thisClient->clear();
@@ -2403,13 +2254,12 @@ void CoreESPTransport::update()
               
                     } // else can't write
                     
-                    
                   }
                   break; // cmdCIPSEND
                   
                   case cmdWantReady: // ждём загрузки модема в ответ на команду AT+RST
                   {
-                    if(isESPBootFound(*wiFiReceiveBuff))
+                    if(isESPBootFound(thisCommandLine))
                     {
                       DBGLN(F("ESP: BOOT FOUND!!!"));                      
                       machineState = espIdle; // переходим к следующей команде
@@ -2419,7 +2269,7 @@ void CoreESPTransport::update()
 
                   case cmdEchoOff:
                   {
-                    if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("ESP: Echo OFF command processed."));
                       machineState = espIdle; // переходим к следующей команде
@@ -2429,7 +2279,7 @@ void CoreESPTransport::update()
 
                   case cmdCWMODE:
                   {
-                    if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("ESP: CWMODE command processed."));
                       machineState = espIdle; // переходим к следующей команде
@@ -2439,7 +2289,7 @@ void CoreESPTransport::update()
 
                   case cmdCWSAP:
                   {
-                    if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("ESP: CWSAP command processed."));
                       machineState = espIdle; // переходим к следующей команде
@@ -2449,7 +2299,7 @@ void CoreESPTransport::update()
 
                   case cmdCWJAP:
                   {                    
-                    if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
 
                       machineState = espIdle; // переходим к следующей команде
@@ -2472,7 +2322,7 @@ void CoreESPTransport::update()
 
                   case cmdCWQAP:
                   {                    
-                    if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("ESP: CWQAP command processed."));
                       machineState = espIdle; // переходим к следующей команде
@@ -2482,7 +2332,7 @@ void CoreESPTransport::update()
 
                   case cmdCIPMODE:
                   {                    
-                    if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("ESP: CIPMODE command processed."));
                       machineState = espIdle; // переходим к следующей команде
@@ -2492,7 +2342,7 @@ void CoreESPTransport::update()
 
                   case cmdCIPMUX:
                   {                    
-                    if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("ESP: CIPMUX command processed."));
                       machineState = espIdle; // переходим к следующей команде
@@ -2502,7 +2352,7 @@ void CoreESPTransport::update()
                   
                   case cmdCIPSERVER:
                   {                    
-                    if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("ESP: CIPSERVER command processed."));
                       machineState = espIdle; // переходим к следующей команде
@@ -2512,7 +2362,7 @@ void CoreESPTransport::update()
 
                   case cmdCheckModemHang:
                   {                    
-                    if(isKnownAnswer(*wiFiReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("ESP: ESP answered and available."));
                       machineState = espIdle; // переходим к следующей команде
@@ -2525,14 +2375,14 @@ void CoreESPTransport::update()
                           // чтобы часто не дёргать реконнект - мы говорим, что после рестарта надо подождать 5 секунд перед тем, как обрабатывать следующую команду
                           DBGLN(F("ESP: Wait 5 seconds before reconnect..."));
                           flags.onIdleTimer = true;
-                          timer = millis();
+                          idleTimer = millis();
                           idleTime = 5000;
                           
                        } // if(flags.wantReconnect)
                       
                     } // if(isKnownAnswer
 
-                     if(*wiFiReceiveBuff == F("No AP"))
+                     if(thisCommandLine == F("No AP"))
                      {
                         if(ESPTransportSettings.Flags.ConnectToRouter)
                         {
@@ -2547,7 +2397,7 @@ void CoreESPTransport::update()
                       {
                         // на случай, когда ESP не выдаёт WIFI CONNECTED в порт - проверяем статус коннекта тут,
                         // как признак, что строчка содержит ID нашей сети, проще говоря - не равна No AP
-                        if(wiFiReceiveBuff->startsWith(F("+CWJAP")))
+                        if(thisCommandLine.startsWith(F("+CWJAP")))
                           flags.connectedToRouter = true;
                         
                       }
@@ -2602,46 +2452,22 @@ void CoreESPTransport::update()
     } // switch
 
   } // if(!flags.onIdleTimer)
-
-
-  if(hasAnswerLine)
-  {
-    // не забываем чистить за собой
-      delete wiFiReceiveBuff;
-      wiFiReceiveBuff = new String();       
-  }
-
-
-    if(!hasAnswer) // проверяем на зависание
-    {
-
-      // нет ответа от ESP, проверяем, зависла ли она?
-      uint32_t hangTime = ESPTransportSettings.HangTimeout;
-      hangTime *= 1000;
-      if(millis() - timer > hangTime)
-      {
-        DBGLN(F("ESP: modem not answering, reboot!"));
-
-       if(ESPTransportSettings.Flags.UseRebootPin)
-        {
-          // есть пин, который надо использовать при зависании
-          pinMode(ESPTransportSettings.RebootPin,OUTPUT);
-          digitalWrite(ESPTransportSettings.RebootPin,!ESPTransportSettings.PowerOnLevel);
-        }
-
-        machineState = espReboot;
-        timer = millis();
-        
-      } // if   
-         
-    }    
     
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreESPTransport::clearSpecialCommandResults()
+{
+  for(size_t i=0;i<specialCommandResults.size();i++)
+  {
+    delete specialCommandResults[i];
+  }
+  specialCommandResults.clear();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::begin()
 {
   workStream = NULL;
-  waitCipstartConnect = false;
+  flags.waitCipstartConnect = false;
 
   initPool();
 
@@ -2723,8 +2549,8 @@ void CoreESPTransport::begin()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::restart()
 {
-  delete wiFiReceiveBuff;
-  wiFiReceiveBuff = new String();
+  // очищаем входной буфер
+  receiveBuffer.clear();
 
   // очищаем очередь клиентов, заодно им рассылаем события
   clearClientsQueue(true);
@@ -2736,9 +2562,10 @@ void CoreESPTransport::restart()
   flags.connectedToRouter = false;
   flags.wantReconnect = false;
   flags.onIdleTimer = false;
-  flags.bPaused = false;
   
   timer = millis();
+
+  flags.waitCipstartConnect = false; // не ждёт соединения внешнего клиента
 
   currentCommand = cmdNone;
   machineState = espIdle;
@@ -2776,13 +2603,13 @@ void CoreESPTransport::clearInitCommands()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPTransport::clearClientsQueue(bool raiseEvents)
 {
- // тут попросили освободить очередь клиентов.
+   // тут попросили освободить очередь клиентов.
   // для этого нам надо выставить каждому клиенту флаг того, что он свободен,
   // плюс - сообщить, что текущее действие над ним не удалось.  
 
     for(size_t i=0;i<clientsQueue.size();i++)
     {
-        ESPClientQueueData dt = clientsQueue[i];
+        TransportClientQueueData dt = clientsQueue[i];
         delete [] dt.data;
         delete [] dt.ip;
 
@@ -2818,6 +2645,8 @@ void CoreESPTransport::clearClientsQueue(bool raiseEvents)
           
 
         } // if(raiseEvents)
+
+        dt.client->clear();
         
     } // for
 
@@ -2825,7 +2654,7 @@ void CoreESPTransport::clearClientsQueue(bool raiseEvents)
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool CoreESPTransport::isClientInQueue(CoreTransportClient* client, ESPClientAction action)
+bool CoreESPTransport::isClientInQueue(CoreTransportClient* client, TransportClientAction action)
 {
   for(size_t i=0;i<clientsQueue.size();i++)
   {
@@ -2836,7 +2665,7 @@ bool CoreESPTransport::isClientInQueue(CoreTransportClient* client, ESPClientAct
   return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPTransport::addClientToQueue(CoreTransportClient* client, ESPClientAction action, const char* ip, uint16_t port)
+void CoreESPTransport::addClientToQueue(CoreTransportClient* client, TransportClientAction action, const char* ip, uint16_t port)
 {
   while(isClientInQueue(client, action))
   {
@@ -2848,7 +2677,7 @@ void CoreESPTransport::addClientToQueue(CoreTransportClient* client, ESPClientAc
     removeClientFromQueue(client,action);
   }
 
-    ESPClientQueueData dt;
+    TransportClientQueueData dt;
     dt.client = client;
     dt.action = action;
     
@@ -2861,16 +2690,19 @@ void CoreESPTransport::addClientToQueue(CoreTransportClient* client, ESPClientAc
     dt.port = port;
 
     clientsQueue.push_back(dt);
+    
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreESPTransport::removeClientFromQueue(CoreTransportClient* client, ESPClientAction action)
+void CoreESPTransport::removeClientFromQueue(CoreTransportClient* client, TransportClientAction action)
 {
+  
   for(size_t i=0;i<clientsQueue.size();i++)
   {
     if(clientsQueue[i].client == client && clientsQueue[i].action == action)
     {
       delete [] clientsQueue[i].ip;
       delete [] clientsQueue[i].data;
+      client->clear();
       
         for(size_t j=i+1;j<clientsQueue.size();j++)
         {
@@ -3782,9 +3614,7 @@ void CoreMQTT::processIncomingPacket(CoreTransportClient* client, uint8_t* packe
               delete streamBuffer;
               streamBuffer = new String();
 
-              currentTransport->pause();
               Core.processCommand(topic,this);
-              currentTransport->resume();
 
               // тут получили ответ, и надо опубликовать его в брокер
               pushToReportQueue(streamBuffer);
@@ -4549,31 +4379,62 @@ CoreSIM800Transport SIM800;
 CoreSIM800Transport::CoreSIM800Transport() : CoreTransport(SIM800_MAX_CLIENTS)
 {
 
-  sim800ReceiveBuff = new String();
-  smsToSend = new String();
-  flags.bPaused = false;
-
-  waitCipstartConnect = false;
+  recursionGuard = 0;
+  flags.waitCipstartConnect = false;
   cipstartConnectClient = NULL;
+  workStream = NULL;
   
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::readFromStream()
+{
+  if(!workStream)
+    return;
+    
+  while(workStream->available())
+  {
+    receiveBuffer.push_back((uint8_t) workStream->read()); 
+  }
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::sendCommand(const String& command, bool addNewLine)
 {
-  DBG(F("SIM800: ==>> "));
-  DBGLN(command);
-  
-  workStream->write(command.c_str(),command.length());
-  
+  size_t len = command.length();
+  for(size_t i=0;i<len;i++)
+  {
+    // записали байтик
+    workStream->write(command[i]);
+
+    // прочитали, что пришло от ESP
+    readFromStream();
+
+   #ifdef CORE_ESP_TRANSPORT_ENABLED
+     // и модуль ESP тоже тут обновим
+     ESP.readFromStream();
+   #endif     
+  }
+    
   if(addNewLine)
   {
     workStream->println();
-  }  
+  }
+  
+  // прочитали, что пришло от SIM800
+  readFromStream();
+
+   #ifdef CORE_ESP_TRANSPORT_ENABLED
+   // и модуль ESP тоже тут обновим
+   ESP.readFromStream();
+   #endif   
+
+   DBG(F("SIM800: ==> "));
+   DBGLN(command);
 
   machineState = sim800WaitAnswer; // говорим, что надо ждать ответа от SIM800
   // запоминаем время отсылки последней команды
   timer = millis();
+  
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -4592,6 +4453,7 @@ void CoreSIM800Transport::sendCommand(SIM800Commands command)
     case smaCMGS:
     case smaWaitForSMSClearance:
     case smaWaitSMSSendDone:
+    case smaCUSD:
     break;
 
     case smaCheckReady:
@@ -4773,110 +4635,6 @@ bool CoreSIM800Transport::isKnownAnswer(const String& line, SIM800KnownAnswer& r
   return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreSIM800Transport::processIPD()
-{
-  DBG(F("SIM800: start parse +RECEIVE, received="));
-  DBGLN(*sim800ReceiveBuff);
-
-  // здесь в sim800ReceiveBuff лежит только команда вида +RECEIVE,<id>,<len>:
-  // все данные надо вычитывать из потока
-        
-    int16_t idx = sim800ReceiveBuff->indexOf(F(",")); // ищем первую запятую после +IPD
-    const char* ptr = sim800ReceiveBuff->c_str();
-    ptr += idx+1;
-    // перешли за запятую, парсим ID клиента
-    String connectedClientID = F("");
-    while(*ptr != ',')
-    {
-      connectedClientID += (char) *ptr;
-      ptr++;
-    }
-    ptr++; // за запятую
-    String dataLen;
-    while(*ptr != ':')
-    {
-      dataLen += (char) *ptr;
-      ptr++; // перешли на начало данных
-    }
-
-    // получили ID клиента и длину его данных, которые - пока в потоке, и надо их быстро попакетно вычитать
-    int16_t clientID = connectedClientID.toInt();
-    size_t lengthOfData = dataLen.toInt();
-    
-    if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
-    {
-
-     /* 
-      DBG(F("SIM800: data for client  #"));
-      DBG(clientID);
-      DBG(F("; len="));
-      DBGLN(lengthOfData);
-      */
-       CoreTransportClient* client = getClient(clientID);
-
-       // у нас есть lengthOfData с данными для клиента, нам надо побить это на пакеты длиной N байт,
-       // и последовательно вызывать событие прихода данных. Это нужно для того, чтобы не переполнить оперативку,
-       // поскольку у нас её - не вагон.
-
-      // пусть у нас будет максимум 512 байт на пакет
-      const uint16_t MAX_PACKET_SIZE = 512;
-      
-      // если длина всех данных меньше 512 - просто тупо все сразу вычитаем
-       uint16_t packetSize = min(MAX_PACKET_SIZE,lengthOfData);
-
-        // теперь выделяем буфер под данные
-        uint8_t* buff = new uint8_t[packetSize];
-
-        // у нас есть буфер, в него надо скопировать данные из потока
-        uint8_t* writePtr = buff;
-        
-        size_t packetWritten = 0; // записано в пакет
-        size_t totalWritten = 0; // всего записано
-
-            while(totalWritten < lengthOfData) // пока не запишем все данные с клиента
-            {
-                if(workStream->available())
-                {   
-                  *writePtr++ = (uint8_t) workStream->read();
-                  packetWritten++;
-                  totalWritten++;
-                }
-
-                if(packetWritten >= packetSize)
-                {
-                  // скопировали один пакет
-                  // сообщаем подписчикам, что данные для клиента получены
-                  notifyDataAvailable(*client, buff, packetWritten, totalWritten >= lengthOfData);
-
-                  // чистим память
-                  delete [] buff;    
-                   
-                  // пересчитываем длину пакета, вдруг там мало осталось, и незачем выделять под несколько байт огромный буфер
-                  packetSize =  min(MAX_PACKET_SIZE, lengthOfData - totalWritten);
-                  buff = new uint8_t[packetSize];
-                  writePtr = buff; // на начало буфера
-                  packetWritten = 0;
-                }
-              
-            } // while
-
-            // проверяем - есть ли остаток?
-            if(packetWritten > 0)
-            {
-              // после прохода цикла есть остаток данных, уведомляем клиента
-              // сообщаем подписчикам, что данные для клиента получены
-               notifyDataAvailable(*client, buff, packetWritten, totalWritten >= lengthOfData);
-
-            }
-            delete [] buff;
-                  
-       
-    } // if(clientID >=0 && clientID < ESP_MAX_CLIENTS)
-    
-
-  DBGLN(F("SIM800: +RECEIVE parsed."));  
-}
-//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::processIncomingCall(const String& line)
 {
  // приходит строка вида
@@ -4940,6 +4698,25 @@ void CoreSIM800Transport::processCMT(const String& pdu)
   } // if(pdu.length())
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::sendQueuedCUSD()
+{
+  if(!cusdList.size())
+    return;
+
+  String* cusdToSend = cusdList[0];
+
+  for(size_t i=1;i<cusdList.size();i++)
+  {
+    cusdList[i-1] = cusdList[i];
+  }
+
+  cusdList.pop();
+
+  sendCommand(*cusdToSend);
+  delete cusdToSend;
+  currentCommand = smaCUSD;  
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::sendQueuedSMS()
 {
   if(!outgoingSMSList.size())
@@ -4955,12 +4732,6 @@ void CoreSIM800Transport::sendQueuedSMS()
   PDUOutgoingMessage encodedMessage = PDU.Encode(*(sms->phone),*(sms->message),sms->isFlash, smsToSend);
   messageLength = encodedMessage.MessageLength;
   
-/*
-  ///////////////////////////////////////////////////
-  *smsToSend = "0001000B919781920060F30008080074006500730074";
-  messageLength = 21;
-  ///////////////////////////////////////////////////
-*/
     
   delete sms->phone;
   delete sms->message;
@@ -4988,210 +4759,330 @@ void CoreSIM800Transport::sendQueuedSMS()
   
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::processKnownStatusFromSIM800(const String& line)
+{
+  if(flags.pduInNextLine) // в прошлой строке пришло +CMT, поэтому в текущей - содержится PDU
+  {
+      flags.pduInNextLine = false;
+
+      // разбираем, чего там пришло
+      processCMT(line);
+
+      timer = millis();
+      return; 
+  }
+
+  // смотрим, подсоединился ли клиент?
+   int16_t idx = line.indexOf(F(", CONNECT OK"));
+   if(idx != -1)
+   {
+      // клиент подсоединился
+      String s = line.substring(0,idx);
+      int16_t clientID = s.toInt();
+      if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
+      {
+          DBG(F("SIM800: client connected - #"));
+          DBGLN(String(clientID));
+
+        // тут смотрим - посылали ли мы запрос на коннект?
+        if(flags.waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
+        {                
+          // есть клиент, для которого надо установить ID
+          cipstartConnectClient->bind(clientID);
+          flags.waitCipstartConnect = false;
+          cipstartConnectClient = NULL;
+          cipstartConnectClientID = NO_CLIENT_ID;              
+        } // if                 
+
+        // выставляем клиенту флаг, что он подсоединён
+        CoreTransportClient* client = getClient(clientID);              
+        notifyClientConnected(*client,true,CT_ERROR_NONE);
+      }
+   } // if
+
+   idx = line.indexOf(F(", CLOSE OK"));
+   if(idx == -1)
+    idx = line.indexOf(F(", CLOSED"));
+   if(idx == -1)
+    idx = line.indexOf(F("CONNECT FAIL"));
+    
+   if(idx != -1)
+   {
+    // клиент отсоединился
+      String s = line.substring(0,idx);
+      int16_t clientID = s.toInt();
+      if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
+      {
+          DBG(F("SIM800: client disconnected - #"));
+          DBGLN(String(clientID));
+
+        // выставляем клиенту флаг, что он отсоединён
+        CoreTransportClient* client = getClient(clientID);
+        notifyClientConnected(*client,false,CT_ERROR_NONE);
+
+        if(flags.waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
+        {                
+          // есть клиент, для которого надо установить ID
+          cipstartConnectClient->bind(clientID);
+          notifyClientConnected(*cipstartConnectClient,false,CT_ERROR_NONE);
+          cipstartConnectClient->bind(NO_CLIENT_ID);
+          flags.waitCipstartConnect = false;
+          cipstartConnectClient = NULL;
+          cipstartConnectClientID = NO_CLIENT_ID;
+                  
+        } // if                           
+      }        
+    
+   } // if(idx != -1)
+
+  if(line.startsWith(F("+CLIP:")))
+  {
+    DBGLN(F("SIM800: +CLIP detected, parse!"));   
+    processIncomingCall(line);
+    
+    timer = millis();        
+    return; // поскольку мы сами отработали входящий звонок - выходим
+  }
+  else
+  if(line.startsWith(F("+CMT:")))
+  {
+      flags.pduInNextLine = true;
+      return;
+  }
+  else
+  if(line.startsWith(F("+CUSD:")))
+  {
+    // пришёл ответ на запрос CUSD
+     DBGLN(F("SIM800: +CUSD detected, parse!"));
+      
+    // дождались ответа, парсим
+    int quotePos = line.indexOf('"');
+    int lastQuotePos = line.lastIndexOf('"');
+    
+    if(quotePos != -1 && lastQuotePos != -1 && quotePos != lastQuotePos) 
+    {
+   
+      String cusdSMS = line.substring(quotePos+1,lastQuotePos);
+      
+        DBG(F("ENCODED CUSD IS: ")); 
+        DBGLN(cusdSMS);
+
+      // тут декодируем CUSD
+      String decodedCUSD = PDU.getUTF8From16BitEncoding(cusdSMS);
+
+        DBG(F("DECODED CUSD IS: ")); 
+        DBG(decodedCUSD);
+
+      ON_CUSD_RECEIVED(decodedCUSD);
+    
+    }
+    return;   
+  } // if(line.startsWith(F("+CUSD:")))
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+bool CoreSIM800Transport::checkIPD(const TransportReceiveBuffer& buff)
+{
+  if(buff.size() < 13) // минимальная длина для RECEIVE, на примере +RECEIVE,1,1:
+    return false;
+
+  if(buff[0] == '+' && buff[1] == 'R' && buff[2] == 'E' && buff[3] == 'C'  && buff[4] == 'E'
+   && buff[5] == 'I'  && buff[6] == 'V'  && buff[7] == 'E')
+  {
+    size_t to = min(buff.size(),30); // заглядываем вперёд на 30 символов, не больше
+    for(size_t i=8;i<to;i++)
+    {
+      if(buff[i] == ':') // буфер начинается на +RECEIVE и содержит дальше ':', т.е. за ним уже идут данные
+        return true;
+    }
+  }
+
+  return false;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::update()
 {
-  if(!SIM800TransportSettings.enabled || !workStream || paused())
+  if(!SIM800TransportSettings.enabled || !workStream )
     return;
- 
-  if(flags.onIdleTimer) // попросили подождать определённое время, в течение которого просто ничего не надо делать
+
+ if(flags.onIdleTimer) // попросили подождать определённое время, в течение которого просто ничего не надо делать
   {
-      if(millis() - timer > idleTime)
+      if(millis() - idleTimer > idleTime)
       {
-        DBGLN(F("SIM800: idle done!"));
         flags.onIdleTimer = false;
       }
-  } 
+  }
 
+  // читаем из потока всё, что там есть
+  readFromStream();
 
-  // флаг, что есть ответ от ESP, выставляется по признаку наличия хоть чего-то в буфере приёма
-  bool hasAnswer = workStream->available() > 0;
+   #ifdef CORE_ESP_TRANSPORT_ENABLED
+   // и модуль ESP тоже тут обновим
+   ESP.readFromStream();
+   #endif   
+
+  RecursionCounter recGuard(&recursionGuard);
+
+  if(recursionGuard > 1) // рекурсивный вызов - просто вычитываем из потока - и всё.
+  {
+    DBGLN(F("SIM800: RECURSION!"));
+    return;
+  }
+  
+  bool hasAnswer = receiveBuffer.size();
+
+  if(!hasAnswer)
+  {
+      // нет ответа от SIM800, проверяем, завис ли он?
+      uint32_t hangTime = SIM800TransportSettings.HangTimeout;
+      hangTime *= 1000;
+
+      if(millis() - timer > hangTime)
+      {
+        DBGLN(F("SIM800: modem not answering, reboot!"));
+
+        if(SIM800TransportSettings.UseRebootPin)
+        {
+          // есть пин, который надо использовать при зависании
+          digitalWrite(SIM800TransportSettings.RebootPin,!SIM800TransportSettings.PowerOnLevel);
+        }
+
+        machineState = sim800Reboot;
+        timer = millis();
+        
+      } // if   
+  }
+  else // есть ответ
+  {    
+   // timer = millis();
+  }
 
   // выставляем флаг, что мы хотя бы раз получили хоть чего-то от ESP
   flags.isAnyAnswerReceived = flags.isAnyAnswerReceived || hasAnswer;
 
-  bool hasAnswerLine = false; // флаг, что мы получили строку ответа от модема
+  bool hasAnswerLine = false; // флаг, что мы получили строку ответа от модема    
 
-  char ch;
-  while(workStream->available())
+  String thisCommandLine;
+
+  // тут проверяем, есть ли чего интересующего в буфере?
+  if(checkIPD(receiveBuffer))
   {
-    // здесь мы должны детектировать - пришло IPD или нет.
-    // если пришли данные - мы должны вычитать их длину, и уже после этого - отправить данные клиенту,
-    // напрямую читая из потока. Это нужно, потому что данные могут быть бинарными, и мы никогда в них не дождёмся
-    // перевода строки.
-
-     if(sim800ReceiveBuff->startsWith(F("+RECEIVE")) && sim800ReceiveBuff->indexOf(":") != -1)
-     {
-        DBGLN(F("SIM800: +RECEIVE detected, parse!"));
-       
-        processIPD();
-                
-        delete sim800ReceiveBuff;
-        sim800ReceiveBuff = new String();
-        timer = millis();        
-        
-        return;
-     }
-
-    ch = workStream->read();
-    
-    if(ch == '\r') // ненужный нам символ
-      continue;
-    else
-    if(ch == '\n')
-    {   
-        hasAnswerLine = sim800ReceiveBuff->length(); // выставляем флаг, что у нас есть строка ответа от ESP  
-        break; // выходим из цикла, остальное дочитаем позже, если это потребуется кому-либо
-    }
-    else
-    {     
-        if(flags.waitForDataWelcome && ch == '>') // ждём команду >  (на ввод данных)
-        {
-          flags.waitForDataWelcome = false;
-          *sim800ReceiveBuff = F(">");
-          hasAnswerLine = true;
-          break; // выходим из цикла, получили приглашение на ввод данных
-        }
-        else
-        {
-          *sim800ReceiveBuff += ch;
-                         
-          if(sim800ReceiveBuff->length() > 2500) // буфер слишком длинный
-          {
-            DBGLN(F("SIM800: incoming data too long, skip it!"));
-            delete sim800ReceiveBuff;
-            sim800ReceiveBuff = new String();
-          }
-        }
-    } // any char except '\r' and '\n' 
-    
-  } // while(workStream->available())
-
-
-  if(hasAnswer)
-  {
-     timer = millis(); // не забываем обновлять таймер ответа - поскольку у нас что-то пришло - значит, модем отвечает
-  }
-
-      if(hasAnswerLine && sim800ReceiveBuff->length())
+      
+    // в буфере лежит +RECEIVE,ID,DATA_LEN:
+      int16_t idx = receiveBuffer.indexOf(','); // ищем первую запятую после +RECEIVE
+      uint8_t* ptr = receiveBuffer.pData();
+      ptr += idx+1;
+      // перешли за запятую, парсим ID клиента
+      String connectedClientID;
+      while(*ptr != ',')
       {
-
-        if(flags.pduInNextLine) // в прошлой строке пришло +CMT, поэтому в текущей - содержится PDU
-        {
-            flags.pduInNextLine = false;
-
-            // разбираем, чего там пришло
-            processCMT(*sim800ReceiveBuff);
-          
-            delete sim800ReceiveBuff;
-            sim800ReceiveBuff = new String();
-            timer = millis();
-            return;
-          
-        }
-  
-         // смотрим, подсоединился ли клиент?
-         int16_t idx = sim800ReceiveBuff->indexOf(F(", CONNECT OK"));
-         if(idx != -1)
-         {
-            // клиент подсоединился
-            String s = sim800ReceiveBuff->substring(0,idx);
-            int16_t clientID = s.toInt();
-            if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
-            {
-              DBG(F("SIM800: client connected - #"));
-              DBGLN(clientID);
-
-              // тут смотрим - посылали ли мы запрос на коннект?
-              if(waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
-              {                
-                // есть клиент, для которого надо установить ID
-                cipstartConnectClient->bind(clientID);
-                waitCipstartConnect = false;
-                cipstartConnectClient = NULL;
-                cipstartConnectClientID = NO_CLIENT_ID;              
-              } // if                 
-  
-              // выставляем клиенту флаг, что он подсоединён
-              CoreTransportClient* client = getClient(clientID);              
-              notifyClientConnected(*client,true,CT_ERROR_NONE);
-            }
-         } // if
-  
-         idx = sim800ReceiveBuff->indexOf(F(", CLOSED"));
-         bool isConnectFail = sim800ReceiveBuff->endsWith(F("CONNECT FAIL"));
-         if(idx != -1 || isConnectFail)
-         {
-          // клиент отсоединился
-            String s = sim800ReceiveBuff->substring(0,idx);
-            int16_t clientID = s.toInt();
-            if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
-            {
-              DBG(F("SIM800: client disconnected - #"));
-              DBGLN(clientID);
-  
-              // выставляем клиенту флаг, что он отсоединён
-              CoreTransportClient* client = getClient(clientID);
-              notifyClientConnected(*client,false,CT_ERROR_NONE);
-
-              if(waitCipstartConnect && cipstartConnectClient != NULL && clientID == cipstartConnectClientID)
-              {                
-                // есть клиент, для которого надо установить ID
-                cipstartConnectClient->bind(clientID);
-                notifyClientConnected(*cipstartConnectClient,false,CT_ERROR_NONE);
-                cipstartConnectClient->bind(NO_CLIENT_ID);
-                waitCipstartConnect = false;
-                cipstartConnectClient = NULL;
-                cipstartConnectClientID = NO_CLIENT_ID;
-                        
-              } // if                           
-            }        
-          
-         } // if(idx != -1)        
-        
-        /*
-        // выводим то, что получено, для теста
-        DBG(F("SIM800: <<==(c:"));
-        DBG(currentCommand);
-        DBG(F(", m:"));        
-        DBG(machineState);
-        DBG(F(", l:"));
-        DBG(sim800ReceiveBuff->length());
-        DBG(F("): "));
-        DBGLN(*sim800ReceiveBuff);
-        */
-
-        DBG(F("<<== "));
-        DBGLN(*sim800ReceiveBuff);
-
-        if(sim800ReceiveBuff->startsWith(F("+CLIP:")))
-        {
-          DBGLN(F("SIM800: +CLIP detected, parse!"));
-         
-          processIncomingCall(*sim800ReceiveBuff);
-                            
-          delete sim800ReceiveBuff;
-          sim800ReceiveBuff = new String();
-          
-          timer = millis();        
-          return; // поскольку мы сами отработали входящий звонок - выходим
-        }
-        else
-        if(sim800ReceiveBuff->startsWith(F("+CMT:")))
-          {
-            flags.pduInNextLine = true;
-            hasAnswerLine = false;
-            delete sim800ReceiveBuff;
-            sim800ReceiveBuff = new String();            
-          }
-        
+        connectedClientID += (char) *ptr;
+        ptr++;
       }
+      ptr++; // за запятую
+      String dataLen;
+      while(*ptr != ':')
+      {
+        dataLen += (char) *ptr;
+        ptr++;
+      }
+  
+      // получили ID клиента и длину его данных, которые - пока в потоке, и надо их быстро попакетно вычитать
+      int ipdClientID = connectedClientID.toInt();
+      size_t ipdClientDataLength = dataLen.toInt();
 
-   if(hasAnswerLine && sim800ReceiveBuff->startsWith(F("AT+")))
+        DBG(F("+RECEIVE DETECTED, CLIENT #"));
+        DBG(String(ipdClientID));
+        DBG(F(", LENGTH="));
+        DBGLN(String(ipdClientDataLength));
+
+      // удаляем +RECEIVE,ID,DATA_LEN:
+      receiveBuffer.remove(0,receiveBuffer.indexOf(':')+1);
+
+      // вычисляем, сколько надо дочитать из потока
+      while(receiveBuffer.size() < ipdClientDataLength)
+      {
+        // данных не хватает, дочитываем
+        if(!workStream->available())
+          continue;
+
+        receiveBuffer.push_back((uint8_t) workStream->read());
+
+        #ifdef CORE_ESP_TRANSPORT_ENABLED
+          ESP.readFromStream();
+        #endif
+      } // while
+
+      // дочитали всё из потока, теперь все данные уже лежат в памяти
+     CoreTransportClient* cl = getClient(ipdClientID);
+     notifyDataAvailable(*cl, receiveBuffer.pData(), ipdClientDataLength, true);
+
+     // уведомили клиентов, даже если и был рекурсивный вызов - мы просто вычитали из потока недостающее,
+     // и тут можем безопасно удалять голову.
+     receiveBuffer.remove(0,ipdClientDataLength);  
+    
+  } // if(checkIPD(receiveBuffer))
+  else if(flags.waitForDataWelcome && receiveBuffer[0] == '>')
+  {
+    flags.waitForDataWelcome = false;
+    thisCommandLine = '>';
+    hasAnswerLine = true;
+
+    receiveBuffer.remove(0,1);
+  }
+  else // любые другие ответы от SIM800
+  {
+    // ищем до первого перевода строки
+    size_t cntr = 0;
+    for(;cntr<receiveBuffer.size();cntr++)
+    {
+      if(receiveBuffer[cntr] == '\n')
+      {          
+        hasAnswerLine = true;
+        cntr++;
+        break;
+      }
+    } // for
+
+    if(hasAnswerLine) // нашли перевод строки в потоке
+    {
+      for(size_t i=0;i<cntr;i++)
+      {
+        if(receiveBuffer[i] != '\r' && receiveBuffer[i] != '\n')
+          thisCommandLine += (char) receiveBuffer[i];
+      } // for
+
+      receiveBuffer.remove(0,cntr);
+      
+    } // if(hasAnswerLine)
+  } // else
+
+  // если в приёмном буфере ничего нету - просто почистим память
+  if(!receiveBuffer.size())
+    receiveBuffer.clear();
+
+  if(hasAnswerLine && thisCommandLine.startsWith(F("AT+")))
    {
     // это эхо, игнорируем
-      *sim800ReceiveBuff = "";
+      thisCommandLine = "";
       hasAnswerLine = false;
    }
+
+
+  if(hasAnswerLine && !thisCommandLine.length()) // пустая строка, не надо обрабатывать
+    hasAnswerLine = false;
+
+    if(hasAnswerLine)
+    {
+      DBG(F("<== SIM800: "));
+      DBGLN(thisCommandLine);
+    }
+
+    // тут анализируем ответ от ESP, если он есть, на предмет того - соединён ли клиент, отсоединён ли клиент и т.п.
+    // это нужно делать именно здесь, поскольку в этот момент в SIM800 может придти внешний коннект.
+    if(hasAnswerLine)
+    {
+      processKnownStatusFromSIM800(thisCommandLine);
+    } 
 
     // при разборе ответа тут будет лежать тип ответа, чтобы часто не сравнивать со строкой
     SIM800KnownAnswer knownAnswer = gsmNone;
@@ -5207,6 +5098,7 @@ void CoreSIM800Transport::update()
             if(initCommandsQueue.size())
             {
                 DBGLN(F("SIM800: process next init command..."));
+                
                 currentCommand = initCommandsQueue[initCommandsQueue.size()-1];
                 initCommandsQueue.pop();
                 sendCommand(currentCommand);
@@ -5221,47 +5113,45 @@ void CoreSIM800Transport::update()
                 sendQueuedSMS();
               }
               else
+              if(cusdList.size())
+              {
+                sendQueuedCUSD();
+              }
+              else
               if(clientsQueue.size())
               {
                   // получаем первого клиента в очереди
-                  SIM800ClientQueueData dt = clientsQueue[0];
+                  TransportClientQueueData dt = clientsQueue[0];
                   int16_t clientID = dt.client->socket;
                   
                   // смотрим, чего он хочет от нас
                   switch(dt.action)
                   {
-                    case sim800DisconnectAction:
+                    case actionDisconnect:
                     {
                       // хочет отсоединиться
-                      /*
-                      DBG(F("SIM800: client #"));
-                      DBG(clientID);
-                      DBGLN(F(" wants to disconnect..."));
-                      */
+
                       currentCommand = smaCIPCLOSE;
                       String cmd = F("AT+CIPCLOSE=");
                       cmd += clientID;
                       sendCommand(cmd);                      
                       
                     }
-                    break; // sim800DisconnectAction
+                    break; // actionDisconnect
 
-                    case sim800ConnectAction:
+                    case actionConnect:
                     {
                       // хочет подсоединиться
+                      if(flags.gprsAvailable)
+                      {
                       // здесь надо искать первый свободный слот для клиента
                       CoreTransportClient* freeSlot = getClient(NO_CLIENT_ID);
                       clientID = freeSlot ? freeSlot->socket : NO_CLIENT_ID;
 
-                      waitCipstartConnect = true;
+                      flags.waitCipstartConnect = true;
                       cipstartConnectClient = dt.client;
                       cipstartConnectClientID = clientID;
                       
-                      /*
-                      DBG(F("SIM800: client #"));
-                      DBG(clientID);
-                      DBGLN(F(" want to connect..."));
-                      */
                       currentCommand = smaCIPSTART;
                       String comm = F("AT+CIPSTART=");
                       comm += clientID;
@@ -5269,23 +5159,29 @@ void CoreSIM800Transport::update()
                       comm += dt.ip;
                       comm += F("\",");
                       comm += dt.port;
-              
+
+                      delete [] clientsQueue[0].ip;
+                      clientsQueue[0].ip = NULL;
+                                      
                       // и отсылаем её
                       sendCommand(comm);
+                      } // gprsAvailable
+                      else
+                      {
+                        // нет GPRS, не можем устанавливать внешние соединения!!!
+                        removeClientFromQueue(dt.client);
+                        dt.client->bind(clientID);
+                        notifyClientConnected(*(dt.client),false,CT_ERROR_CANT_CONNECT);
+                        dt.client->release();                        
+                      }
                       
                     }
-                    break; // sim800ConnectAction
+                    break; // actionConnect
 
-                    case sim800WriteAction:
+                    case actionWrite:
                     {
                       // хочет отослать данные
-                      /*
-                      DBG(F("SIM800: client #"));
-                      DBG(clientID);
-                      DBG(F(" has data="));
-                      DBG(dt.client->getDataSize());
-                      DBGLN(F(" and wants to send it..."));
-                      */
+
                       currentCommand = smaCIPSEND;
 
                       size_t dataSize;
@@ -5302,7 +5198,7 @@ void CoreSIM800Transport::update()
                       
                       sendCommand(command);                      
                     }
-                    break; // sim800WriteAction
+                    break; // actionWrite
                   } // switch
               }
               else
@@ -5313,6 +5209,7 @@ void CoreSIM800Transport::update()
                 if(millis() - hangTimer > 30000)
                 {
                   DBGLN(F("SIM800: want to check modem availability..."));
+
                   hangTimer = millis();
                   sendCommand(smaCheckModemHang);
                   
@@ -5334,15 +5231,27 @@ void CoreSIM800Transport::update()
                   case smaNone:
                   {
                     // ничего не делаем
-                    DBGLN(F("SIM800: NO COMMAND!!!!"));
                   }
                   break; // cmdNone
 
+                  case smaCUSD:
+                  {
+                    // отсылали запрос CUSD
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
+                    {
+                      DBGLN(F("SIM800: CUSD WAS SENT."));
+                        
+                      machineState = sim800Idle;
+                    }                     
+                  }
+                  break; // smaCUSD
+
                   case smaWaitSMSSendDone:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("SIM800: SMS was sent."));
+
                       sendCommand(F("AT+CMGD=1,4"));
                       currentCommand = smaWaitForSMSClearance;
                     }                       
@@ -5351,7 +5260,7 @@ void CoreSIM800Transport::update()
 
                   case smaWaitForSMSClearance:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("SIM800: SMS cleared."));
                       machineState = sim800Idle;
@@ -5364,7 +5273,7 @@ void CoreSIM800Transport::update()
                   {
                     // отсылаем SMS
                     
-                          if(*sim800ReceiveBuff == F(">")) 
+                          if(thisCommandLine == F(">")) 
                           {
                             
                             // дождались приглашения, можно посылать    
@@ -5382,7 +5291,7 @@ void CoreSIM800Transport::update()
                           {
                   
                             DBG(F("SIM800: BAD ANWER TO SMS COMMAND: WANT '>', RECEIVED: "));
-                            DBGLN(*sim800ReceiveBuff);
+                            DBGLN(thisCommandLine);
 
                             delete smsToSend;
                             smsToSend = new String();
@@ -5397,23 +5306,20 @@ void CoreSIM800Transport::update()
                   case smaCIPCLOSE:
                   {
                     // отсоединялись. Ответа не ждём, т.к. может вклиниться всё, что угодно, пока мы ждём ответа
-                    //if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
-                    {                      
+
+                    
                       if(clientsQueue.size())
                       {
                         DBGLN(F("SIM800: Client disconnected."));
 
-                        SIM800ClientQueueData dt = clientsQueue[0];                        
+                        TransportClientQueueData dt = clientsQueue[0];                        
                         CoreTransportClient* thisClient = dt.client;
                         removeClientFromQueue(thisClient);
-
-                      // и событие отсылать не надо, пока он не отконнектится
-                      //  notifyClientConnected(*thisClient,false,CT_ERROR_NONE);
                                                
                       } // if(clientsQueue.size()) 
                       
                         machineState = sim800Idle; // переходим к следующей команде
-                    }
+
                   }
                   break; // smaCIPCLOSE
 
@@ -5421,7 +5327,7 @@ void CoreSIM800Transport::update()
                   {
                     // соединялись
                     
-                        if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                        if(isKnownAnswer(thisCommandLine,knownAnswer))
                         {                                                                                                        
                           if(knownAnswer == gsmConnectOk)
                           {
@@ -5430,7 +5336,7 @@ void CoreSIM800Transport::update()
                             {
                                DBGLN(F("SIM800: Client connected."));
                                
-                               SIM800ClientQueueData dt = clientsQueue[0];
+                               TransportClientQueueData dt = clientsQueue[0];
                                removeClientFromQueue(dt.client);       
                             }
                             machineState = sim800Idle; // переходим к следующей команде
@@ -5442,15 +5348,15 @@ void CoreSIM800Transport::update()
                             {
                                DBGLN(F("SIM800: Client connect ERROR!"));
 
-                              waitCipstartConnect = false;
+                              flags.waitCipstartConnect = false;
                               cipstartConnectClient = NULL;                               
                                
-                              SIM800ClientQueueData dt = clientsQueue[0];
+                              TransportClientQueueData dt = clientsQueue[0];
 
-                               CoreTransportClient* thisClient = dt.client;
-                               removeClientFromQueue(thisClient);
+                              CoreTransportClient* thisClient = dt.client;
+                              removeClientFromQueue(thisClient);
                                
-                               notifyClientConnected(*thisClient,false,CT_ERROR_CANT_CONNECT);
+                              notifyClientConnected(*thisClient,false,CT_ERROR_CANT_CONNECT);
                             }
                             machineState = sim800Idle; // переходим к следующей команде
                           } // gsmConnectFail
@@ -5464,7 +5370,7 @@ void CoreSIM800Transport::update()
                   {
                     // дожидаемся конца отсыла данных от клиента в SIM800
                       
-                      if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                      if(isKnownAnswer(thisCommandLine,knownAnswer))
                       {                                                
                         if(knownAnswer == gsmSendOk)
                         {
@@ -5473,7 +5379,7 @@ void CoreSIM800Transport::update()
                           {
                              DBGLN(F("SIM800: data was sent."));
                              
-                             SIM800ClientQueueData dt = clientsQueue[0];
+                             TransportClientQueueData dt = clientsQueue[0];
                              
                              CoreTransportClient* thisClient = dt.client;
                              removeClientFromQueue(thisClient);
@@ -5491,7 +5397,7 @@ void CoreSIM800Transport::update()
                           {
                              DBGLN(F("SIM800: send data fail!"));
                              
-                             SIM800ClientQueueData dt = clientsQueue[0];
+                             TransportClientQueueData dt = clientsQueue[0];
 
                              CoreTransportClient* thisClient = dt.client;
                              removeClientFromQueue(thisClient);
@@ -5506,7 +5412,7 @@ void CoreSIM800Transport::update()
   
                         machineState = sim800Idle; // переходим к следующей команде
                         
-                      } // if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                      } // if(isKnownAnswer(thisCommandLine,knownAnswer))
                        
 
                   }
@@ -5515,25 +5421,33 @@ void CoreSIM800Transport::update()
                   case smaCIPSEND:
                   {
                     // тут отсылали запрос на запись данных с клиента
-                    if(*sim800ReceiveBuff == F(">"))
+                    if(thisCommandLine == F(">"))
                     {
-                       // дождались приглашения, можем писать в ESP
+                       // дождались приглашения, можем писать в SIM800
                        // тут пишем напрямую
                        if(clientsQueue.size())
                        {
                           // говорим, что ждём окончания отсыла данных
                           currentCommand = smaWaitSendDone;                          
-                          SIM800ClientQueueData dt = clientsQueue[0];
+                          TransportClientQueueData dt = clientsQueue[0];                     
 
-                          //size_t bufferSize;
-                          //uint8_t* clientBuffer = dt.client->getBuffer(bufferSize);                        
-
-                          DBGLN(F("SIM800: > received, start write from client to SIM800..."));
+                           DBGLN(F("SIM800: > received, start write from client to SIM800..."));
                           
-                          workStream->write(dt.data,dt.dataLength);
+                          for(size_t kk=0;kk<dt.dataLength;kk++)
+                          {
+                            workStream->write(dt.data[kk]);
+                            readFromStream();
+
+                             #ifdef CORE_ESP_TRANSPORT_ENABLED
+                             // и модуль ESP тоже тут обновим
+                             ESP.readFromStream();
+                             #endif                             
+                          }
 
                           delete [] clientsQueue[0].data;
+                          delete [] clientsQueue[0].ip;
                           clientsQueue[0].data = NULL;
+                          clientsQueue[0].ip = NULL;
                           clientsQueue[0].dataLength = 0;
 
                           // очищаем данные у клиента сразу после отсыла
@@ -5541,7 +5455,7 @@ void CoreSIM800Transport::update()
                        }
                     } // if
                     else
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       if(knownAnswer == gsmError || knownAnswer == gsmSendFail)
                       {
@@ -5549,7 +5463,8 @@ void CoreSIM800Transport::update()
                           if(clientsQueue.size())
                           {
                              DBGLN(F("SIM800: Client write ERROR!"));
-                             SIM800ClientQueueData dt = clientsQueue[0];
+                             
+                             TransportClientQueueData dt = clientsQueue[0];
     
                              CoreTransportClient* thisClient = dt.client;
                              removeClientFromQueue(thisClient);
@@ -5571,20 +5486,23 @@ void CoreSIM800Transport::update()
                  
                   case smaCheckReady: // ждём готовности модема, ответ на команду AT+CPAS?
                   {
-                      if( sim800ReceiveBuff->startsWith( F("+CPAS:") ) ) 
+                      if( thisCommandLine.startsWith( F("+CPAS:") ) ) 
                       {
                           // это ответ на команду AT+CPAS, можем его разбирать
-                          if(*sim800ReceiveBuff == F("+CPAS: 0")) 
+                          if(thisCommandLine == F("+CPAS: 0")) 
                           {
                             // модем готов, можем убирать команду из очереди и переходить к следующей
                             DBGLN(F("SIM800: Modem ready."));
+                            
                             machineState = sim800Idle; // и переходим на следующую
                         }
                         else 
                         {
                            DBGLN(F("SIM800: Modem NOT ready, try again later..."));
+                           
                            idleTime = 2000; // повторим через 2 секунды
                            flags.onIdleTimer = true;
+                           idleTimer = millis();
                            // добавляем ещё раз эту команду
                            initCommandsQueue.push_back(smaCheckReady);
                            machineState = sim800Idle; // и пошлём ещё раз команду проверки готовности           
@@ -5596,7 +5514,7 @@ void CoreSIM800Transport::update()
 
                   case smaHangUp:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("SIM800: Call dropped."));
                       machineState = sim800Idle; // переходим к следующей команде
@@ -5606,9 +5524,10 @@ void CoreSIM800Transport::update()
 
                   case smaCIPHEAD:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("SIM800: CIPHEAD command processed."));
+
                       machineState = sim800Idle; // переходим к следующей команде
                     }
                   }
@@ -5616,17 +5535,20 @@ void CoreSIM800Transport::update()
 
                   case smaCIICR:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
-                      DBGLN(F("SIM800: CIICR command processed."));
+                       DBGLN(F("SIM800: CIICR command processed."));
                       machineState = sim800Idle; // переходим к следующей команде
 
                       if(knownAnswer == gsmOK)
                       {
                         // тут можем добавлять новые команды для GPRS
-                        idleTime = 1000; // обработаем ответ через 1 секунд
-                        flags.onIdleTimer = true;                           
+                        idleTime = 1000; // обработаем ответ через 1 секунду
+                        flags.onIdleTimer = true;
+                        idleTimer = millis();
+                                                   
                         DBGLN(F("SIM800: start checking GPRS connection..."));
+
                         initCommandsQueue.push_back(smaCIFSR);
                         gprsCheckingAttempts = 0;
                       }
@@ -5636,7 +5558,7 @@ void CoreSIM800Transport::update()
 
                   case smaCIFSR:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       // если мы здесь - мы не получили IP-адреса, т.к. ответ - один из известных
                       
@@ -5650,12 +5572,14 @@ void CoreSIM800Transport::update()
                           
                           idleTime = 5000; // обработаем ответ через 5 секунд
                           flags.onIdleTimer = true;
+                          idleTimer = millis();
                           initCommandsQueue.push_back(smaCIFSR);
                           machineState = sim800Idle; // переходим к следующей команде  
                         }
                         else
                         {
                           DBGLN(F("SIM800: Unable to get GPRS IP address!"));
+
                           // всё, исчерпали лимит на попытки получить IP-адрес
                           machineState = sim800Idle; // переходим к следующей команде
                           flags.gprsAvailable = false;
@@ -5664,15 +5588,17 @@ void CoreSIM800Transport::update()
                       else
                       {
                         DBGLN(F("SIM800: GPRS connection fail!"));
+
                         flags.gprsAvailable = false;
                         machineState = sim800Idle; // переходим к следующей команде
                       }
                     } // isKnownAnswer
                     else
-                    if(sim800ReceiveBuff->length() && sim800ReceiveBuff->indexOf(".") != -1)
+                    if(thisCommandLine.length() && thisCommandLine.indexOf(".") != -1)
                     {
-                      DBG(F("SIM800: GPRS IP address found - "));
-                      DBGLN(*sim800ReceiveBuff);
+                      DBG(F("SIM800: GPRS IP address found - "));                      
+                      DBGLN(thisCommandLine);
+                      
                       flags.gprsAvailable = true;
                       machineState = sim800Idle; // переходим к следующей команде          
                     }
@@ -5681,15 +5607,17 @@ void CoreSIM800Transport::update()
 
                   case smaCSTT:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("SIM800: CSTT command processed."));
+
                       machineState = sim800Idle; // переходим к следующей команде
 
                       if(knownAnswer == gsmOK)
                       {
                         // тут можем добавлять новые команды для GPRS
                         DBGLN(F("SIM800: start GPRS connection..."));
+
                         initCommandsQueue.push_back(smaCIICR);
                       }
                       else
@@ -5702,9 +5630,10 @@ void CoreSIM800Transport::update()
 
                   case smaCIPMODE:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("SIM800: CIPMODE command processed."));
+
                       machineState = sim800Idle; // переходим к следующей команде
                     }
                   }
@@ -5712,9 +5641,10 @@ void CoreSIM800Transport::update()
                   
                   case smaCIPMUX:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("SIM800: CIPMUX command processed."));
+
                       machineState = sim800Idle; // переходим к следующей команде
                     }
                   }
@@ -5723,7 +5653,7 @@ void CoreSIM800Transport::update()
 
                   case smaEchoOff:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       if(gsmOK == knownAnswer)
                       {
@@ -5740,11 +5670,12 @@ void CoreSIM800Transport::update()
 
                   case smaDisableCellBroadcastMessages:
                   {                    
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       if(gsmOK == knownAnswer)
                       {
                         DBGLN(F("SIM800: Broadcast SMS disabled."));
+
                       }
                       else
                       {
@@ -5757,7 +5688,7 @@ void CoreSIM800Transport::update()
 
                   case smaAON:
                   {                    
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       if(gsmOK == knownAnswer)
                       {
@@ -5774,15 +5705,17 @@ void CoreSIM800Transport::update()
 
                   case smaPDUEncoding:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       if(gsmOK == knownAnswer)
                       {
                         DBGLN(F("SIM800: PDU format is set."));
+
                       }
                       else
                       {
                         DBGLN(F("SIM800: PDU format command FAIL!"));
+
                       }
                       machineState = sim800Idle; // переходим к следующей команде
                     }                    
@@ -5791,11 +5724,12 @@ void CoreSIM800Transport::update()
 
                   case smaUCS2Encoding:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       if(gsmOK == knownAnswer)
                       {
                         DBGLN(F("SIM800: UCS2 encoding is set."));
+
                       }
                       else
                       {
@@ -5808,7 +5742,7 @@ void CoreSIM800Transport::update()
 
                   case smaSMSSettings:
                   {
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       if(gsmOK == knownAnswer)
                       {
@@ -5825,7 +5759,7 @@ void CoreSIM800Transport::update()
 
                   case smaWaitReg:
                   {
-                     if(sim800ReceiveBuff->indexOf(F("+CREG: 0,1")) != -1)
+                     if(thisCommandLine.indexOf(F("+CREG: 0,1")) != -1)
                         {
                           // зарегистрированы в GSM-сети
                              flags.isModuleRegistered = true;
@@ -5838,17 +5772,20 @@ void CoreSIM800Transport::update()
                             flags.isModuleRegistered = false;
                             idleTime = 5000; // повторим через 5 секунд
                             flags.onIdleTimer = true;
+                            idleTimer = millis();
                             // добавляем ещё раз эту команду
                             initCommandsQueue.push_back(smaWaitReg);
                             machineState = sim800Idle;
                         } // else                    
                   }
                   break; // smaWaitReg
+                  
                   case smaCheckModemHang:
                   {                    
-                    if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+                    if(isKnownAnswer(thisCommandLine,knownAnswer))
                     {
                       DBGLN(F("SIM800: modem answered and available."));
+
                       machineState = sim800Idle; // переходим к следующей команде
                       
                     } // if(isKnownAnswer
@@ -5925,14 +5862,14 @@ void CoreSIM800Transport::update()
             timer = millis();
                 
             DBGLN(F("SIM800: inited after reboot!"));
-          } // 
+          } //  
         }
         break; // sim800WaitInit
 
         case sim800WaitBootBegin:
         {
           sendCommand("AT");
-          machineState = sim800WaitBoot;          
+          machineState = sim800WaitBoot;        
         }
         break; // sim800WaitBootBegin
 
@@ -5943,7 +5880,7 @@ void CoreSIM800Transport::update()
             if(SIM800TransportSettings.UseRebootPin)
             {
               // используем управление питанием, ждём загрузки модема
-              if(*sim800ReceiveBuff == F("Call Ready") || *sim800ReceiveBuff == F("SMS Ready"))
+              if(thisCommandLine == F("Call Ready") || thisCommandLine == F("SMS Ready"))
               {
                 DBGLN(F("SIM800: BOOT FOUND, INIT!"));
                 restart();
@@ -5952,7 +5889,7 @@ void CoreSIM800Transport::update()
             else
             {
               // управление питанием не используем, здесь не надо ждать загрузки модема - достаточно дождаться ответа на команду
-              if(isKnownAnswer(*sim800ReceiveBuff,knownAnswer))
+              if(isKnownAnswer(thisCommandLine,knownAnswer))
               {
                 DBGLN(F("SIM800: ANSWERED, INIT!"));
                 restart();
@@ -5967,47 +5904,14 @@ void CoreSIM800Transport::update()
       
       } // switch
 
-    } // if(!flags.onIdleTimer)
+    } // if(!flags.onIdleTimer)    
 
-
-    if(hasAnswerLine)
-    {      
-      // не забываем чистить за собой
-        delete sim800ReceiveBuff;
-        sim800ReceiveBuff = new String();   
-           
-    } // if(hasAnswerLine)
-
-    if(!hasAnswer) // проверяем на зависание
-    {
-
-      // нет ответа от SIM800, проверяем, зависла ли она?
-      uint32_t hangTime = SIM800TransportSettings.HangTimeout;
-      hangTime *= 1000;
-
-      if(millis() - timer > hangTime)
-      {
-        DBGLN(F("SIM800: modem not answering, reboot!"));
-
-        if(SIM800TransportSettings.UseRebootPin)
-        {
-          // есть пин, который надо использовать при зависании
-          digitalWrite(SIM800TransportSettings.RebootPin,!SIM800TransportSettings.PowerOnLevel);
-        }
-
-        machineState = sim800Reboot;
-        timer = millis();
-        
-      } // if   
-         
-    } // if(!hasAnswer) 
-    
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::begin()
 {  
   workStream = NULL;
-  waitCipstartConnect = false;
+  flags.waitCipstartConnect = false;
 
   initPool();
 
@@ -6091,6 +5995,27 @@ void CoreSIM800Transport::begin()
 
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::sendCUSD(const String& cusd)
+{
+  if(!ready())
+    return;
+
+  DBG(F("SIM800: CUSD REQUESTED: "));
+  DBGLN(cusd);
+
+
+  unsigned int bp = 0;
+  String out;
+  
+  PDU.UTF8ToUCS2(cusd, bp, &out);
+
+  String* completeCommand = new String(F("AT+CUSD=1,\""));
+  *completeCommand += out.c_str();
+  *completeCommand += F("\"");
+
+   cusdList.push_back(completeCommand);
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSIM800Transport::sendSMS(const String& phoneNumber, const String& message, bool isFlash)
 {
   if(!ready())
@@ -6109,8 +6034,8 @@ bool CoreSIM800Transport::sendSMS(const String& phoneNumber, const String& messa
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::restart()
 {
-  delete sim800ReceiveBuff;
-  sim800ReceiveBuff = new String();
+  // очищаем входной буфер
+  receiveBuffer.clear();
 
   delete smsToSend;
   smsToSend = new String();
@@ -6125,7 +6050,6 @@ void CoreSIM800Transport::restart()
   flags.onIdleTimer = false;
   flags.isModuleRegistered = false;
   flags.gprsAvailable = false;
-  flags.bPaused = false;
   
   timer = millis();
 
@@ -6175,7 +6099,7 @@ void CoreSIM800Transport::clearClientsQueue(bool raiseEvents)
 
     for(size_t i=0;i<clientsQueue.size();i++)
     {
-        SIM800ClientQueueData dt = clientsQueue[i];
+        TransportClientQueueData dt = clientsQueue[i];
         delete [] dt.data;
         delete [] dt.ip;
 
@@ -6217,7 +6141,7 @@ void CoreSIM800Transport::clearClientsQueue(bool raiseEvents)
   clientsQueue.clear();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-bool CoreSIM800Transport::isClientInQueue(CoreTransportClient* client, SIM800ClientAction action)
+bool CoreSIM800Transport::isClientInQueue(CoreTransportClient* client, TransportClientAction action)
 {
   for(size_t i=0;i<clientsQueue.size();i++)
   {
@@ -6228,14 +6152,14 @@ bool CoreSIM800Transport::isClientInQueue(CoreTransportClient* client, SIM800Cli
   return false;
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreSIM800Transport::addClientToQueue(CoreTransportClient* client, SIM800ClientAction action, const char* ip, uint16_t port)
+void CoreSIM800Transport::addClientToQueue(CoreTransportClient* client, TransportClientAction action, const char* ip, uint16_t port)
 {
   while(isClientInQueue(client, action))
   {
     removeClientFromQueue(client,action);
   }
 
-    SIM800ClientQueueData dt;
+    TransportClientQueueData dt;
     dt.client = client;
     dt.action = action;
     
@@ -6250,7 +6174,7 @@ void CoreSIM800Transport::addClientToQueue(CoreTransportClient* client, SIM800Cl
     clientsQueue.push_back(dt);
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreSIM800Transport::removeClientFromQueue(CoreTransportClient* client, SIM800ClientAction action)
+void CoreSIM800Transport::removeClientFromQueue(CoreTransportClient* client, TransportClientAction action)
 {
   
   for(size_t i=0;i<clientsQueue.size();i++)
@@ -6303,7 +6227,7 @@ void CoreSIM800Transport::beginWrite(CoreTransportClient& client)
   }
   
   // добавляем клиента в очередь на запись
-  addClientToQueue(&client, sim800WriteAction);
+  addClientToQueue(&client, actionWrite);
 
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с записью в поток с этого клиента
   
@@ -6318,7 +6242,7 @@ void CoreSIM800Transport::beginConnect(CoreTransportClient& client, const char* 
   }
 
   // добавляем клиента в очередь на соединение
-  addClientToQueue(&client, sim800ConnectAction, ip, port);
+  addClientToQueue(&client, actionConnect, ip, port);
 
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с соединением клиента
 
@@ -6334,7 +6258,7 @@ void CoreSIM800Transport::beginDisconnect(CoreTransportClient& client)
   }
 
   // добавляем клиента в очередь на соединение
-  addClientToQueue(&client, sim800DisconnectAction);
+  addClientToQueue(&client, actionDisconnect);
 
   // клиент добавлен, теперь при обновлении транспорта мы начнём работать с отсоединением клиента
 }

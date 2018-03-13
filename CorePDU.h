@@ -52,12 +52,12 @@ class PDUMessageDecoder // декодировщик сообщений из UCS2
     uint8_t DCS_Bits(const String& tp_DCS);
     int16_t UCS2ToUTF8(uint32_t ucs2, unsigned char * utf8);
 
-    String getUTF8From16BitEncoding(const String& ucs2Message);
     String getUTF8From8BitEncoding(const String& ucs2Message);
     String getUTF8From7BitEncoding(const String& ucs2Message, uint16_t trueLength);
   
   public:
 
+    String getUTF8From16BitEncoding(const String& ucs2Message);
     PDUIncomingMessage Decode(const String& ucs2Message); // декодирует сообщение
     PDUMessageDecoder();
   

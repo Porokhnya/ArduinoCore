@@ -2977,11 +2977,11 @@ void CoreClass::yieldCritical()
   CoreWatchdog.update();
   
   #ifdef CORE_ESP_TRANSPORT_ENABLED
-    ESP.update();
+    ESP.readFromStream();
   #endif
 
   #ifdef CORE_SIM800_TRANSPORT_ENABLED
-    SIM800.update();
+    SIM800.readFromStream();
   #endif 
 
   ON_CRITICAL();
