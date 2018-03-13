@@ -1111,9 +1111,6 @@ class CoreSIM800Transport : public CoreTransport
   
       CoreTransportClient* cipstartConnectClient;
       uint8_t cipstartConnectClientID;
-
-      void GetAPNUserPass(String& user, String& pass);
-      String GetAPN();
       
       bool checkIPD(const TransportReceiveBuffer& buff);
       void processCMT(const String& cmtInfo);
