@@ -5,6 +5,9 @@
 #include "CoreConfig.h"
 #include "CoreArray.h"
 //--------------------------------------------------------------------------------------------------------------------------------------
+// максимальная длина одного пакета к вычитке прежде, чем подписчику придёт уведомление о пакете данных
+#define TRANSPORT_MAX_PACKET_LENGTH 128
+//--------------------------------------------------------------------------------------------------------------------------------------
 #ifdef CORE_SD_USE_SDFAT
   #include <SdFat.h>
   extern SdFat SD;
@@ -281,7 +284,12 @@ class CoreTransportClient
   void connect(const char* ip, uint16_t port);
   void disconnect();
   
-  bool write(uint8_t* buff, size_t sz);  
+  bool write(uint8_t* buff, size_t sz);
+
+  uint8_t getSocketNumber()
+  {
+    return socket;
+  }
 
 
  protected:
@@ -578,7 +586,19 @@ typedef struct
   WebServerRequestHandler handler;
   
 } WebServerRequestHandlerData;
+//--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<WebServerRequestHandlerData> WebServerRequestHandlers;
+//--------------------------------------------------------------------------------------------------------------------------------------
+struct CoreWebServerIncomingQuery
+{
+  TransportReceiveBuffer buffer;
+  uint8_t packetNumber;
+
+  CoreWebServerIncomingQuery()
+  {
+    packetNumber = 0;
+  }
+};
 //--------------------------------------------------------------------------------------------------------------------------------------
 class CoreESPWebServerClass : public IClientEventsSubscriber, public Stream
 {
@@ -602,6 +622,8 @@ class CoreESPWebServerClass : public IClientEventsSubscriber, public Stream
   virtual size_t write(uint8_t ch) { *internalBuffer += (char) ch; return 1;}
 
   private:
+
+    CoreWebServerIncomingQuery clientBuffers[5]; // максимум 5 клиентов
 
     CoreTransportClient* dynamicHandlerClient;
     WebServerRequestHandlers dynamicHandlers;
@@ -803,6 +825,8 @@ class CoreMQTT : public IClientEventsSubscriber, public Stream
 
 
 private:
+
+  TransportReceiveBuffer packetBuffer;
 
   MQTTPublishList publishList;
   void clearPublishQueue();

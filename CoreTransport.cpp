@@ -1818,27 +1818,78 @@ void CoreESPTransport::update()
       // удаляем +IPD,ID,DATA_LEN:
       receiveBuffer.remove(0,receiveBuffer.indexOf(':')+1);
 
-      // вычисляем, сколько надо дочитать из потока
-      while(receiveBuffer.size() < ipdClientDataLength)
+        // у нас есть длина данных к вычитке, плюс сколько-то их лежит в буфере уже.
+      // читать всё - мы не можем, т.к. данные могут быть гигантскими.
+      // следовательно, надо читать по пакетам.
+      CoreTransportClient* cl = getClient(ipdClientID);
+
+      if(receiveBuffer.size() >= ipdClientDataLength)
       {
-        // данных не хватает, дочитываем
-        if(!workStream->available())
-          continue;
+        // на время события мы должны обеспечить неизменность буфера, т.к.
+        // в обработчике события может быть вызван yield, у указатель на память станет невалидным!
+        
+        uint8_t* thisBuffer = new uint8_t[ipdClientDataLength];
+        memcpy(thisBuffer,receiveBuffer.pData(),ipdClientDataLength);
 
-        receiveBuffer.push_back((uint8_t) workStream->read());
+        receiveBuffer.remove(0,ipdClientDataLength);
 
-        #ifdef CORE_SIM800_TRANSPORT_ENABLED
-          SIM800.readFromStream();
-        #endif
-      } // while
+        if(!receiveBuffer.size())
+          receiveBuffer.clear();
+          
+        // весь пакет - уже в буфере
+        notifyDataAvailable(*cl, thisBuffer, ipdClientDataLength, true);
+        delete [] thisBuffer;
+                
+      }
+      else
+      {
+        // не хватает части пакета в буфере.
+        
+        // теперь смотрим, сколько у нас данных ещё не послано клиентам
+        size_t remainingDataLength = ipdClientDataLength;
 
-      // дочитали всё из потока, теперь все данные уже лежат в памяти
-     CoreTransportClient* cl = getClient(ipdClientID);
-     notifyDataAvailable(*cl, receiveBuffer.pData(), ipdClientDataLength, true);
+        // нам осталось послать remainingDataLength данных клиентам,
+        // побив их на пакеты длиной максимум TRANSPORT_MAX_PACKET_LENGTH
 
-     // уведомили клиентов, даже если и был рекурсивный вызов - мы просто вычитали из потока недостающее,
-     // и тут можем безопасно удалять голову.
-     receiveBuffer.remove(0,ipdClientDataLength);  
+        // вычисляем длину одного пакета
+        size_t packetLength = min(TRANSPORT_MAX_PACKET_LENGTH,remainingDataLength);
+
+        while(remainingDataLength > 0)
+        {
+            // читаем, пока не хватает данных для одного пакета
+            while(receiveBuffer.size() < packetLength)
+            {
+                #ifdef CORE_SIM800_TRANSPORT_ENABLED
+                  SIM800.readFromStream();
+                #endif
+              
+                // данных не хватает, дочитываем
+                if(!workStream->available())
+                  continue;
+    
+                receiveBuffer.push_back((uint8_t) workStream->read());
+                
+            } // while
+
+            // вычитали один пакет, уведомляем клиентов, при этом может пополниться буфер,
+            // поэтому сохраняем пакет так, чтобы указатель на него был всегда валидным.
+            uint8_t* thisBuffer = new uint8_t[packetLength];
+            memcpy(thisBuffer,receiveBuffer.pData(),packetLength);
+
+            receiveBuffer.remove(0,packetLength);
+            if(!receiveBuffer.size())
+              receiveBuffer.clear();
+
+            notifyDataAvailable(*cl, thisBuffer, packetLength, (remainingDataLength - packetLength) == 0);
+            delete [] thisBuffer;
+            
+            remainingDataLength -= packetLength;
+            packetLength = min(TRANSPORT_MAX_PACKET_LENGTH,remainingDataLength);
+        } // while
+
+          
+      } // else
+
     
   } // if(checkIPD(receiveBuffer))
   else if(flags.waitForDataWelcome && receiveBuffer[0] == '>')
@@ -2792,7 +2843,13 @@ CoreESPWebServerClass::CoreESPWebServerClass()
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPWebServerClass::OnClientConnect(CoreTransportClient& client, bool connected, int16_t errorCode)
 {
-  
+  // событие коннекта или дисконнекта - неважно, нам важно сбросить данные для клиента в 0
+  uint8_t sockNum = client.getSocketNumber();
+  if(sockNum < 5)
+  {
+    clientBuffers[sockNum].packetNumber = 0;
+    clientBuffers[sockNum].buffer.clear();
+  }
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPWebServerClass::OnClientDataWritten(CoreTransportClient& client, int16_t errorCode)
@@ -3318,13 +3375,92 @@ CoreWebServerPendingFileData* CoreESPWebServerClass::getPendingFileData(CoreTran
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, uint8_t* dt, size_t dataSize, bool isDone)
-{
-    char* data = (char*) dt;
-    
+{    
     // данные для клиента пришли
+    uint8_t sockNum = client.getSocketNumber();
+      
     if(!isOurClient(&client))
     {
+        // пока неизвестный клиент, надо обработать ему данные   
+        if(sockNum < 5)
+        {
+          if(clientBuffers[sockNum].packetNumber > 0) // уже обрабатывали первый пакет от клиента
+          {
+            clientBuffers[sockNum].buffer.clear();
+            
+            if(isDone)
+              clientBuffers[sockNum].packetNumber = 0;
+              
+            return;
+          }
+  
+          // сохраняем пакеты клиента до тех пор, пока какой-то участок кода не выставит ему packetNumber > 0
+          for(size_t i=0;i<dataSize;i++)
+            clientBuffers[sockNum].buffer.push_back(dt[i]);
+  
+          // если длина данных больше 5 - значит, мы можем проверять этот пакет, иначе - надо дождаться минимальной длины для проверки
+          if(clientBuffers[sockNum].buffer.size() < 6)
+            return;
+          
+           const char* pData = (const char*) clientBuffers[sockNum].buffer.pData();
+           size_t pDataSize = clientBuffers[sockNum].buffer.size();
+
+          // длина данных больше 5, следовательно, можно проверить на минимальный HTTP-запрос
+           if(!Core.memFind(pData,pDataSize,"GET ",4))
+           {
+              // сохранили данные о том, что первый пакет мы уже проверили, т.е. сразу говорим "нет", т.к. начало данных - не "GET ",
+              // и это совсем не похоже на HTTP-запрос
+              clientBuffers[sockNum].packetNumber++;
+              clientBuffers[sockNum].buffer.clear();
+              return;
+           }
+
+          // теперь проверяем - есть ли там перевод строки? Первая строка - в ней содержится сам GET-запрос.
+          // однако, существует ситуация, когда это бинарные данные и \r\n там может просто не быть, от слова "совсем".
+          // в этом случае нам не надо сохранять все данные, достаточно положиться на какую-то разумность, например,
+          // наличие первыми байтами подстроки "GET ". Но тут проблема в том, что мы не знаем, какой по счёту
+          // пакет данных пришёл, поэтому для грамотного реагирования нам надо хранить его в структуре, что мы и делаем выше.
+          // здесь же надо искать конец строки.
+          
+          const char* rn = (const char*) Core.memFind(pData,pDataSize,"\r\n",2);
+          
+          if(rn)
+          {
+            // есть перевод строки, можем проверять на HTTP-запрос
+            bool httpQueryFound = Core.memFind(pData,pDataSize,"GET ",4) == pData && Core.memFind(pData,pDataSize,"HTTP/",5) != NULL;
+
+            if(httpQueryFound)
+            {
+              // найден HTTP-запрос, можно работать с клиентом, поместив его в очередь, и как только придут все данные запроса - мы его обработаем.
+              // после помещения клиента в очередь в эту ветку кода мы уже не попадаем по определению
+                
+                char* query = new char[rn-pData+1];
+                memcpy(query,pData,rn-pData);
+                query[rn-pData] = 0;
+
+                CoreWebServerQuery pending;
+                pending.client = &client;
+                pending.query = query;
+                pendingQueries.push_back(pending);
+              
+            } // if(httpQueryFound)
+            else
+            {
+              // это не HTTP-запрос, будем игнорировать последующие запросы от этого клиента
+              clientBuffers[sockNum].packetNumber++;
+            }
+
+            // ну и чистим буфер к чертям
+            clientBuffers[sockNum].buffer.clear();
+            
+          } // if(rn)
+        
+      } // if(sockNum < 5)
+      
+      /*
       // нет в списке клиентов, проверяем, возможно, запрос к нам
+      // тут проблема - возможно, что придёт только часть пакета, меньше чем 4 байта, поэтому нам надо сохранять
+      // данные до тех пор, пока не получим первую строку!
 
       if(dataSize > 4)
       {
@@ -3335,16 +3471,6 @@ void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, u
             bool hasCompletedQuery  = Core.memFind(data,dataSize,"\r\n\r\n",4) != NULL;
             if(hasCompletedQuery)
             {
-              /*
-              DBGLN(F("WEB: Completed query found!"));
-              DBGLN(F("================================================"));
-
-              #ifdef _CORE_DEBUG
-                Serial.write(data,dataSize);
-              #endif
-
-              DBGLN(F("================================================"));
-              */
               
               // уже есть готовый запрос, выщемляем первую строку - и вперёд
 
@@ -3380,15 +3506,19 @@ void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, u
           } // httpQueryFound
           
       } // if(dataSize > 4)
+
+      */
       
     } // not our client
     else
     {
       // наш клиент, уже есть в списке клиентов, надо проверить - пришёл ли весь запрос
-      bool hasCompletedQuery = isDone;
-      if(hasCompletedQuery)
+      if(isDone) // все данные запроса пришли, обрабатываем
       {
-        DBGLN(F("WEB: client data done, process query..."));
+        clientBuffers[sockNum].buffer.clear();
+        clientBuffers[sockNum].packetNumber = 0;
+        
+        DBGLN(F("WEB: client query done, process query..."));
         CoreWebServerQuery* pending = getPendingQuery(&client);
         if(pending)
         {
@@ -3662,13 +3792,15 @@ void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, uint8_t* data,
   if(machineState == mqttWaitSendConnectPacketDone)
   {
 //    DBGLN(F("MQTT: CONNECT packet was sent!"));
-    machineState = mqttSendSubscribePacket;
+    if(isDone)
+      machineState = mqttSendSubscribePacket;
   }
   else
   if(machineState == mqttWaitSendSubscribePacketDone)
   {
 //    DBGLN(F("MQTT: SUBSCRIBE packet was sent!"));
-    machineState = mqttSendPublishPacket;
+    if(isDone)
+      machineState = mqttSendPublishPacket;
   }
   else
   if(machineState == mqttWaitSendPublishPacketDone)
@@ -3676,10 +3808,19 @@ void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, uint8_t* data,
 //    DBGLN(F("MQTT: PUBLISH packet was sent!"));
     // отсылали пакет публикации, тут к нам пришла обратка,
     // поскольку мы подписались на все топики для нашего клиента, на будущее
+
+      for(size_t i=0;i<dataSize;i++)
+        packetBuffer.push_back(data[i]);
+          
+      if(!isDone) // ещё не все данные получены
+        return;
+    
      machineState = mqttSendPublishPacket;
 
     // по-любому обрабатываем обратку
-    processIncomingPacket(&currentClient, data, dataSize);     
+    processIncomingPacket(&currentClient, data, dataSize);
+
+    packetBuffer.clear();
   }
   else
   {
@@ -3688,7 +3829,16 @@ void CoreMQTT::OnClientDataAvailable(CoreTransportClient& client, uint8_t* data,
 
       // тут разбираем, что пришло от брокера. Если мы здесь, значит данные от брокера
       // пришли в необрабатываемую ветку, т.е. это публикация прямо с брокера.
+
+      for(size_t i=0;i<dataSize;i++)
+        packetBuffer.push_back(data[i]);
+          
+      if(!isDone) // ещё не все данные получены
+        return;
+            
       processIncomingPacket(&currentClient, data, dataSize);
+
+      packetBuffer.clear();
   }
     
 }
@@ -3706,6 +3856,7 @@ void CoreMQTT::OnClientDataWritten(CoreTransportClient& client, int16_t errorCod
     DBGLN(F("MQTT: Can't write to client!"));
     clearReportsQueue();
     clearPublishQueue();
+    packetBuffer.clear();
     machineState = mqttWaitReconnect;
 
     return;
@@ -3728,6 +3879,7 @@ void CoreMQTT::OnClientConnect(CoreTransportClient& client, bool connected, int1
     DBGLN(F("MQTT: Can't connect to broker, try to reconnect..."));
     clearReportsQueue();
     clearPublishQueue();
+    packetBuffer.clear();
     machineState = mqttWaitReconnect;
     timer = millis();    
   }
@@ -4997,28 +5149,77 @@ void CoreSIM800Transport::update()
 
       // удаляем +RECEIVE,ID,DATA_LEN:
       receiveBuffer.remove(0,receiveBuffer.indexOf(':')+1);
+    // у нас есть длина данных к вычитке, плюс сколько-то их лежит в буфере уже.
+      // читать всё - мы не можем, т.к. данные могут быть гигантскими.
+      // следовательно, надо читать по пакетам.
+      CoreTransportClient* cl = getClient(ipdClientID);
 
-      // вычисляем, сколько надо дочитать из потока
-      while(receiveBuffer.size() < ipdClientDataLength)
+      if(receiveBuffer.size() >= ipdClientDataLength)
       {
-        // данных не хватает, дочитываем
-        if(!workStream->available())
-          continue;
+        // на время события мы должны обеспечить неизменность буфера, т.к.
+        // в обработчике события может быть вызван yield, у указатель на память станет невалидным!
+        
+        uint8_t* thisBuffer = new uint8_t[ipdClientDataLength];
+        memcpy(thisBuffer,receiveBuffer.pData(),ipdClientDataLength);
 
-        receiveBuffer.push_back((uint8_t) workStream->read());
+        receiveBuffer.remove(0,ipdClientDataLength);
 
-        #ifdef CORE_ESP_TRANSPORT_ENABLED
-          ESP.readFromStream();
-        #endif
-      } // while
+        if(!receiveBuffer.size())
+          receiveBuffer.clear();
+          
+        // весь пакет - уже в буфере
+        notifyDataAvailable(*cl, thisBuffer, ipdClientDataLength, true);
+        delete [] thisBuffer;
+                
+      }
+      else
+      {
+        // не хватает части пакета в буфере.
+        
+        // теперь смотрим, сколько у нас данных ещё не послано клиентам
+        size_t remainingDataLength = ipdClientDataLength;
 
-      // дочитали всё из потока, теперь все данные уже лежат в памяти
-     CoreTransportClient* cl = getClient(ipdClientID);
-     notifyDataAvailable(*cl, receiveBuffer.pData(), ipdClientDataLength, true);
+        // нам осталось послать remainingDataLength данных клиентам,
+        // побив их на пакеты длиной максимум TRANSPORT_MAX_PACKET_LENGTH
 
-     // уведомили клиентов, даже если и был рекурсивный вызов - мы просто вычитали из потока недостающее,
-     // и тут можем безопасно удалять голову.
-     receiveBuffer.remove(0,ipdClientDataLength);  
+        // вычисляем длину одного пакета
+        size_t packetLength = min(TRANSPORT_MAX_PACKET_LENGTH,remainingDataLength);
+
+        while(remainingDataLength > 0)
+        {
+            // читаем, пока не хватает данных для одного пакета
+            while(receiveBuffer.size() < packetLength)
+            {
+                #ifdef CORE_ESP_TRANSPORT_ENABLED
+                  ESP.readFromStream();
+                #endif
+              
+                // данных не хватает, дочитываем
+                if(!workStream->available())
+                  continue;
+    
+                receiveBuffer.push_back((uint8_t) workStream->read());
+                
+            } // while
+
+            // вычитали один пакет, уведомляем клиентов, при этом может пополниться буфер,
+            // поэтому сохраняем пакет так, чтобы указатель на него был всегда валидным.
+            uint8_t* thisBuffer = new uint8_t[packetLength];
+            memcpy(thisBuffer,receiveBuffer.pData(),packetLength);
+
+            receiveBuffer.remove(0,packetLength);
+            if(!receiveBuffer.size())
+              receiveBuffer.clear();
+
+            notifyDataAvailable(*cl, thisBuffer, packetLength, (remainingDataLength - packetLength) == 0);
+            delete [] thisBuffer;
+            
+            remainingDataLength -= packetLength;
+            packetLength = min(TRANSPORT_MAX_PACKET_LENGTH,remainingDataLength);
+        } // while
+
+          
+      } // else
     
   } // if(checkIPD(receiveBuffer))
   else if(flags.waitForDataWelcome && receiveBuffer[0] == '>')
