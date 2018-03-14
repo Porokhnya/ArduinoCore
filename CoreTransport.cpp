@@ -1995,40 +1995,46 @@ void CoreESPTransport::update()
                     case actionConnect:
                     {
 
-                      // здесь надо искать первый свободный слот для клиента
-                      CoreTransportClient* freeSlot = getClient(NO_CLIENT_ID);
-                      clientID = freeSlot ? freeSlot->socket : NO_CLIENT_ID;
+                      // разрешаем коннектиться только тогда, когда предыдущий клиент для коннекта уже свободен
+                      if(!cipstartConnectClient)
+                      {
+                          // здесь надо искать первый свободный слот для клиента
+                          CoreTransportClient* freeSlot = getClient(NO_CLIENT_ID);
+                          clientID = freeSlot ? freeSlot->socket : NO_CLIENT_ID;
+                          
+                          if(flags.connectedToRouter)
+                          {
+                            flags.waitCipstartConnect = true;
+                            cipstartConnectClient = dt.client;
+                            cipstartConnectClientID = clientID;
+                            flags.cipstartConnectKnownAnswerFound = false;
+      
+                            currentCommand = cmdCIPSTART;
+                            String comm = F("AT+CIPSTART=");
+                            comm += clientID;
+                            comm += F(",\"TCP\",\"");
+                            comm += dt.ip;
+                            comm += F("\",");
+                            comm += dt.port;
+      
+                            delete [] clientsQueue[0].ip;
+                            clientsQueue[0].ip = NULL;
+                  
+                            // и отсылаем её
+                            sendCommand(comm);
+                          } // flags.connectedToRouter
+                          else
+                          {
+                            // не законнекчены к роутеру, не можем устанавливать внешние соединения!!!
+                            removeClientFromQueue(dt.client);
+                            dt.client->bind(clientID);
+                            notifyClientConnected(*(dt.client),false,CT_ERROR_CANT_CONNECT);
+                            dt.client->release();
+                            
+                          }
+                          
+                      } // if(!cipstartConnectClient)
                       
-                      if(flags.connectedToRouter)
-                      {
-                        flags.waitCipstartConnect = true;
-                        cipstartConnectClient = dt.client;
-                        cipstartConnectClientID = clientID;
-                        flags.cipstartConnectKnownAnswerFound = false;
-  
-                        currentCommand = cmdCIPSTART;
-                        String comm = F("AT+CIPSTART=");
-                        comm += clientID;
-                        comm += F(",\"TCP\",\"");
-                        comm += dt.ip;
-                        comm += F("\",");
-                        comm += dt.port;
-  
-                        delete [] clientsQueue[0].ip;
-                        clientsQueue[0].ip = NULL;
-              
-                        // и отсылаем её
-                        sendCommand(comm);
-                      } // flags.connectedToRouter
-                      else
-                      {
-                        // не законнекчены к роутеру, не можем устанавливать внешние соединения!!!
-                        removeClientFromQueue(dt.client);
-                        dt.client->bind(clientID);
-                        notifyClientConnected(*(dt.client),false,CT_ERROR_CANT_CONNECT);
-                        dt.client->release();
-                        
-                      }
                     }
                     break; // actionConnect
 
@@ -5342,39 +5348,44 @@ void CoreSIM800Transport::update()
 
                     case actionConnect:
                     {
-                      // хочет подсоединиться
-                      if(flags.gprsAvailable)
-                      {
-                      // здесь надо искать первый свободный слот для клиента
-                      CoreTransportClient* freeSlot = getClient(NO_CLIENT_ID);
-                      clientID = freeSlot ? freeSlot->socket : NO_CLIENT_ID;
+                      // разрешаем коннектиться только тогда, когда предыдущий клиент для коннекта уже свободен
+                      if(!cipstartConnectClient)
+                      {                      
+                          // хочет подсоединиться
+                          if(flags.gprsAvailable)
+                          {
+                          // здесь надо искать первый свободный слот для клиента
+                          CoreTransportClient* freeSlot = getClient(NO_CLIENT_ID);
+                          clientID = freeSlot ? freeSlot->socket : NO_CLIENT_ID;
+    
+                          flags.waitCipstartConnect = true;
+                          cipstartConnectClient = dt.client;
+                          cipstartConnectClientID = clientID;
+                          
+                          currentCommand = smaCIPSTART;
+                          String comm = F("AT+CIPSTART=");
+                          comm += clientID;
+                          comm += F(",\"TCP\",\"");
+                          comm += dt.ip;
+                          comm += F("\",");
+                          comm += dt.port;
+    
+                          delete [] clientsQueue[0].ip;
+                          clientsQueue[0].ip = NULL;
+                                          
+                          // и отсылаем её
+                          sendCommand(comm);
+                          } // gprsAvailable
+                          else
+                          {
+                            // нет GPRS, не можем устанавливать внешние соединения!!!
+                            removeClientFromQueue(dt.client);
+                            dt.client->bind(clientID);
+                            notifyClientConnected(*(dt.client),false,CT_ERROR_CANT_CONNECT);
+                            dt.client->release();                        
+                          }
 
-                      flags.waitCipstartConnect = true;
-                      cipstartConnectClient = dt.client;
-                      cipstartConnectClientID = clientID;
-                      
-                      currentCommand = smaCIPSTART;
-                      String comm = F("AT+CIPSTART=");
-                      comm += clientID;
-                      comm += F(",\"TCP\",\"");
-                      comm += dt.ip;
-                      comm += F("\",");
-                      comm += dt.port;
-
-                      delete [] clientsQueue[0].ip;
-                      clientsQueue[0].ip = NULL;
-                                      
-                      // и отсылаем её
-                      sendCommand(comm);
-                      } // gprsAvailable
-                      else
-                      {
-                        // нет GPRS, не можем устанавливать внешние соединения!!!
-                        removeClientFromQueue(dt.client);
-                        dt.client->bind(clientID);
-                        notifyClientConnected(*(dt.client),false,CT_ERROR_CANT_CONNECT);
-                        dt.client->release();                        
-                      }
+                      } // if(!cipstartConnectClient)
                       
                     }
                     break; // actionConnect
