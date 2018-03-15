@@ -2623,6 +2623,7 @@ void CoreESPTransport::restart()
   timer = millis();
 
   flags.waitCipstartConnect = false; // не ждёт соединения внешнего клиента
+  cipstartConnectClient = NULL;
 
   currentCommand = cmdNone;
   machineState = espIdle;
@@ -6264,6 +6265,9 @@ void CoreSIM800Transport::restart()
   flags.gprsAvailable = false;
   
   timer = millis();
+
+  flags.waitCipstartConnect = false; // не ждёт соединения внешнего клиента
+  cipstartConnectClient = NULL;
 
   currentCommand = smaNone;
   machineState = sim800Idle;
