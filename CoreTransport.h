@@ -1023,6 +1023,9 @@ typedef struct
   bool gprsAvailable        : 1; //
   bool pduInNextLine        : 1; //
   bool waitCipstartConnect  : 1;
+
+  bool ignoreNextEmptyLine  : 1;
+  
   
 } CoreSIM800TransportFlags;
 //--------------------------------------------------------------------------------------------------------------------------------------
@@ -1053,7 +1056,11 @@ typedef enum
   smaWaitSMSSendDone,
   smaWaitForSMSClearance,
   smaCUSD,
-    
+  smaGPRSMultislotClass,
+#ifdef CORE_SIM800_PULL_GPRS_BY_PING  
+  smaPING,
+#endif
+  smaCIPSHUT
 } SIM800Commands;
 //--------------------------------------------------------------------------------------------------------------------------------------
 typedef Vector<SIM800Commands> SIM800CommandsList;
@@ -1081,6 +1088,7 @@ typedef enum
   gsmConnectFail,
   gsmAlreadyConnect,
   gsmCloseOk,
+  gsmShutOk,
   
 } SIM800KnownAnswer;
 //--------------------------------------------------------------------------------------------------------------------------------------
