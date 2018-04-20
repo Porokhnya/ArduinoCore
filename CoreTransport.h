@@ -1130,6 +1130,8 @@ class CoreSIM800Transport : public CoreTransport
   private:
 
 
+      void rebootModem();
+
       Vector<String*> cusdList;
       void sendQueuedCUSD();
 

@@ -5059,13 +5059,20 @@ void CoreSIM800Transport::processKnownStatusFromSIM800(const String& line)
       String decodedCUSD = PDU.getUTF8From16BitEncoding(cusdSMS);
 
         DBG(F("DECODED CUSD IS: ")); 
-        DBG(decodedCUSD);
+        DBGLN(decodedCUSD);
 
       ON_CUSD_RECEIVED(decodedCUSD);
     
     }
     return;   
   } // if(line.startsWith(F("+CUSD:")))
+  else
+  if(line.startsWith(F("+PDP: DEACT")))
+  {
+      DBGLN(F("SIM800: GPRS connection broken, restart!")); 
+      rebootModem();
+      
+  } // if(line.startsWith(F("+PDP:DEACT")))
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 bool CoreSIM800Transport::checkIPD(const TransportReceiveBuffer& buff)
@@ -5085,6 +5092,18 @@ bool CoreSIM800Transport::checkIPD(const TransportReceiveBuffer& buff)
   }
 
   return false;
+}
+//--------------------------------------------------------------------------------------------------------------------------------------
+void CoreSIM800Transport::rebootModem()
+{
+        if(SIM800TransportSettings.UseRebootPin)
+        {
+          // есть пин, который надо использовать при зависании
+          digitalWrite(SIM800TransportSettings.RebootPin,!SIM800TransportSettings.PowerOnLevel);
+        }
+
+        machineState = sim800Reboot;
+        timer = millis();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
 void CoreSIM800Transport::update()
@@ -5127,15 +5146,7 @@ void CoreSIM800Transport::update()
       if(millis() - timer > hangTime)
       {
         DBGLN(F("SIM800: modem not answering, reboot!"));
-
-        if(SIM800TransportSettings.UseRebootPin)
-        {
-          // есть пин, который надо использовать при зависании
-          digitalWrite(SIM800TransportSettings.RebootPin,!SIM800TransportSettings.PowerOnLevel);
-        }
-
-        machineState = sim800Reboot;
-        timer = millis();
+        rebootModem();
         
       } // if   
   }
