@@ -849,7 +849,7 @@ private:
 
   void constructConnectPacket(String& mqttBuffer,int16_t& mqttBufferLength,const char* id, const char* user, const char* pass,const char* willTopic,uint8_t willQoS, uint8_t willRetain, const char* willMessage);
   void constructSubscribePacket(String& mqttBuffer,int16_t& mqttBufferLength, const char* topic);
-  void constructPublishPacket(String& mqttBuffer,int16_t& mqttBufferLength, const char* topic, const char* payload);
+  void constructPublishPacket(String& mqttBuffer,int16_t& mqttBufferLength, const char* topic, const char* payload, bool retain);
   
   void encode(MQTTBuffer& buff,const char* str);
 

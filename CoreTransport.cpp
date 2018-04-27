@@ -4230,7 +4230,7 @@ void CoreMQTT::update()
               if(data.length() && topicName.length())
               {
                  // конструируем пакет публикации
-                 constructPublishPacket(mqttBuffer,mqttBufferLength,topicName.c_str(), data.c_str()); 
+                 constructPublishPacket(mqttBuffer,mqttBufferLength,topicName.c_str(), data.c_str(),true); 
       
                 // переключаемся на ожидание результата отсылки пакета
                 machineState = mqttWaitSendPublishPacketDone;
@@ -4283,7 +4283,7 @@ void CoreMQTT::clearReportsQueue()
   reportQueue.empty();
 }
 //--------------------------------------------------------------------------------------------------------------------------------------
-void CoreMQTT::constructPublishPacket(String& mqttBuffer,int16_t& mqttBufferLength, const char* topic, const char* payload)
+void CoreMQTT::constructPublishPacket(String& mqttBuffer,int16_t& mqttBufferLength, const char* topic, const char* payload, bool retain)
 {
   MQTTBuffer byteBuffer; // наш буфер из байт, в котором будет содержаться пакет
 
@@ -4303,8 +4303,13 @@ void CoreMQTT::constructPublishPacket(String& mqttBuffer,int16_t& mqttBufferLeng
   size_t payloadSize = byteBuffer.size();
 
   MQTTBuffer fixedHeader;
+
+  uint8_t command = MQTT_PUBLISH_COMMAND;
+
+  if(retain)
+    command |= 1;
   
-  constructFixedHeader(MQTT_PUBLISH_COMMAND,fixedHeader,payloadSize);
+  constructFixedHeader(command,fixedHeader,payloadSize);
 
   writePacket(fixedHeader,byteBuffer,mqttBuffer,mqttBufferLength);
   
