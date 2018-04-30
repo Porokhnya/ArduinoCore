@@ -5006,6 +5006,10 @@ void CoreSIM800Transport::processKnownStatusFromSIM800(const String& line)
       int16_t clientID = s.toInt();
       if(clientID >=0 && clientID < SIM800_MAX_CLIENTS)
       {
+          if(line.indexOf(F("CONNECT FAIL")) != -1)
+          {
+            clientID = cipstartConnectClientID;
+          }
           DBG(F("SIM800: client disconnected - #"));
           DBGLN(String(clientID));
 
