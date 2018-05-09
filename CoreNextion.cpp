@@ -529,6 +529,7 @@ void Nextion::processCommand()
       uint8_t buttonID = (uint8_t) recvBuff[2];
       bool pressed = 1 == (uint8_t) recvBuff[3];
 
+      recvBuff = ""; // очищаем буфер
       ON_NEXTION_BUTTON_TOUCH(*this,pageID,buttonID,pressed);
     }
     break;
@@ -538,7 +539,8 @@ void Nextion::processCommand()
       // что лежит в буфере:
       // 0X66+Page ID+End
       uint8_t pageID = (uint8_t) recvBuff[1];
-      
+
+      recvBuff = ""; // очищаем буфер
       ON_NEXTION_PAGE_ID_RECEIVED(*this,pageID);
       
     }
@@ -554,6 +556,7 @@ void Nextion::processCommand()
       bool pressed = 1 == (uint8_t) recvBuff[5];
       bool inSleep = commandType == 0x68;
 
+      recvBuff = ""; // очищаем буфер
       ON_NEXTION_TOUCH(*this,x,y,pressed,inSleep);
       
     }
@@ -565,7 +568,8 @@ void Nextion::processCommand()
       recvBuff[recvBuff.length()-3] = '\0'; // маскируем конец пакета
       const char* ptr = recvBuff.c_str();
       ptr++; // переходим на начало данных
-      
+
+      recvBuff = ""; // очищаем буфер
       ON_NEXTION_STRING_RECEIVED(*this,ptr);
     }
     break;
@@ -577,6 +581,7 @@ void Nextion::processCommand()
       int readIdx = recvBuff.length()-4; // переходим на первый значащий байт
       uint32_t num = ((uint32_t)recvBuff[readIdx] << 24) | ((uint32_t)recvBuff[readIdx-1] << 16) | ((uint32_t)recvBuff[readIdx-2] << 8) | recvBuff[readIdx-3];
 
+      recvBuff = ""; // очищаем буфер
       ON_NEXTION_NUMBER_RECEIVED(*this,num);
       
     }
@@ -584,12 +589,14 @@ void Nextion::processCommand()
 
     case 0x86: // enter sleep mode
     {
+      recvBuff = ""; // очищаем буфер
       ON_NEXTION_SLEEP(*this,true);
     }
     break;
 
     case 0x87: // wake up
     {
+      recvBuff = ""; // очищаем буфер
       ON_NEXTION_SLEEP(*this,false);
     }
     break;
