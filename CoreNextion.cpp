@@ -569,8 +569,9 @@ void Nextion::processCommand()
       const char* ptr = recvBuff.c_str();
       ptr++; // переходим на начало данных
 
+      String cpy = ptr;
       recvBuff = ""; // очищаем буфер
-      ON_NEXTION_STRING_RECEIVED(*this,ptr);
+      ON_NEXTION_STRING_RECEIVED(*this,cpy.c_str());
     }
     break;
 
