@@ -89,7 +89,6 @@ typedef enum
   ESPSettingsRecord = 5, // данные о настройках ESP
   SensorsUpdateIntervalRecord = 6, // интервал опроса датчиков
   RS485SettingsRecord = 7, // данные о настройках RS-485
-//  RS485IncomingPacketRecord = 8, // данные об известном пакете RS-485
   LoRaSettingsRecord = 8, // данные по настройкам LoRa
   DeviceIDRecord = 9, // данные по ID устройства
   ClusterIDRecord = 10, // данные о ID кластера, к которому принадлежит группа устройств
@@ -236,7 +235,7 @@ class CoreClass
     int16_t getPinMode(uint8_t pin); // возвращает режим работы пина - вход или выход
     int16_t getPinState(uint8_t pin); // возвращает состояние пина, вне зависимости от его режима работы
 		
-		void setup(CoreUnhandledCommandsHandler func = NULL);
+	void setup(CoreUnhandledCommandsHandler func = NULL);
    
     void printVersion(Stream& s); // печатает версию ядра в поток
     void printSupportedSensors(Stream& s); // печатает список поддерживаемых датчиков в поток

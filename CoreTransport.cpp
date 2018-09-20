@@ -3464,57 +3464,6 @@ void CoreESPWebServerClass::OnClientDataAvailable(CoreTransportClient& client, u
         
       } // if(sockNum < 5)
       
-      /*
-      // нет в списке клиентов, проверяем, возможно, запрос к нам
-      // тут проблема - возможно, что придёт только часть пакета, меньше чем 4 байта, поэтому нам надо сохранять
-      // данные до тех пор, пока не получим первую строку!
-
-      if(dataSize > 4)
-      {
-          bool httpQueryFound = Core.memFind(data,dataSize,"GET ",4) == data && Core.memFind(data,dataSize,"HTTP/",5) != NULL;
-          
-          if(httpQueryFound)
-          {
-            bool hasCompletedQuery  = Core.memFind(data,dataSize,"\r\n\r\n",4) != NULL;
-            if(hasCompletedQuery)
-            {
-              
-              // уже есть готовый запрос, выщемляем первую строку - и вперёд
-
-              const char* rn = (const char*) Core.memFind(data,dataSize,"\r\n",2);
-                            
-              char* query = new char[rn-data+1];              
-              memcpy(query,data,rn-data);
-              query[rn-data] = 0;
-              
-              processQuery(&client, query);
-              
-              delete [] query;
-            }
-            else
-            {
-              DBGLN(F("WEB: Uncompleted query, save first line"));
-                // нет полного запроса, выщемляем первую строку - и сохраняем
-              const char* rn = (const char*) Core.memFind((const uint8_t*)data,dataSize,(const uint8_t*)"\r\n",2);
-              if(rn)
-              {
-                char* query = new char[rn-data+1];
-                memcpy(query,data,rn-data);
-                query[rn-data] = 0;
-
-                CoreWebServerQuery pending;
-                pending.client = &client;
-                pending.query = query;
-                pendingQueries.push_back(pending);
-              }
-              
-              
-            } // else
-          } // httpQueryFound
-          
-      } // if(dataSize > 4)
-
-      */
       
     } // not our client
     else

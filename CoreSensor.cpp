@@ -412,11 +412,17 @@ TemperatureData TemperatureData::ConvertToFahrenheit(const TemperatureData& from
 {  
     TemperatureData result;
       
-    int32_t rawC = from.Value*100 + from.Fract;
+    int32_t rawC = from.Value*100;
+	
+	if(from.Value < 0)
+		rawC -= from.Fract;
+	else
+		rawC += from.Fract;
+	
     int32_t rawF = (rawC*9)/5 + 3200;
 
     result.Value = rawF/100;
-    result.Fract = rawF%100;
+    result.Fract = abs(rawF%100);
 
     return result;  
 }
