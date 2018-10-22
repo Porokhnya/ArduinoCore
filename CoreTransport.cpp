@@ -1898,7 +1898,7 @@ void CoreESPTransport::update()
 
     
   } // if(checkIPD(receiveBuffer))
-  else if(flags.waitForDataWelcome && receiveBuffer[0] == '>')
+  else if(flags.waitForDataWelcome && receiveBuffer.size() && receiveBuffer[0] == '>')
   {
     flags.waitForDataWelcome = false;
     thisCommandLine = '>';
@@ -5242,7 +5242,7 @@ void CoreSIM800Transport::update()
       } // else
     
   } // if(checkIPD(receiveBuffer))
-  else if(flags.waitForDataWelcome && receiveBuffer[0] == '>')
+  else if(flags.waitForDataWelcome && receiveBuffer.size() && receiveBuffer[0] == '>')
   {
     flags.waitForDataWelcome = false;
     thisCommandLine = '>';
