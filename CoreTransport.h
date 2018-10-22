@@ -474,6 +474,7 @@ class CoreESPTransport : public CoreTransport
 {
   public:
     CoreESPTransport();
+    ~CoreESPTransport();
 
     virtual void update(); // обновляем состояние транспорта
     virtual void begin(); // начинаем работу
@@ -1108,6 +1109,7 @@ class CoreSIM800Transport : public CoreTransport
 {
   public:
     CoreSIM800Transport();
+    ~CoreSIM800Transport();
 
 
     virtual void update(); // обновляем состояние транспорта
